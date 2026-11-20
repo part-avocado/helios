@@ -18,6 +18,9 @@ import (
 // reviewers) contain no human inputs, since their "user" messages come from
 // another agent.
 //
+// Line changes come from apply_patch calls, whether made as a custom tool
+// call, a function call, or a shell command.
+//
 // Tokens come from token_count events, which carry the session's running
 // total; each event is credited with the increase since the previous one, so
 // repeated events are not counted twice.
@@ -25,6 +28,7 @@ func ParseCodex(r io.Reader, id string) (Raw, error) {
 	out := Raw{Tool: "codex", ID: id}
 	subagent, seenMeta := false, false
 	var lastIn, lastOut int64
+	patched := map[string]bool{} // call IDs already counted, since a fork copies its parent's records
 	err := lines(r, func(b []byte) {
 		var rec struct {
 			Timestamp string `json:"timestamp"`
@@ -39,6 +43,10 @@ func ParseCodex(r io.Reader, id string) (Raw, error) {
 				Item         json.RawMessage `json:"item"`
 				Info         json.RawMessage `json:"info"`
 				Git          json.RawMessage `json:"git"`
+				Name         string          `json:"name"`
+				CallID       string          `json:"call_id"`
+				Input        string          `json:"input"`
+				Arguments    string          `json:"arguments"`
 			} `json:"payload"`
 		}
 		if json.Unmarshal(b, &rec) != nil {
@@ -72,6 +80,15 @@ func ParseCodex(r io.Reader, id string) (Raw, error) {
 			return
 		}
 		ev := timeline.Event{Time: t, Kind: timeline.Agent}
+		if rec.Type == "response_item" && (p.Type == "custom_tool_call" || p.Type == "function_call") && !patched[p.CallID] {
+			if patch, ok := findPatch(p.Input + p.Arguments); ok {
+				if p.CallID != "" {
+					patched[p.CallID] = true
+				}
+				out.addAgent(ev, patchEdit(patch))
+				return
+			}
+		}
 		if rec.Type != "event_msg" {
 			out.Events = append(out.Events, ev)
 			return

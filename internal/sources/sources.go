@@ -33,6 +33,21 @@ type Raw struct {
 	Events []timeline.Event
 	// Scores holds the text score of each human prompt, by index into Events.
 	Scores map[int]textscore.Score
+	// Edits holds the file changes made by agent events, by index into Events.
+	// Each event's Added and Removed already hold the counts.
+	Edits map[int]Edit
+}
+
+// addAgent appends an agent event carrying edit e, if it changed any lines.
+func (r *Raw) addAgent(ev timeline.Event, e Edit) {
+	if e.Added > 0 || e.Removed > 0 {
+		if r.Edits == nil {
+			r.Edits = map[int]Edit{}
+		}
+		r.Edits[len(r.Events)] = e
+		ev.Added, ev.Removed = e.Added, e.Removed
+	}
+	r.Events = append(r.Events, ev)
 }
 
 func (r *Raw) addPrompt(ev timeline.Event, text string) {
@@ -76,23 +91,41 @@ func Walk(root string, parse Parser) (out []Raw, warnings []string) {
 	return out, warnings
 }
 
-func parseFile(path string, parse Parser) (Raw, error) {
+// openLog opens a log file, decompressing a .zst one.
+func openLog(path string) (io.Reader, func(), error) {
 	f, err := os.Open(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !strings.HasSuffix(path, ".zst") {
+		return f, func() { f.Close() }, nil
+	}
+	zr, err := zstd.NewReader(f, zstd.WithDecoderLowmem(true))
+	if err != nil {
+		f.Close()
+		return nil, nil, err
+	}
+	return zr, func() { zr.Close(); f.Close() }, nil
+}
+
+// ReadLog returns a log file's contents, decompressed.
+func ReadLog(path string) ([]byte, error) {
+	r, done, err := openLog(path)
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+	return io.ReadAll(r)
+}
+
+func parseFile(path string, parse Parser) (Raw, error) {
+	rd, done, err := openLog(path)
 	if err != nil {
 		return Raw{}, err
 	}
-	defer f.Close()
-	var rd io.Reader = f
-	id := strings.TrimSuffix(filepath.Base(path), ".zst")
-	if id != filepath.Base(path) {
-		zr, err := zstd.NewReader(f, zstd.WithDecoderLowmem(true))
-		if err != nil {
-			return Raw{}, err
-		}
-		defer zr.Close()
-		rd = zr
-	}
-	r, err := parse(rd, strings.TrimSuffix(id, ".jsonl"))
+	defer done()
+	id := strings.TrimSuffix(strings.TrimSuffix(filepath.Base(path), ".zst"), ".jsonl")
+	r, err := parse(rd, id)
 	if real, e := filepath.EvalSymlinks(path); e == nil {
 		r.Path = real
 	} else {

@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>teardrop: time tracking for coding with AI</title>
+	<meta name="description" content="teardrop counts the time you actually spend building with AI coding tools like Claude Code, Codex, and Amp. Free, open source, and private by default.">
+	<link rel="icon" href="favicon.svg">
+	<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="nav"><div class="wrap">
+	<a class="brand" href="index.html"><img src="favicon.svg" alt="">teardrop</a>
+	<div class="nav-links">
+		<a href="docs.html">Docs</a>
+		<a href="dashboard.html">Dashboard</a>
+		<a href="https://github.com/part-avocado/teardrop">GitHub</a>
+	</div>
+</div></nav>
+
+<header class="hero"><div class="wrap">
+	<h1>Track the time you <span>actually</span> spend building with AI</h1>
+	<p class="lead">teardrop reads the logs your AI coding tools already write and counts only the time you were engaged: writing prompts, reading replies, and steering the agent. An agent left running alone earns nothing.</p>
+	<div class="install" data-tabs>
+		<div class="tabs" role="tablist">
+			<button data-tab="mac" role="tab">macOS</button>
+			<button data-tab="linux" role="tab">Linux</button>
+			<button data-tab="windows" role="tab">Windows</button>
+		</div>
+		<div class="tab-panel" data-tab="mac"><div class="cmd"><code>curl -fsSL https://raw.githubusercontent.com/part-avocado/teardrop/main/install.sh | sh</code><button class="copy">Copy</button></div></div>
+		<div class="tab-panel" data-tab="linux"><div class="cmd"><code>curl -fsSL https://raw.githubusercontent.com/part-avocado/teardrop/main/install.sh | sh</code><button class="copy">Copy</button></div></div>
+		<div class="tab-panel" data-tab="windows"><div class="cmd ps"><code>irm https://raw.githubusercontent.com/part-avocado/teardrop/main/install.ps1 | iex</code><button class="copy">Copy</button></div></div>
+		<p class="note">No admin rights needed. The installer checks the download's checksum, adds teardrop to your PATH, and runs <code>teardrop setup</code>.</p>
+	</div>
+	<div class="actions">
+		<a class="btn primary" href="docs.html#quick-start">Get started</a>
+		<a class="btn" href="dashboard.html">See the dashboard</a>
+	</div>
+</div></header>
+
+<section><div class="wrap">
+	<h2>Set up in three steps</h2>
+	<p class="sub">Nothing needs to stay running in the background, and nothing changes in your AI tools without asking.</p>
+	<div class="grid steps">
+		<div class="card"><h3>Install</h3><p>Run the one-line installer above. It picks the right build for your computer, including old 32-bit Windows laptops.</p></div>
+		<div class="card"><h3>Run setup</h3><p><code>teardrop setup</code> finds Claude Code, Codex, and Amp, keeps your history from being deleted, and offers hooks for real-time capture.</p></div>
+		<div class="card"><h3>Code as usual</h3><p>Run <code>teardrop</code> for a timeline in your terminal, or <code>teardrop dashboard</code> for live charts in your browser.</p></div>
+	</div>
+</div></section>
+
+<section><div class="wrap split">
+	<div>
+		<h2>Hours that mean something</h2>
+		<p class="muted">Most time trackers count how long a window was open. teardrop counts how long <em>you</em> were involved.</p>
+		<ul class="muted">
+			<li><strong>Prompts and reading</strong> earn up to 5 minutes before each prompt.</li>
+			<li><strong>Watching the agent</strong> earns up to 10 minutes after each prompt.</li>
+			<li><strong>Parallel sessions</strong> on one project count once.</li>
+			<li><strong>Gibberish</strong>, <strong>going in circles</strong> (the same request a third time), and <strong>autopilot</strong> (a third “continue” or “fix it” in a row) earn no time.</li>
+		</ul>
+		<a href="docs.html#how-time-is-counted">How time is counted →</a>
+	</div>
+<pre class="terminal"><span class="dim">$</span> teardrop
+WHEN           PROJECT  ENGAGED  SPAN  PROMPTS  TOKENS IN/OUT  TOOLS
+<span class="hl">Fri Nov 20</span>
+  09:00-09:41  cs2-web  38m      41m   9        412.0k/18.3k   claude-code
+  13:05-13:22  notes    14m      17m   3        96.4k/4.1k     codex
+  16:40-17:58  cs2-web  1h11m    1h18m 21       1.2M/52.0k     amp,claude-code
+
+PROJECT  ENGAGED  SESSION TIME  PROMPTS  SKIPPED  TOKENS IN/OUT
+cs2-web  1h49m    3h02m         30       4        1.6M/70.3k
+notes    14m      1h40m         3        0        96.4k/4.1k
+
+<span class="hl">Total engaged: 2h03m</span> across 2 projects and 5 sessions</pre>
+</div></section>
+
+<section><div class="wrap">
+	<h2>Works with the tools you use</h2>
+	<p class="sub">teardrop reads each tool's own logs, and adds hooks or plugins where logs aren't enough.</p>
+	<div class="tools">
+		<span class="pill"><span class="dot"></span>Claude Code</span>
+		<span class="pill"><span class="dot"></span>Codex CLI &amp; IDE</span>
+		<span class="pill"><span class="dot"></span>Amp</span>
+		<span class="pill soon"><span class="dot"></span>VS Code &amp; Copilot (planned)</span>
+		<span class="pill soon"><span class="dot"></span>Cursor (planned)</span>
+		<span class="pill soon"><span class="dot"></span>Web chats (planned)</span>
+	</div>
+</div></section>
+
+<section><div class="wrap">
+	<h2>Built to be trusted</h2>
+	<div class="grid">
+		<div class="card"><div class="icon">🔒</div><h3>Private by default</h3><p>Only counts are synced: time, prompts, tokens, and lines. Your chats leave your machine only when you submit a project for review.</p></div>
+		<div class="card"><div class="icon">🪶</div><h3>Light</h3><p>One small binary with no runtime to install. Hooks take about 15 ms, so Claude Code stays fast on a 10-year-old laptop.</p></div>
+		<div class="card"><div class="icon">🧱</div><h3>Hard to break</h3><p>Corrupt, huge, half-written, or compressed logs are handled. One bad file never stops a report.</p></div>
+		<div class="card"><div class="icon">📖</div><h3>Open source</h3><p>Licensed under AGPLv3. Read every rule that decides your hours, and change them with flags.</p></div>
+	</div>
+</div></section>
+
+<footer><div class="wrap">
+	<span>teardrop · AGPLv3 · made for <a href="https://hackclub.com">Hack Club</a></span>
+	<span><a href="docs.html">Docs</a> · <a href="https://github.com/part-avocado/teardrop/releases">Releases</a> · <a href="https://github.com/part-avocado/teardrop/issues">Report a problem</a></span>
+</div></footer>
+<script src="site.js"></script>
+</body>
+</html>

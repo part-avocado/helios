@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Docs · teardrop</title>
+	<link rel="icon" href="favicon.svg">
+	<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="nav"><div class="wrap">
+	<a class="brand" href="index.html"><img src="favicon.svg" alt="">teardrop</a>
+	<div class="nav-links">
+		<a href="docs.html" class="active">Docs</a>
+		<a href="dashboard.html">Dashboard</a>
+		<a href="https://github.com/part-avocado/teardrop">GitHub</a>
+	</div>
+</div></nav>
+
+<div class="wrap docs">
+<aside>
+	<div class="group">Getting started</div>
+	<a href="#quick-start">Quick start</a>
+	<a href="#install">Install</a>
+	<a href="#setup">teardrop setup</a>
+	<div class="group">Using teardrop</div>
+	<a href="#report">The report</a>
+	<a href="#dashboard">The dashboard</a>
+	<a href="#verification-keys">Verification keys</a>
+	<a href="#how-time-is-counted">How time is counted</a>
+	<a href="#text-score">The text score</a>
+	<a href="#productive-struggle">Productive struggle</a>
+	<a href="#tokens">Tokens</a>
+	<div class="group">Editors &amp; agents</div>
+	<a href="#claude-code">Claude Code</a>
+	<a href="#codex">Codex</a>
+	<a href="#amp">Amp</a>
+	<a href="#other-tools">Other tools</a>
+	<div class="group">Reference</div>
+	<a href="#commands">Commands and flags</a>
+	<a href="#files">Files and folders</a>
+	<a href="#server">Sync and submit</a>
+	<a href="#privacy">Privacy</a>
+	<a href="#troubleshooting">Troubleshooting</a>
+	<a href="#uninstall">Uninstall</a>
+</aside>
+<article>
+	<h1>teardrop docs</h1>
+	<p class="muted">Everything you need to install teardrop, read your stats, and understand where every minute comes from.</p>
+
+	<h2 id="quick-start">Quick start</h2>
+	<ol>
+		<li>Install teardrop with the command for your OS below.</li>
+		<li>Answer the questions <code>teardrop setup</code> asks. Saying yes to each is the recommended setup.</li>
+		<li>Use Claude Code, Codex, or Amp as you normally do.</li>
+		<li>Run <code>teardrop</code> for your timeline, or <code>teardrop dashboard</code> for charts.</li>
+	</ol>
+
+	<h2 id="install">Install</h2>
+	<h3>macOS, Linux, and Git Bash on Windows</h3>
+	<pre><code>curl -fsSL https://raw.githubusercontent.com/part-avocado/teardrop/main/install.sh | sh</code></pre>
+	<h3>Windows (PowerShell)</h3>
+	<pre><code>irm https://raw.githubusercontent.com/part-avocado/teardrop/main/install.ps1 | iex</code></pre>
+	<p>The installer downloads the right binary, checks it against the release's <code>checksums.txt</code>, and installs it without admin rights to <code>~/.local/bin</code>, or <code>%LOCALAPPDATA%\Programs\teardrop</code> on Windows. It adds that folder to your PATH, then runs <code>teardrop setup</code>. Open a new terminal afterwards so the PATH change applies.</p>
+	<p>Run the same command again to update. These optional environment variables change what it does:</p>
+	<table>
+		<tr><th>Variable</th><th>Effect</th></tr>
+		<tr><td><code>TEARDROP_VERSION</code></td><td>Install a specific release, such as <code>v0.1.0</code>.</td></tr>
+		<tr><td><code>TEARDROP_INSTALL_DIR</code></td><td>Install to another folder.</td></tr>
+		<tr><td><code>TEARDROP_NO_MODIFY_PATH</code></td><td>Don't edit your shell profile or PATH; print the line to add instead.</td></tr>
+		<tr><td><code>TEARDROP_NO_SETUP</code></td><td>Don't run <code>teardrop setup</code> afterwards.</td></tr>
+	</table>
+	<p>With Go 1.25 or later you can also run <code>go install github.com/part-avocado/teardrop/cmd/teardrop@latest</code>.</p>
+
+	<h2 id="setup">teardrop setup</h2>
+	<p><code>teardrop setup</code> shows every place teardrop looks for logs, how many sessions it found, and when the newest one is from. Then it offers to:</p>
+	<ul>
+		<li><strong>Keep Claude Code history.</strong> Claude Code deletes transcripts after 30 days by default. Setup offers to raise <code>cleanupPeriodDays</code> to 3650.</li>
+		<li><strong>Add Claude Code hooks</strong> for real-time capture. See <a href="#claude-code">Claude Code</a>.</li>
+		<li><strong>Add the Amp plugin.</strong> See <a href="#amp">Amp</a>.</li>
+	</ul>
+	<div class="callout">Setup never changes anything without a yes. It keeps your own hooks and settings, saves a backup the first time it edits a file, and is safe to run again. Pass <code>-yes</code> to accept everything without prompts.</div>
+
+	<h2 id="report">The report</h2>
+	<p>Run <code>teardrop</code> to see the last 7 days, or <code>teardrop -since 30d</code> for longer. The first table lists work blocks; the second totals each project.</p>
+	<table>
+		<tr><th>Column</th><th>Meaning</th></tr>
+		<tr><td>ENGAGED</td><td>Time you were plausibly involved. This is the number that matters.</td></tr>
+		<tr><td>SPAN / SESSION TIME</td><td>Wall-clock time from first to last activity, for comparison.</td></tr>
+		<tr><td>PROMPTS</td><td>Prompts you sent that passed the text check.</td></tr>
+		<tr><td>SKIPPED</td><td>Prompts that earned no time: gibberish, repeats, and autopilot. See <a href="#productive-struggle">Productive struggle</a>.</td></tr>
+		<tr><td>TOKENS IN/OUT</td><td>Tokens the model read (cached ones included) and wrote.</td></tr>
+		<tr><td>TOOLS</td><td>Which AI tools you used in that block.</td></tr>
+	</table>
+	<p>A project is identified by its git remote, then its repository folder, then its working folder, so the same repo adds up across tools and clones. Add <code>-json</code> to get the report as data.</p>
+
+	<h2 id="dashboard">The dashboard</h2>
+	<p>Run <code>teardrop dashboard</code> to open live charts in your browser: an activity heatmap, daily totals, projects, tools, and recent work blocks. It refreshes every 30 seconds.</p>
+	<p>The dashboard runs on <code>localhost</code> only and refuses requests from other sites, so your stats never leave your computer. You can also open the <a href="dashboard.html">dashboard on this website</a> and drop in a file from <code>teardrop export -o stats.json</code>; the file is read in your browser and not uploaded.</p>
+	<h3 id="verification-keys">Verification keys</h3>
+	<p>Every export carries a verification key: an Ed25519 signature, made by your account, over the report's numbers, the time it was made, and the time it expires. Change one minute of engaged time, the account, or a date, and the key no longer matches. The dashboard refuses a file that:</p>
+	<ul>
+		<li>has no key, or a key that doesn't match its contents;</li>
+		<li>is more than 7 days old, so an old or reused file can't stand in for current numbers;</li>
+		<li>claims to be made in the future, or contains activity after the time it was made.</li>
+	</ul>
+	<p>Your account key is created the first time you export and kept in teardrop's data folder as <code>account.key</code>. The dashboard shows the account ID it belongs to, such as <code>td-4283292a8f76</code>.</p>
+	<div class="callout warn">Verification proves a file wasn't edited after <code>teardrop export</code> made it. Because the account key lives on your computer, it can't yet stop someone who extracts the key and signs made-up numbers. That needs a server that registers each account's key, which is planned.</div>
+
+	<h2 id="how-time-is-counted">How time is counted</h2>
+	<p>Each session is a list of events: your prompts, and the agent's replies and tool calls. teardrop credits the time between two events like this:</p>
+	<ul>
+		<li><strong>Before a prompt</strong>, you were reading the agent's output and writing. Up to the last <strong>5 minutes</strong> of the gap count.</li>
+		<li><strong>While the agent works</strong>, time counts only within <strong>10 minutes</strong> of your last prompt. An agent running for an hour after one prompt earns 10 minutes.</li>
+		<li><strong>Overlaps</strong> count once: two sessions on one project at the same time add no extra time, and your overall total counts each minute once across projects.</li>
+	</ul>
+	<div class="callout warn"><strong>Testing doesn't count.</strong> Time spent testing your build outside the agent chat, such as clicking through the app or writing up feedback before you send it, isn't counted by teardrop. Record it with <a href="https://lapse.hackclub.com">Lapse</a>. Lapse time is counted on Hackatime, and reviewers take any overlap with teardrop off so nothing counts twice.</div>
+	<p>Engaged stretches less than 15 minutes apart are shown as one block. Change each limit with <code>-compose-cap</code>, <code>-watch-cap</code>, and <code>-block-gap</code>, such as <code>teardrop -watch-cap 5m</code>.</p>
+
+	<h2 id="text-score">The text score</h2>
+	<p>A prompt earns time only if most of its words are real. A word counts as real when it's in the English dictionary, looks like code (<code>getUserById()</code>, <code>src/net.go</code>, <code>API</code>), is common chat or tech shorthand (<code>lgtm</code>, <code>vercel</code>), or appears in your project's own files. Prompts with more than half unrecognized words are skipped as gibberish. Words in non-Latin scripts are never penalized.</p>
+
+	<h2 id="productive-struggle">Productive struggle</h2>
+	<p>Not every prompt is struggle. Going in circles and waving the agent on shouldn't add hours, so two more rules decide whether a prompt earns time. A skipped prompt earns no time for writing it and doesn't extend the time credited for watching the agent.</p>
+	<h3>Repetition</h3>
+	<p>A prompt that's nearly the same as two of the session's last five prompts is skipped. Asking again once is normal, since the agent's first try often fails; the third time, you're going in circles, and that's the moment to change approach. Rewordings such as different punctuation, a dropped “the”, or “doesn't” for “does not” still count as the same request.</p>
+	<h3>Autopilot</h3>
+	<p>Short prompts that only steer, such as “continue”, “yes do it”, “fix it”, or “still not working”, are fine on their own: approving a plan is real work. From the third one in a row, they're skipped until you write a substantive prompt again.</p>
+	<p>To compare prompts without keeping them, teardrop stores a 64-bit fingerprint (a SimHash) of each prompt's words. Similar prompts have similar fingerprints, but a fingerprint can't be turned back into text.</p>
+
+	<h2 id="tokens">Tokens</h2>
+	<p>Token counts come from the usage records Claude Code and Codex save with each response. A Claude Code response that's written several times, or copied into a resumed session, counts once. Codex counts are taken from the increase in its running totals.</p>
+
+	<h2 id="claude-code">Claude Code</h2>
+	<p>teardrop reads transcripts from <code>$CLAUDE_CONFIG_DIR</code> (which may list several folders), <code>~/.claude</code>, and <code>~/.config/claude</code>. It tells your prompts apart from tool results, compaction summaries, background notices, and subagent messages.</p>
+	<p>With hooks installed, Claude Code runs <code>teardrop hook claude-code</code> when a session starts or ends, when you send a prompt, and when Claude finishes. Each run appends one line to a local journal: the time, session, folder, and the prompt's word counts and fingerprint, never its text. If Claude Code deletes a transcript, the journal still has that session.</p>
+
+	<h2 id="codex">Codex</h2>
+	<p>teardrop reads rollouts from <code>$CODEX_HOME</code> or <code>~/.codex</code>, in both <code>sessions</code> and <code>archived_sessions</code>, including compressed <code>.jsonl.zst</code> files. It handles both the older and the current (0.147 and later) log formats. Subagent and reviewer sessions never count as your prompts. No hooks are needed.</p>
+
+	<h2 id="amp">Amp</h2>
+	<p>Amp keeps threads on its servers, so setup offers to write a plugin to <code>~/.config/amp/plugins/teardrop.ts</code>. It records when a thread starts, when you send a prompt, and when Amp finishes, in the same journal as the Claude Code hooks. New Amp threads load it automatically; in open ones, run <code>plugins: reload</code>.</p>
+	<div class="callout warn">Amp threads that run in Amp's cloud orbs are not on your machine, so a local teardrop can't see them.</div>
+
+	<h2 id="other-tools">Other tools</h2>
+	<p>A VS Code extension (for Copilot, Cursor, and hand-written code) and a browser extension (for web chats like ChatGPT) are planned. Follow progress on <a href="https://github.com/part-avocado/teardrop">GitHub</a>.</p>
+
+	<h2 id="lines">Lines of code</h2>
+	<p>For each project the report shows the lines agents changed (<strong>AGENT LINES</strong>, from Claude Code's Edit, MultiEdit, and Write calls and Codex's <code>apply_patch</code>), how many of the added lines later turned up in your commits (<strong>KEPT</strong>), and the lines your own commits added (<strong>COMMITTED</strong>). A session that looks busy but leaves nothing in git shows up here. Lines are matched by a hash; the code itself is not kept.</p>
+
+	<h2 id="commands">Commands and flags</h2>
+	<table>
+		<tr><th>Command</th><th>What it does</th></tr>
+		<tr><td><code>teardrop</code></td><td>Print your timeline and project totals.</td></tr>
+		<tr><td><code>teardrop setup</code></td><td>Check tools, keep history, install hooks and the Amp plugin.</td></tr>
+		<tr><td><code>teardrop dashboard</code></td><td>Open the live dashboard on localhost.</td></tr>
+		<tr><td><code>teardrop export</code></td><td>Write a signed report for the dashboard (<code>-o file</code>, <code>-since</code>, default 365d).</td></tr>
+		<tr><td><code>teardrop sync</code></td><td>Upload your signed counts to the central server (<code>-server URL</code> once; remembered).</td></tr>
+		<tr><td><code>teardrop submit &lt;project&gt;</code></td><td>Submit a project's hours with the chat logs behind them (<code>-o file</code> to write instead, <code>-lapse</code> for Lapse sessions, <code>-yes</code>).</td></tr>
+		<tr><td><code>teardrop server</code></td><td>Run the central server with its admin review pages (<code>-addr</code>, <code>-data</code>, <code>-public-url</code>).</td></tr>
+		<tr><td><code>teardrop -version</code></td><td>Print the installed version.</td></tr>
+	</table>
+	<table>
+		<tr><th>Flag</th><th>Default</th><th>Meaning</th></tr>
+		<tr><td><code>-since</code></td><td><code>7d</code></td><td>How far back to count, such as <code>24h</code> or <code>30d</code>.</td></tr>
+		<tr><td><code>-json</code></td><td></td><td>Print the report as JSON.</td></tr>
+		<tr><td><code>-verbose</code></td><td></td><td>List log files that couldn't be read.</td></tr>
+		<tr><td><code>-claude-dir</code>, <code>-codex-dir</code></td><td></td><td>Look for logs in these folders instead (comma-separated).</td></tr>
+		<tr><td><code>-compose-cap</code></td><td><code>5m</code></td><td>Max credit for reading and writing one prompt.</td></tr>
+		<tr><td><code>-watch-cap</code></td><td><code>10m</code></td><td>Max credit for watching the agent after a prompt.</td></tr>
+		<tr><td><code>-block-gap</code></td><td><code>15m</code></td><td>Join blocks closer than this.</td></tr>
+	</table>
+	<p><code>teardrop setup</code> takes <code>-yes</code> and <code>-remove-hooks</code>. <code>teardrop dashboard</code> takes <code>-addr</code> (default <code>127.0.0.1:7878</code>) and <code>-no-open</code>.</p>
+
+	<h2 id="files">Files and folders</h2>
+	<table>
+		<tr><th>What</th><th>Where</th></tr>
+		<tr><td>Account key</td><td><code>account.key</code> in the journal folder below. Keep it private; deleting it starts a new account.</td></tr>
+		<tr><td>Hook journal</td><td><code>~/.local/share/teardrop</code>, <code>~/Library/Application Support/teardrop</code> on macOS, <code>%LOCALAPPDATA%\teardrop</code> on Windows. Override with <code>TEARDROP_DATA_DIR</code>.</td></tr>
+		<tr><td>Claude Code hooks</td><td>The <code>hooks</code> setting in Claude Code's <code>settings.json</code>.</td></tr>
+		<tr><td>Amp plugin</td><td><code>~/.config/amp/plugins/teardrop.ts</code></td></tr>
+		<tr><td>Settings backups</td><td><code>settings.json.teardrop-backup</code>, next to the original.</td></tr>
+	</table>
+
+	<h2 id="server">Sync and submit</h2>
+	<p><code>teardrop sync -server https://…</code> uploads your signed counts: time blocks, prompt and skipped-prompt counts, tokens, and line counts. Once a server is set, hooks sync in the background every 15 minutes. Sync never uploads text.</p>
+	<p><code>teardrop submit &lt;project&gt;</code> sends a project's hours for review together with the full chat logs behind them: your prompts, the agent's replies, and its code changes. It asks before uploading; <code>-o file</code> writes the submission so you can read it first. The server refuses a submission whose logs were changed after signing, or that claims a block no log backs, and recomputes the hours from the logs itself. Add your Lapse sessions with <code>-lapse &lt;link&gt;,…</code>; time they also cover is taken off, since Hackatime already counts it.</p>
+	<p>Anyone can see an account's totals. Work blocks, submissions, and chats are visible only to admins, who sign in with Slack at <code>/admin</code> on the server. See the <a href="https://github.com/part-avocado/teardrop#running-a-server">README</a> to run a server.</p>
+
+	<h2 id="privacy">Privacy</h2>
+	<p>teardrop reads timestamps, token counts, line counts, and working folders from your logs. Prompt text is only scored in memory to count recognized words; it is never stored or printed, and <code>sync</code> never uploads it. Your chat logs leave your computer only when you run <code>teardrop submit</code> and confirm.</p>
+
+	<h2 id="troubleshooting">Troubleshooting</h2>
+	<h3>“No Claude Code or Codex sessions found”</h3>
+	<p>Run <code>teardrop setup</code> to see where teardrop looked. If your logs live elsewhere, such as inside WSL on Windows, pass <code>-claude-dir</code> or <code>-codex-dir</code>. Try <code>-since 30d</code> if your last session was more than a week ago.</p>
+	<h3>“teardrop: command not found”</h3>
+	<p>Open a new terminal so the PATH change applies. On Windows, restart any terminal that was open during install.</p>
+	<h3>“skipped N log files that could not be read”</h3>
+	<p>Run <code>teardrop -verbose</code> to list them. Usually they are files a tool is still writing, and the rest of the report is unaffected.</p>
+	<h3>My hours look too low or too high</h3>
+	<p>Compare ENGAGED with how long you think you worked, then adjust <code>-compose-cap</code> and <code>-watch-cap</code>. Please <a href="https://github.com/part-avocado/teardrop/issues">open an issue</a> with the numbers; it helps tune the defaults.</p>
+
+	<h2 id="uninstall">Uninstall</h2>
+	<p>Run <code>teardrop setup -remove-hooks</code> first. It removes the Claude Code hooks and the Amp plugin and leaves your other settings as they were. Then delete the <code>teardrop</code> binary and, if you want, the journal folder.</p>
+</article>
+</div>
+
+<footer><div class="wrap">
+	<span>teardrop · AGPLv3 · made for <a href="https://hackclub.com">Hack Club</a></span>
+	<span><a href="index.html">Home</a> · <a href="https://github.com/part-avocado/teardrop/issues">Report a problem</a></span>
+</div></footer>
+<script src="site.js"></script>
+</body>
+</html>

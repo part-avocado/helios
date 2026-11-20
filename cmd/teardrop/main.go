@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -37,6 +38,21 @@ func main() {
 		case "hook":
 			runHook(os.Args[2:])
 			return
+		case "dashboard":
+			runDashboard(os.Args[2:])
+			return
+		case "export":
+			runExport(os.Args[2:])
+			return
+		case "sync":
+			runSync(os.Args[2:])
+			return
+		case "submit":
+			runSubmit(os.Args[2:])
+			return
+		case "server":
+			runServer(os.Args[2:])
+			return
 		}
 	}
 	claudeDir := flag.String("claude-dir", "", "Claude Code config directories, comma-separated (default: $CLAUDE_CONFIG_DIR, ~/.claude, ~/.config/claude)")
@@ -52,6 +68,11 @@ func main() {
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage: teardrop [flags]   show your AI coding timeline")
 		fmt.Fprintln(os.Stderr, "       teardrop setup      check which tools are found, install hooks, fix settings that lose history")
+		fmt.Fprintln(os.Stderr, "       teardrop dashboard  open a live dashboard of your stats in the browser")
+		fmt.Fprintln(os.Stderr, "       teardrop export     write a signed report to load in the dashboard")
+		fmt.Fprintln(os.Stderr, "       teardrop sync       upload your signed counts (time, prompts, tokens, lines; no text) to the central server")
+		fmt.Fprintln(os.Stderr, "       teardrop submit     submit a project's hours with the full chat logs behind them, for review")
+		fmt.Fprintln(os.Stderr, "       teardrop server     run the central server")
 		fmt.Fprintln(os.Stderr)
 		flag.PrintDefaults()
 	}
@@ -63,51 +84,9 @@ func main() {
 	window, err := parseSince(*since)
 	check(err)
 
-	raws, _, warnings := load(locations(*claudeDir, *codexDir))
-	journal, jw := sources.ReadJournal(dataDir())
-	raws = mergeJournal(raws, journal)
-	warnings = append(warnings, jw...)
+	raws, warnings := loadAll(*claudeDir, *codexDir)
 	reportWarnings(warnings, *verbose)
-
-	cutoff := time.Now().Add(-window)
-	type resolved struct {
-		project timeline.Project
-		root    string
-	}
-	projects := map[string]resolved{}
-	vocabs := map[string]textscore.Vocab{}
-	var sessions []timeline.Session
-	for _, r := range raws {
-		key := r.Cwd + "\x00" + r.GitURL
-		p, ok := projects[key]
-		if !ok {
-			p.project, p.root = resolveProject(r.Cwd, r.GitURL)
-			projects[key] = p
-		}
-		var ev []timeline.Event
-		for i, e := range r.Events {
-			if !e.Time.After(cutoff) {
-				continue
-			}
-			if s, ok := r.Scores[i]; ok && s.Judged > 0 {
-				// Read the project's files only when a prompt has words the dictionary lacks.
-				v, built := vocabs[p.root]
-				if len(s.Unknown) > 0 && !built {
-					v = textscore.RepoVocab(p.root)
-					vocabs[p.root] = v
-				}
-				if s.Noise(v) > noiseThreshold {
-					e.Kind = timeline.Noise
-				}
-			}
-			ev = append(ev, e)
-		}
-		if len(ev) > 0 {
-			sessions = append(sessions, timeline.Session{Tool: r.Tool, ID: r.ID, Project: p.project, Events: ev})
-		}
-	}
-
-	rep := timeline.Build(sessions, rules)
+	rep, sessions := buildReport(raws, time.Now().Add(-window), rules)
 	if *asJSON {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
@@ -124,6 +103,77 @@ func main() {
 		return
 	}
 	printReport(rep, len(sessions))
+}
+
+// loadAll reads every transcript plus the hook journal.
+func loadAll(claudeDir, codexDir string) ([]sources.Raw, []string) {
+	raws, _, warnings := load(locations(claudeDir, codexDir))
+	journal, jw := sources.ReadJournal(dataDir())
+	return mergeJournal(raws, journal), append(warnings, jw...)
+}
+
+// buildReport credits the events of raws after cutoff.
+func buildReport(raws []sources.Raw, cutoff time.Time, rules timeline.Rules) (timeline.Report, []timeline.Session) {
+	sessions, committed := buildSessions(raws, cutoff, localProjects())
+	rep := timeline.Build(sessions, rules)
+	for i := range rep.Projects {
+		rep.Projects[i].Committed = committed[rep.Projects[i].Project.Key]
+	}
+	return rep, sessions
+}
+
+// buildSessions resolves each log to a project, keeps events after cutoff,
+// marks prompts that fail the text check as noise, and finds the lines agents
+// wrote that were later committed. It also returns the lines committed to
+// each project's repository in the window. resolve names a log's project and
+// the directory holding its files, if any.
+func buildSessions(raws []sources.Raw, cutoff time.Time, resolve func(sources.Raw) (timeline.Project, string)) ([]timeline.Session, map[string]int) {
+	vocabs := map[string]textscore.Vocab{}
+	repos := map[string]*commitLines{}
+	committed := map[string]int{}
+	var sessions []timeline.Session
+	for _, r := range raws {
+		var p struct {
+			project timeline.Project
+			root    string
+		}
+		p.project, p.root = resolve(r)
+		// Classify the whole session, so prompts before the window still count
+		// as context for repeats and autopilot runs.
+		all := slices.Clone(r.Events)
+		discount(all, r.Scores, func(e timeline.Event, s textscore.Score) bool {
+			if !e.Time.After(cutoff) {
+				return false // outside the window: only context, so skip reading the repo
+			}
+			// Read the project's files only when a prompt has words the dictionary lacks.
+			v, built := vocabs[p.root]
+			if len(s.Unknown) > 0 && !built {
+				v = textscore.RepoVocab(p.root)
+				vocabs[p.root] = v
+			}
+			return s.Noise(v) > noiseThreshold
+		})
+		var ev []timeline.Event
+		for i, e := range all {
+			if !e.Time.After(cutoff) {
+				continue
+			}
+			c := repos[p.root]
+			if c == nil {
+				c = readCommits(p.root, cutoff)
+				repos[p.root] = c
+				committed[p.project.Key] += c.added
+			}
+			if edit, ok := r.Edits[i]; ok {
+				e.Kept = c.claim(edit.Hashes)
+			}
+			ev = append(ev, e)
+		}
+		if len(ev) > 0 {
+			sessions = append(sessions, timeline.Session{Tool: r.Tool, ID: r.ID, Path: r.Path, Project: p.project, Events: ev})
+		}
+	}
+	return sessions, committed
 }
 
 func printReport(rep timeline.Report, nSessions int) {
@@ -144,18 +194,28 @@ func printReport(rep timeline.Report, nSessions int) {
 
 	fmt.Println()
 	w = tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "PROJECT\tENGAGED\tSESSION TIME\tPROMPTS\tNOISE\tTOKENS IN/OUT")
-	noise := 0
+	fmt.Fprintln(w, "PROJECT\tENGAGED\tSESSION TIME\tPROMPTS\tSKIPPED\tTOKENS IN/OUT\tAGENT LINES +/-\tKEPT\tCOMMITTED")
+	var noise, repeat, auto int
 	for _, p := range rep.Projects {
-		noise += p.NoisePrompts
-		fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%d\t%s\n", p.Project.Name, dur(time.Duration(p.Engaged)),
-			dur(time.Duration(p.SessionTime)), p.Prompts, p.NoisePrompts, tokens(p.In, p.Out))
+		noise, repeat, auto = noise+p.NoisePrompts, repeat+p.RepeatPrompts, auto+p.AutopilotPrompts
+		fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%d\t%s\t+%d/-%d\t%d\t%d\n", p.Project.Name, dur(time.Duration(p.Engaged)), dur(time.Duration(p.SessionTime)),
+			p.Prompts, p.NoisePrompts+p.RepeatPrompts+p.AutopilotPrompts, tokens(p.In, p.Out), p.Lines.Added, p.Lines.Removed, p.Lines.Kept, p.Committed)
 	}
 	w.Flush()
 	fmt.Printf("\nTotal engaged: %s across %s and %s\n", dur(time.Duration(rep.Engaged)), plural(len(rep.Projects), "project"), plural(nSessions, "session"))
-	if noise > 0 {
-		fmt.Printf("%s mostly unrecognized words and earned no time (NOISE).\n", plural(noise, "prompt")+map[bool]string{true: " was", false: " were"}[noise == 1])
+	if skipped := noise + repeat + auto; skipped > 0 {
+		var why []string
+		for _, r := range []struct {
+			n    int
+			text string
+		}{{noise, "gibberish"}, {repeat, "repeated the same request a third time or more"}, {auto, "autopilot: the third or later \"continue\" or \"fix it\" in a row"}} {
+			if r.n > 0 {
+				why = append(why, fmt.Sprintf("%d %s", r.n, r.text))
+			}
+		}
+		fmt.Printf("%s earned no time (SKIPPED): %s.\n", plural(skipped, "prompt"), strings.Join(why, "; "))
 	}
+	fmt.Println(testingNotice)
 }
 
 func reportWarnings(warnings []string, verbose bool) {
@@ -184,6 +244,24 @@ func parseSince(s string) (time.Duration, error) {
 		return 0, fmt.Errorf("-since %q: use a length such as 24h, 7d, or 30d", s)
 	}
 	return d, nil
+}
+
+// localProjects resolves logs to projects on this machine, asking git once per directory.
+func localProjects() func(sources.Raw) (timeline.Project, string) {
+	type resolved struct {
+		project timeline.Project
+		root    string
+	}
+	cache := map[string]resolved{}
+	return func(r sources.Raw) (timeline.Project, string) {
+		key := r.Cwd + "\x00" + r.GitURL
+		p, ok := cache[key]
+		if !ok {
+			p.project, p.root = resolveProject(r.Cwd, r.GitURL)
+			cache[key] = p
+		}
+		return p.project, p.root
+	}
 }
 
 // resolveProject names a project by its git remote, else its repository root,

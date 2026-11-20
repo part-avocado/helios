@@ -3,6 +3,7 @@ package sources
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -22,6 +23,8 @@ type JournalEvent struct {
 	Cwd     string    `json:"cwd,omitempty"`
 	Judged  int       `json:"judged,omitempty"` // text score of a human prompt
 	Real    int       `json:"real,omitempty"`
+	Sim     uint64    `json:"sim,omitempty"` // prompt fingerprint, for finding repeats
+	Low     bool      `json:"low,omitempty"` // prompt only steers ("continue", "fix it")
 }
 
 // AppendJournal adds ev to the month's journal file in dir. Each event is
@@ -50,48 +53,89 @@ func AppendJournal(dir string, ev JournalEvent) error {
 // A missing dir yields nothing; unreadable files are reported in warnings.
 func ReadJournal(dir string) (out []Raw, warnings []string) {
 	files, _ := filepath.Glob(filepath.Join(dir, "events-*.jsonl")) // sorted, so months are in order
-	byKey := map[string]*Raw{}
-	var order []string
+	j := journal{byKey: map[string]*Raw{}}
 	for _, path := range files {
 		f, err := os.Open(path)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("skipped %s: %v", path, err))
 			continue
 		}
-		err = lines(f, func(b []byte) {
-			var ev JournalEvent
-			if json.Unmarshal(b, &ev) != nil || ev.Session == "" || ev.Time.IsZero() {
-				return
-			}
-			key := ev.Tool + "\x00" + ev.Session
-			r := byKey[key]
-			if r == nil {
-				r = &Raw{Tool: ev.Tool, ID: ev.Session, Path: path + "#" + ev.Session}
-				byKey[key] = r
-				order = append(order, key)
-			}
-			if r.Cwd == "" {
-				r.Cwd = ev.Cwd
-			}
-			e := timeline.Event{Time: ev.Time, Kind: timeline.Agent}
-			if !ev.Human {
-				r.Events = append(r.Events, e)
-				return
-			}
-			e.Kind = timeline.Human
-			if r.Scores == nil {
-				r.Scores = map[int]textscore.Score{}
-			}
-			r.Scores[len(r.Events)] = textscore.Score{Judged: ev.Judged, Real: ev.Real}
-			r.Events = append(r.Events, e)
-		})
+		err = j.read(f, path)
 		f.Close()
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("skipped part of %s: %v", path, err))
 		}
 	}
-	for _, k := range order {
-		out = append(out, *byKey[k])
+	return j.raws(), warnings
+}
+
+// ParseJournal reads journal lines from r, such as those a submission holds,
+// into one Raw per session.
+func ParseJournal(r io.Reader, name string) ([]Raw, error) {
+	j := journal{byKey: map[string]*Raw{}}
+	err := j.read(r, name)
+	return j.raws(), err
+}
+
+// JournalLines returns the journal lines of one session, as written.
+func JournalLines(dir, tool, session string) []byte {
+	files, _ := filepath.Glob(filepath.Join(dir, "events-*.jsonl"))
+	var out []byte
+	for _, path := range files {
+		f, err := os.Open(path)
+		if err != nil {
+			continue
+		}
+		lines(f, func(b []byte) {
+			var ev JournalEvent
+			if json.Unmarshal(b, &ev) == nil && ev.Tool == tool && ev.Session == session {
+				out = append(append(out, b...), '\n')
+			}
+		})
+		f.Close()
 	}
-	return out, warnings
+	return out
+}
+
+type journal struct {
+	byKey map[string]*Raw
+	order []string
+}
+
+func (j *journal) read(f io.Reader, path string) error {
+	return lines(f, func(b []byte) {
+		var ev JournalEvent
+		if json.Unmarshal(b, &ev) != nil || ev.Session == "" || ev.Time.IsZero() {
+			return
+		}
+		key := ev.Tool + "\x00" + ev.Session
+		r := j.byKey[key]
+		if r == nil {
+			r = &Raw{Tool: ev.Tool, ID: ev.Session, Path: path + "#" + ev.Session}
+			j.byKey[key] = r
+			j.order = append(j.order, key)
+		}
+		if r.Cwd == "" {
+			r.Cwd = ev.Cwd
+		}
+		e := timeline.Event{Time: ev.Time, Kind: timeline.Agent}
+		if !ev.Human {
+			r.Events = append(r.Events, e)
+			return
+		}
+		e.Kind = timeline.Human
+		if r.Scores == nil {
+			r.Scores = map[int]textscore.Score{}
+		}
+		r.Scores[len(r.Events)] = textscore.Score{Judged: ev.Judged, Real: ev.Real, Sim: textscore.Fingerprint(ev.Sim), Low: ev.Low}
+		r.Events = append(r.Events, e)
+	})
+}
+
+func (j *journal) raws() []Raw {
+	var out []Raw
+	for _, k := range j.order {
+		out = append(out, *j.byKey[k])
+	}
+	return out
 }

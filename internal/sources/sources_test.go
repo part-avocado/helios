@@ -3,6 +3,7 @@ package sources
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -145,7 +146,7 @@ func TestJournal(t *testing.T) {
 	at := func(s string) time.Time { tt, _ := time.Parse(time.RFC3339, s); return tt }
 	for _, ev := range []JournalEvent{
 		{Time: at("2026-10-31T23:50:00Z"), Tool: "claude-code", Event: "SessionStart", Session: "a", Cwd: "/src/game"},
-		{Time: at("2026-10-31T23:55:00Z"), Tool: "claude-code", Event: "UserPromptSubmit", Human: true, Session: "a", Judged: 6, Real: 5},
+		{Time: at("2026-10-31T23:55:00Z"), Tool: "claude-code", Event: "UserPromptSubmit", Human: true, Session: "a", Judged: 6, Real: 5, Sim: 0xabc, Low: true},
 		{Time: at("2026-11-01T00:02:00Z"), Tool: "claude-code", Event: "Stop", Session: "a"}, // next month's file
 		{Time: at("2026-11-01T00:03:00Z"), Tool: "amp", Event: "message", Human: true, Session: "a"},
 	} {
@@ -160,7 +161,7 @@ func TestJournal(t *testing.T) {
 		t.Fatalf("got %d sessions, warnings %v", len(raws), warnings)
 	}
 	r := raws[0]
-	if r.Tool != "claude-code" || r.Cwd != "/src/game" || kinds(r.Events) != "AHA" || r.Scores[1].Judged != 6 || r.Scores[1].Real != 5 {
+	if r.Tool != "claude-code" || r.Cwd != "/src/game" || kinds(r.Events) != "AHA" || r.Scores[1].Judged != 6 || r.Scores[1].Real != 5 || r.Scores[1].Sim != 0xabc || !r.Scores[1].Low {
 		t.Errorf("claude session: %+v", r)
 	}
 	if raws[1].Tool != "amp" || kinds(raws[1].Events) != "H" {
@@ -177,4 +178,42 @@ func mustRead(t *testing.T, p string) []byte {
 		t.Fatal(err)
 	}
 	return b
+}
+
+func TestEdits(t *testing.T) {
+	// A Write, then an Edit that changes one of three lines; the second file
+	// is a fork that copies the Edit, which must count once.
+	claude := `{"type":"assistant","timestamp":"2026-11-20T15:00:00Z","message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"Write","input":{"file_path":"a.go","content":"package a\n\nfunc Hello() string {\n\treturn \"hi\"\n}\n"}}]}}
+{"type":"assistant","timestamp":"2026-11-20T15:01:00Z","message":{"id":"m2","content":[{"type":"tool_use","id":"t2","name":"Edit","input":{"file_path":"a.go","old_string":"func Hello() string {\n\treturn \"hi\"\n}","new_string":"func Hello() string {\n\treturn \"hello there\"\n}"}},{"type":"tool_use","id":"t3","name":"Read","input":{"file_path":"a.go"}}]}}
+`
+	parse := ClaudeParser()
+	r, _ := parse(strings.NewReader(claude), "s")
+	fork, _ := parse(strings.NewReader(claude[strings.Index(claude, "\n")+1:]), "fork")
+	got := [][3]int{}
+	for _, raw := range []Raw{r, fork} {
+		for _, e := range raw.Events {
+			got = append(got, [3]int{e.Added, e.Removed, len(raw.Edits)})
+		}
+	}
+	// Write adds 4 non-blank lines; Edit swaps 1. "}" is too short to hash.
+	if want := [][3]int{{4, 0, 2}, {1, 1, 2}, {0, 0, 0}}; !slices.Equal(got, want) {
+		t.Errorf("claude edits = %v, want %v", got, want)
+	}
+	if h := r.Edits[0].Hashes; len(h) != 3 {
+		t.Errorf("Write hashed %d lines, want 3 (all but \"}\")", len(h))
+	}
+
+	codex := `{"timestamp":"2026-11-20T15:00:00Z","type":"session_meta","payload":{"id":"c","cwd":"/src","source":"cli"}}
+{"timestamp":"2026-11-20T15:00:01Z","type":"response_item","payload":{"type":"function_call","name":"shell","call_id":"c1","arguments":"{\"command\":[\"apply_patch\",\"*** Begin Patch\\n*** Update File: a.go\\n@@\\n-\\treturn \\\"hi\\\"\\n+\\treturn \\\"hello\\\"\\n+\\t// greeting done\\n*** End Patch\"]}"}}
+{"timestamp":"2026-11-20T15:00:02Z","type":"response_item","payload":{"type":"custom_tool_call","name":"apply_patch","call_id":"c2","input":"*** Begin Patch\n*** Add File: b.go\n+package b\n+\n*** End Patch"}}
+{"timestamp":"2026-11-20T15:00:03Z","type":"response_item","payload":{"type":"function_call","name":"shell","call_id":"c3","arguments":"{\"command\":[\"ls\",\"-la\"]}"}}
+`
+	c, _ := ParseCodex(strings.NewReader(codex), "c")
+	var lines [][2]int
+	for _, e := range c.Events {
+		lines = append(lines, [2]int{e.Added, e.Removed})
+	}
+	if want := [][2]int{{2, 1}, {1, 0}, {0, 0}}; !slices.Equal(lines, want) {
+		t.Errorf("codex edits = %v, want %v", lines, want)
+	}
 }

@@ -27,7 +27,11 @@ type Kind uint8
 const (
 	Agent Kind = iota
 	Human
-	Noise // a prompt that failed the text check: counted, but earns no time
+	// Prompts below earn no time. They count as agent activity, so they
+	// neither earn compose time nor restart the watch window.
+	Noise     // mostly unrecognized words
+	Repeat    // nearly the same as two of the session's last five prompts
+	Autopilot // third or later low-effort prompt in a row ("continue", "fix it")
 )
 
 type Event struct {
@@ -35,6 +39,9 @@ type Event struct {
 	Kind Kind
 	In   int64 // tokens the model read for this record, cached ones included
 	Out  int64 // tokens the model wrote
+	// Lines an agent changed in files with this event, and how many of the
+	// added ones were later found in a commit.
+	Added, Removed, Kept int
 }
 
 type Project struct {
@@ -45,6 +52,7 @@ type Project struct {
 type Session struct {
 	Tool    string
 	ID      string
+	Path    string // the log it was read from
 	Project Project
 	Events  []Event
 }
@@ -71,6 +79,12 @@ type Seconds time.Duration
 
 func (s Seconds) MarshalJSON() ([]byte, error) {
 	return []byte(strconv.FormatInt(int64(time.Duration(s)/time.Second), 10)), nil
+}
+
+func (s *Seconds) UnmarshalJSON(b []byte) error {
+	n, err := strconv.ParseInt(string(b), 10, 64)
+	*s = Seconds(time.Duration(n) * time.Second)
+	return err
 }
 
 // Credit returns the merged intervals of one session in which the human was
@@ -111,17 +125,35 @@ type Block struct {
 	Prompts int       `json:"prompts"`
 	In      int64     `json:"tokens_in"`
 	Out     int64     `json:"tokens_out"`
-	Tools   []string  `json:"tools"`
+	Lines
+	Tools []string `json:"tools"`
+}
+
+// Lines counts the file lines agents changed.
+type Lines struct {
+	Added   int `json:"lines_added"`
+	Removed int `json:"lines_removed"`
+	Kept    int `json:"lines_kept"` // added lines later found in a commit
+}
+
+func (l *Lines) add(e Event) {
+	l.Added, l.Removed, l.Kept = l.Added+e.Added, l.Removed+e.Removed, l.Kept+e.Kept
 }
 
 type ProjectTotal struct {
-	Project      Project `json:"project"`
-	Engaged      Seconds `json:"engaged_seconds"`
-	SessionTime  Seconds `json:"session_seconds"` // union of first-to-last event spans
-	Prompts      int     `json:"prompts"`
-	NoisePrompts int     `json:"noise_prompts"`
-	In           int64   `json:"tokens_in"`
-	Out          int64   `json:"tokens_out"`
+	Project          Project `json:"project"`
+	Engaged          Seconds `json:"engaged_seconds"`
+	SessionTime      Seconds `json:"session_seconds"` // union of first-to-last event spans
+	Prompts          int     `json:"prompts"`
+	NoisePrompts     int     `json:"noise_prompts"`
+	RepeatPrompts    int     `json:"repeat_prompts"`
+	AutopilotPrompts int     `json:"autopilot_prompts"`
+	In               int64   `json:"tokens_in"`
+	Out              int64   `json:"tokens_out"`
+	Lines
+	// Lines added by the person's own commits to the project in the window,
+	// whoever typed them; set by the caller, which can read the repository.
+	Committed int `json:"lines_committed"`
 }
 
 type Report struct {
@@ -140,8 +172,8 @@ func Build(sessions []Session, r Rules) Report {
 		credited []tagged
 		spans    []Interval
 		prompts  []time.Time
-		noise    int
-		usage    []Event // events that carry tokens
+		skipped  [3]int  // noise, repeat, autopilot
+		usage    []Event // events that carry tokens or line changes
 	}
 	byKey := map[string]*acc{}
 	var keys []string
@@ -164,10 +196,10 @@ func Build(sessions []Session, r Rules) Report {
 			switch e.Kind {
 			case Human:
 				a.prompts = append(a.prompts, e.Time)
-			case Noise:
-				a.noise++
+			case Noise, Repeat, Autopilot:
+				a.skipped[e.Kind-Noise]++
 			}
-			if e.In > 0 || e.Out > 0 {
+			if e.In > 0 || e.Out > 0 || e.Added > 0 || e.Removed > 0 {
 				a.usage = append(a.usage, e)
 			}
 		}
@@ -185,14 +217,17 @@ func Build(sessions []Session, r Rules) Report {
 		engaged := merge(plain, 0)
 		everything = append(everything, engaged...)
 		pt := ProjectTotal{
-			Project:      a.project,
-			Engaged:      Seconds(total(engaged)),
-			SessionTime:  Seconds(total(merge(a.spans, 0))),
-			Prompts:      len(a.prompts),
-			NoisePrompts: a.noise,
+			Project:          a.project,
+			Engaged:          Seconds(total(engaged)),
+			SessionTime:      Seconds(total(merge(a.spans, 0))),
+			Prompts:          len(a.prompts),
+			NoisePrompts:     a.skipped[0],
+			RepeatPrompts:    a.skipped[1],
+			AutopilotPrompts: a.skipped[2],
 		}
 		for _, e := range a.usage {
 			pt.In, pt.Out = pt.In+e.In, pt.Out+e.Out
+			pt.Lines.add(e)
 		}
 		rep.Projects = append(rep.Projects, pt)
 		for _, span := range merge(engaged, r.BlockGap) {
@@ -210,6 +245,7 @@ func Build(sessions []Session, r Rules) Report {
 			for _, e := range a.usage {
 				if !e.Time.Before(span.Start) && !e.Time.After(span.End) {
 					b.In, b.Out = b.In+e.In, b.Out+e.Out
+					b.Lines.add(e)
 				}
 			}
 			for _, t := range a.credited {
@@ -225,6 +261,39 @@ func Build(sessions []Session, r Rules) Report {
 	sort.SliceStable(rep.Projects, func(i, j int) bool { return rep.Projects[i].Engaged > rep.Projects[j].Engaged })
 	rep.Engaged = Seconds(total(merge(everything, 0)))
 	return rep
+}
+
+// Engaged returns the intervals in which the person was engaged with any of
+// sessions, overlaps counted once.
+func Engaged(sessions []Session, r Rules) []Interval {
+	var all []Interval
+	for _, s := range sessions {
+		all = append(all, Credit(s.Events, r)...)
+	}
+	return merge(all, 0)
+}
+
+// Union returns the union of iv, sorted.
+func Union(iv []Interval) []Interval { return merge(iv, 0) }
+
+// Total returns the length of the union of iv.
+func Total(iv []Interval) time.Duration { return total(merge(iv, 0)) }
+
+// Overlap returns how much of the union of a also lies within the union of b.
+func Overlap(a, b []Interval) time.Duration {
+	a, b = merge(a, 0), merge(b, 0)
+	var d time.Duration
+	for i, j := 0, 0; i < len(a) && j < len(b); {
+		if s, e := later(a[i].Start, b[j].Start), earlier(a[i].End, b[j].End); e.After(s) {
+			d += e.Sub(s)
+		}
+		if a[i].End.Before(b[j].End) {
+			i++
+		} else {
+			j++
+		}
+	}
+	return d
 }
 
 // merge returns the union of intervals, also joining intervals separated by at most gap.

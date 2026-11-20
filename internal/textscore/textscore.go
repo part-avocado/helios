@@ -40,13 +40,21 @@ type Score struct {
 	Judged  int      // words the checks could judge
 	Real    int      // judged words that are dictionary words or code
 	Unknown []string // the other judged words, lowercased, to check against a project's vocabulary
+
+	Sim Fingerprint // SimHash of the prompt's words, for finding repeats; 0 when it has no words
+	Low bool        // the prompt only steers ("continue", "yes", "fix it", "still broken")
 }
 
-// Analyze scores text. The text itself is not retained, only unknown words.
+// Analyze scores text. The text itself is not retained, only unknown words
+// and a fingerprint.
 func Analyze(text string) Score {
 	var s Score
+	var words []string
 	for _, f := range strings.Fields(text) {
 		w := strings.TrimFunc(f, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
+		if w != "" {
+			words = append(words, normalize(w))
+		}
 		if w == "" || !latin(w) {
 			continue
 		}
@@ -57,6 +65,7 @@ func Analyze(text string) Score {
 			s.Unknown = append(s.Unknown, strings.ToLower(w))
 		}
 	}
+	s.signals(words)
 	return s
 }
 

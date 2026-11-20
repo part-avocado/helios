@@ -19,24 +19,11 @@ import (
 // versions tag real prompts with origin.kind "human"; older ones are
 // classified by their content.
 func ClaudeParser() Parser {
-	counted := map[string]bool{} // message IDs whose usage was counted
+	counted := map[string]bool{} // message IDs whose usage was counted, and tool call IDs whose edit was
 	return func(r io.Reader, id string) (Raw, error) {
 		out := Raw{Tool: "claude-code", ID: id}
 		err := lines(r, func(b []byte) {
-			// Fields that vary in shape between versions stay raw, so a
-			// surprising value drops only that field, not the record.
-			var rec struct {
-				Type             string          `json:"type"`
-				Timestamp        string          `json:"timestamp"`
-				Cwd              string          `json:"cwd"`
-				SessionID        string          `json:"sessionId"`
-				RequestID        string          `json:"requestId"`
-				IsMeta           bool            `json:"isMeta"`
-				IsSidechain      bool            `json:"isSidechain"`
-				IsCompactSummary bool            `json:"isCompactSummary"`
-				Origin           json.RawMessage `json:"origin"`
-				Message          json.RawMessage `json:"message"`
-			}
+			var rec claudeRecord
 			if json.Unmarshal(b, &rec) != nil || (rec.Type != "user" && rec.Type != "assistant") {
 				return
 			}
@@ -70,16 +57,29 @@ func ClaudeParser() Parser {
 					counted[key] = true
 					ev.In, ev.Out = u.Input+u.CacheCreate+u.CacheRead, u.Output
 				}
-				out.Events = append(out.Events, ev)
+				var edit Edit
+				var calls []struct {
+					Type  string          `json:"type"`
+					ID    string          `json:"id"`
+					Name  string          `json:"name"`
+					Input json.RawMessage `json:"input"`
+				}
+				json.Unmarshal(msg.Content, &calls)
+				for _, c := range calls {
+					if c.Type != "tool_use" || counted["tool\x00"+c.ID] {
+						continue
+					}
+					if e, ok := claudeEdit(c.Name, c.Input); ok {
+						if c.ID != "" {
+							counted["tool\x00"+c.ID] = true
+						}
+						edit.merge(e)
+					}
+				}
+				out.addAgent(ev, edit)
 				return
 			}
-			var origin struct {
-				Kind string `json:"kind"`
-			}
-			hasOrigin := len(rec.Origin) > 0 && string(rec.Origin) != "null" && json.Unmarshal(rec.Origin, &origin) == nil
-			text, typed := typedText(msg.Content)
-			human := !rec.IsMeta && !rec.IsSidechain && !rec.IsCompactSummary &&
-				((hasOrigin && origin.Kind == "human") || (!hasOrigin && typed))
+			text, human := rec.prompt(msg.Content)
 			if !human {
 				out.Events = append(out.Events, ev)
 				return
@@ -89,6 +89,35 @@ func ClaudeParser() Parser {
 		})
 		return out, err
 	}
+}
+
+// claudeRecord is one line of a Claude Code transcript. Fields that vary in
+// shape between versions stay raw, so a surprising value drops only that
+// field, not the record.
+type claudeRecord struct {
+	Type             string          `json:"type"`
+	Timestamp        string          `json:"timestamp"`
+	Cwd              string          `json:"cwd"`
+	SessionID        string          `json:"sessionId"`
+	RequestID        string          `json:"requestId"`
+	IsMeta           bool            `json:"isMeta"`
+	IsSidechain      bool            `json:"isSidechain"`
+	IsCompactSummary bool            `json:"isCompactSummary"`
+	Origin           json.RawMessage `json:"origin"`
+	Message          json.RawMessage `json:"message"`
+}
+
+// prompt returns the text of a user record whose message content is content,
+// and whether a person typed it.
+func (rec claudeRecord) prompt(content json.RawMessage) (string, bool) {
+	var origin struct {
+		Kind string `json:"kind"`
+	}
+	hasOrigin := len(rec.Origin) > 0 && string(rec.Origin) != "null" && json.Unmarshal(rec.Origin, &origin) == nil
+	text, typed := typedText(content)
+	human := !rec.IsMeta && !rec.IsSidechain && !rec.IsCompactSummary &&
+		((hasOrigin && origin.Kind == "human") || (!hasOrigin && typed))
+	return text, human
 }
 
 // Prefixes of user-role text that Claude Code writes on its own.

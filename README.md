@@ -29,6 +29,13 @@ transcripts after 30 days. It changes nothing without asking and is safe to reru
 With Go 1.25 or later you can also run
 `go install github.com/part-avocado/teardrop/cmd/teardrop@latest`.
 
+### Website
+
+`site/` is the website: a landing page, docs, and the dashboard. Pushing a
+change to it on `main` publishes it to GitHub Pages with
+`.github/workflows/pages.yml`. The same files are built into the binary, so
+`teardrop dashboard` serves them with live data from `/api/report`.
+
 ### Releasing
 
 Pushing a tag such as `v0.1.0` runs `.github/workflows/release.yml`. It
@@ -41,14 +48,25 @@ builds every binary with `scripts/build-release.sh` and publishes them, with
 teardrop               # last 7 days
 teardrop -since 30d
 teardrop -json         # the same report as data
+teardrop dashboard     # live charts in your browser, served on localhost only
+teardrop export -o stats.json   # signed report for the website's dashboard
 ```
+
+Exports carry a verification key: an Ed25519 signature by this install's
+account key over the numbers, the export time, and a 7-day expiry. The
+dashboard refuses files that were edited, have no key, or have expired. The
+account key lives on your machine, so this stops editing a file, not someone
+who extracts the key; that needs the planned server.
 
 **ENGAGED** counts only time you were plausibly involved: writing prompts and
 reading replies (up to 5 minutes before each prompt) and watching the agent
 (up to 10 minutes after each prompt). An agent left running alone earns
 nothing. Prompts made mostly of unrecognized words, checked against an English
-dictionary, code-like words, and words from your own repository, earn no time
-and are listed as **NOISE**.
+dictionary, code-like words, and words from your own repository, earn no time.
+So do repeats (a prompt nearly the same as two of the session's last five)
+and autopilot (the third or later "continue", "yes", or "fix it" in a row).
+These are listed as **SKIPPED**. Repeats are found with a 64-bit fingerprint
+of each prompt; prompt text is never stored.
 
 ## Supported tools
 
@@ -65,7 +83,7 @@ Override them with `-claude-dir` and `-codex-dir`.
 `teardrop setup` offers to add hooks to Claude Code's `settings.json`. They
 run `teardrop hook claude-code` when a session starts or ends, when you send a
 prompt, and when Claude finishes. Each run appends one line (time, event,
-session, folder, and the prompt's word counts, never its text) to a journal
+session, folder, and the prompt's word counts and fingerprint, never its text) to a journal
 in `~/.local/share/teardrop`, `~/Library/Application Support/teardrop` on
 macOS, or `%LOCALAPPDATA%\teardrop` on Windows. Set `TEARDROP_DATA_DIR` to
 change it.
@@ -84,11 +102,64 @@ not tracked.
 
 Run `teardrop setup -remove-hooks` before uninstalling to remove both.
 
+## Lines of code
+
+For each project the report also shows the lines agents changed (**AGENT
+LINES**, from Claude Code's Edit, MultiEdit, and Write calls and Codex's
+`apply_patch`), how many of the added lines later turned up in your commits
+(**KEPT**), and the lines your commits added in the window (**COMMITTED**).
+A session that looks busy but leaves nothing in git shows up here. Lines are
+matched by a hash; the code itself is not kept.
+
+## Central server
+
+`teardrop sync -server https://...` uploads your signed counts: time blocks,
+prompt and skipped-prompt counts, tokens, and line counts. Once a server is
+set, hooks sync in the background every 15 minutes. It never uploads text.
+
+`teardrop submit <project>` submits a project's hours for review together
+with the full chat logs behind them: your prompts, the agent's replies, and
+its code changes. It asks first, and `-o file` writes the submission so you
+can read it before sending. The server refuses a submission whose logs were
+changed after signing or that claims a block no log backs, and recomputes the
+hours from the logs itself.
+
+Anyone can see an account's totals at `/api/v1/accounts/<id>`. Work blocks,
+submissions, and chat logs are for admins only.
+
+### Testing time and Lapse
+
+Time spent testing your build outside the agent chat doesn't count in
+teardrop. Record it with [Lapse](https://lapse.hackclub.com) instead. Pass
+your Lapse sessions with `teardrop submit -lapse <link>,...` and the server
+takes off any time Lapse also recorded, since Hackatime already counts it.
+
+### Running a server
+
+```sh
+TEARDROP_ADMINS=U012ABCDEF,U034GHIJKL \
+TEARDROP_SLACK_CLIENT_ID=... TEARDROP_SLACK_CLIENT_SECRET=... \
+teardrop server -addr :8080 -data /var/lib/teardrop -public-url https://teardrop.example.org
+```
+
+Admins are Slack user IDs (in Slack: profile, ⋮, Copy member ID). They sign
+in with Slack at `/admin` and see every account, submission, and chat. To set
+up sign-in, create a Slack app, add `https://<public-url>/auth/slack/callback`
+as a redirect URL under OAuth & Permissions, and add the `openid` user
+scope. To try the review pages locally without Slack, run
+`teardrop server -addr 127.0.0.1:8080 -dev-login U012ABCDEF`.
+
+The review page shows the claimed hours, the hours the server recomputed
+from the logs, and every chat with the time between messages. Reviewers add
+a project's Lapse or Lookout sessions there, and the time they overlap is
+deflated automatically.
+
 ## Privacy
 
-Everything stays on your machine. teardrop reads timestamps, token counts, and
-working directories. Prompt text is scored in memory and dropped; it is never
-stored or printed.
+teardrop reads timestamps, token counts, line counts, and working
+directories. Prompt text is scored in memory and dropped; it is never stored
+or printed, and `sync` never uploads it. Your chat logs leave your machine
+only when you run `teardrop submit` and confirm.
 
 ## License
 

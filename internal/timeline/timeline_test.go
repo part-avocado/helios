@@ -55,3 +55,19 @@ func TestBuild(t *testing.T) {
 		t.Errorf("blocks of a = %v, want %v", got, want)
 	}
 }
+
+func TestOverlap(t *testing.T) {
+	at := func(m int) time.Time { return time.Date(2026, 11, 20, 10, m, 0, 0, time.UTC) }
+	// a: 0-10 and 20-30 (two pieces of one union); b: 5-25 split in two touching pieces.
+	a := []Interval{{at(20), at(30)}, {at(0), at(10)}, {at(2), at(4)}}
+	b := []Interval{{at(15), at(25)}, {at(5), at(15)}}
+	if got := Overlap(a, b); got != 10*time.Minute {
+		t.Errorf("Overlap = %v, want 10m (5-10 and 20-25)", got)
+	}
+	if got := Overlap(b, a); got != 10*time.Minute {
+		t.Errorf("Overlap reversed = %v, want 10m", got)
+	}
+	if got := Total(a); got != 20*time.Minute {
+		t.Errorf("Total = %v, want 20m", got)
+	}
+}

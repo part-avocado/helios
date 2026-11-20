@@ -1,0 +1,195 @@
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/cookiejar"
+	"net/http/httptest"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/part-avocado/teardrop/internal/timeline"
+)
+
+// A submission is accepted only with the logs behind every claimed block,
+// and the server's recomputed hours match the client's.
+func TestSubmission(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("TEARDROP_DATA_DIR", filepath.Join(home, "data"))
+	claude := filepath.Join(home, "claude")
+	dir := filepath.Join(claude, "projects", "app")
+	os.MkdirAll(dir, 0o700)
+	now := time.Now().UTC().Truncate(time.Second)
+	at := func(m int) string { return now.Add(time.Duration(m-60) * time.Minute).Format(time.RFC3339) }
+	var log strings.Builder
+	prompts := []string{"add a login page with email and password", "make the button blue and center it", "now write tests for the login form"}
+	for i, p := range prompts {
+		log.WriteString(`{"type":"user","timestamp":"` + at(i*4) + `","cwd":"/nowhere/app","sessionId":"s1","message":{"content":"` + p + `"}}` + "\n")
+		log.WriteString(`{"type":"assistant","timestamp":"` + at(i*4+2) + `","message":{"id":"m` + string(rune('0'+i)) + `","content":[{"type":"text","text":"ok"}]}}` + "\n")
+	}
+	os.WriteFile(filepath.Join(dir, "s1.jsonl"), []byte(log.String()), 0o600)
+
+	raws, _ := loadAll(claude, filepath.Join(home, "nocodex"))
+	rep, sessions := buildReport(raws, now.Add(-24*time.Hour), timeline.DefaultRules)
+	if len(rep.Projects) != 1 || rep.Engaged == 0 {
+		t.Fatalf("no time found: %+v", rep)
+	}
+	key := rep.Projects[0].Project.Key
+	sub, err := makeSubmission(key, rep, sessions, "1d", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Lookout recorded 3 minutes inside the engaged time and 1 outside it.
+	engagedStart := now.Add(-60 * time.Minute) // see the log above: engaged from -60m to -50m
+	lookout := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/sessions/"+strings.Repeat("ab", 32)+"/timings" {
+			http.NotFound(w, r)
+			return
+		}
+		var ts []string
+		for _, m := range []int{5, 6, 7, 30} {
+			ts = append(ts, `"`+engagedStart.Add(time.Duration(m)*time.Minute).Format(time.RFC3339)+`"`)
+		}
+		w.Write([]byte(`{"status":"complete","timestamps":[` + strings.Join(ts, ",") + `]}`))
+	}))
+	defer lookout.Close()
+	s := &server{dir: t.TempDir(), maxBody: 1 << 20, admins: map[string]bool{"UADMIN": true}, secret: []byte("0123456789abcdef0123456789abcdef"),
+		lookout: lookout.URL, client: http.DefaultClient}
+	srv := httptest.NewServer(s.handler())
+	defer srv.Close()
+	sub.Lapse = []string{"https://lookout.hackclub.com/session?token=" + strings.Repeat("AB", 32)}
+	send := func(s Submission) (int, string) {
+		b, _ := json.Marshal(s)
+		res, err := http.Post(srv.URL+"/api/v1/submissions", "application/json", bytes.NewReader(b))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		var buf bytes.Buffer
+		buf.ReadFrom(res.Body)
+		return res.StatusCode, buf.String()
+	}
+
+	code, body := send(sub)
+	var rec submissionRecord
+	json.Unmarshal([]byte(body), &rec)
+	if code != 200 || rec.Recomputed != rep.Engaged || rec.Claimed != rep.Engaged || rep.Engaged != timeline.Seconds(10*time.Minute) {
+		t.Fatalf("honest submission: %d %s (client engaged %v)", code, body, rep.Engaged)
+	}
+	// Minutes 5-8 overlap Lapse; minute 30 is outside the engaged time.
+	if rec.LapseOverlap != timeline.Seconds(3*time.Minute) || rec.Credited != timeline.Seconds(7*time.Minute) {
+		t.Errorf("Lapse deflation: overlap %v credited %v, want 3m and 7m", time.Duration(rec.LapseOverlap), time.Duration(rec.Credited))
+	}
+
+	// Only admins see details: anonymous callers get 401, other Slack users 403.
+	get := func(c *http.Client, path string) int {
+		res, err := c.Get(srv.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		return res.StatusCode
+	}
+	if c := get(http.DefaultClient, "/api/v1/submissions/"+rec.ID); c != 401 {
+		t.Errorf("anonymous read: %d", c)
+	}
+	signedIn := func(user string) *http.Client {
+		jar, _ := cookiejar.New(nil)
+		u, _ := url.Parse(srv.URL)
+		jar.SetCookies(u, []*http.Cookie{{Name: sessionCookie, Value: s.sign(user + "|" + strconv.FormatInt(now.Add(time.Hour).Unix(), 10))}})
+		return &http.Client{Jar: jar}
+	}
+	for _, path := range []string{"/api/v1/submissions/" + rec.ID, "/admin/submissions/" + rec.ID, "/api/v1/accounts/x/report"} {
+		if c := get(signedIn("USOMEONE"), path); c != 403 {
+			t.Errorf("non-admin %s: %d", path, c)
+		}
+	}
+	if c := get(signedIn("UADMIN"), "/admin/submissions/"+rec.ID); c != 200 {
+		t.Errorf("admin review page: %d", c)
+	}
+	// A forged cookie doesn't sign anyone in.
+	forged := signedIn("UADMIN")
+	u, _ := url.Parse(srv.URL)
+	forged.Jar.SetCookies(u, []*http.Cookie{{Name: sessionCookie, Value: "UADMIN|9999999999.AAAA"}})
+	if c := get(forged, "/api/v1/submissions/"+rec.ID); c != 401 {
+		t.Errorf("forged cookie: %d", c)
+	}
+
+	// Editing a log after signing breaks its hash.
+	edited := sub
+	edited.Logs = [][]byte{bytes.Replace(sub.Logs[0], []byte("blue"), []byte("red!"), 1)}
+	if code, body := send(edited); code != 400 || !strings.Contains(body, "not the one that was signed") {
+		t.Errorf("edited log: %d %s", code, body)
+	}
+
+	// Leaving the logs out is refused.
+	bare := sub
+	bare.Logs = nil
+	if code, _ := send(bare); code != 400 {
+		t.Errorf("no logs: %d", code)
+	}
+
+	// A signed claim of a block that no log backs is refused.
+	fluffed := rep
+	fluffed.Blocks = append([]timeline.Block{{Project: rep.Projects[0].Project, Start: now.Add(-5 * time.Hour), End: now.Add(-3 * time.Hour), Engaged: timeline.Seconds(2 * time.Hour)}}, rep.Blocks...)
+	fake, _ := makeSubmission(key, fluffed, sessions, "1d", now)
+	if code, body := send(fake); code != 400 || !strings.Contains(body, "no log backs") {
+		t.Errorf("unbacked block: %d %s", code, body)
+	}
+}
+
+// Signing in goes through Slack and lands on the admin page.
+func TestSlackLogin(t *testing.T) {
+	var srvURL string
+	slack := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/openid/connect/authorize": // the person approves; Slack sends them back
+			q := r.URL.Query()
+			http.Redirect(w, r, q.Get("redirect_uri")+"?code=c1&state="+q.Get("state"), http.StatusFound)
+		case "/api/openid.connect.token":
+			r.ParseForm()
+			if r.Form.Get("code") != "c1" || r.Form.Get("client_secret") != "sec" || r.Form.Get("redirect_uri") != srvURL+"/auth/slack/callback" {
+				w.Write([]byte(`{"ok":false,"error":"invalid_code"}`))
+				return
+			}
+			w.Write([]byte(`{"ok":true,"access_token":"at"}`))
+		case "/api/openid.connect.userInfo":
+			if r.Header.Get("Authorization") != "Bearer at" {
+				w.Write([]byte(`{"ok":false,"error":"invalid_auth"}`))
+				return
+			}
+			w.Write([]byte(`{"ok":true,"sub":"UADMIN","https://slack.com/user_id":"UADMIN"}`))
+		}
+	}))
+	defer slack.Close()
+	s := &server{dir: t.TempDir(), admins: map[string]bool{"UADMIN": true}, secret: []byte("0123456789abcdef0123456789abcdef"), client: http.DefaultClient}
+	srv := httptest.NewServer(s.handler())
+	defer srv.Close()
+	srvURL = srv.URL
+	s.slack = slackApp{base: slack.URL, clientID: "id", clientSecret: "sec", redirect: srv.URL + "/auth/slack/callback"}
+
+	jar, _ := cookiejar.New(nil)
+	c := &http.Client{Jar: jar}
+	res, err := c.Get(srv.URL + "/admin#accounts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var page bytes.Buffer
+	page.ReadFrom(res.Body)
+	res.Body.Close()
+	if res.StatusCode != 200 || res.Request.URL.Path != "/admin" || !strings.Contains(page.String(), "deflate time spent typing via Lapse/Lookout") {
+		t.Fatalf("after sign-in: %d at %s", res.StatusCode, res.Request.URL)
+	}
+	// A callback whose state doesn't match the browser's is refused.
+	res, _ = c.Get(srv.URL + "/auth/slack/callback?code=c1&state=forged")
+	if res.StatusCode != 400 {
+		t.Errorf("forged state: %d", res.StatusCode)
+	}
+}

@@ -1,0 +1,151 @@
+{{define "top"}}<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} · teardrop review</title><link rel="icon" href="/favicon.svg"><link rel="stylesheet" href="/admin.css"></head>
+<body>
+<header class="appbar">
+	<a class="brand" href="/admin"><img src="/favicon.svg" alt="">teardrop <span>review</span></a>
+	<nav class="tabs">
+		<a href="/admin" {{if eq .Nav "queue"}}class="on"{{end}}>Submissions</a>
+		<a href="/admin/accounts" {{if eq .Nav "accounts"}}class="on"{{end}}>Accounts</a>
+	</nav>
+	<div class="me"><span class="mono">{{.User}}</span><form method="post" action="/logout"><button class="textbtn">Sign out</button></form></div>
+</header>
+<main class="page">
+{{end}}
+
+{{define "bottom"}}</main>
+<script>
+for (const r of document.querySelectorAll('tr[data-href]')) {
+	r.addEventListener('click', (e) => { if (!e.target.closest('a')) location.href = r.dataset.href })
+}
+for (const f of document.querySelectorAll('[data-filter]')) {
+	const rows = document.querySelectorAll(f.dataset.filter + ' tbody tr')
+	f.addEventListener('input', () => {
+		const q = f.value.trim().toLowerCase()
+		for (const r of rows) r.hidden = q !== '' && !r.textContent.toLowerCase().includes(q)
+	})
+}
+</script>
+</body></html>{{end}}
+
+{{define "denied"}}<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admins only · teardrop</title><link rel="stylesheet" href="/admin.css"></head>
+<body><div class="center"><div class="card">
+	<h1>Admins only</h1>
+	<p>You're signed in with Slack as <span class="mono">{{.User}}</span>, which isn't on this server's admin list. Ask the operator to add it to <span class="mono">TEARDROP_ADMINS</span>.</p>
+	<form method="post" action="/logout"><button class="btn">Sign out</button></form>
+</div></div></body></html>{{end}}
+
+{{define "home"}}{{template "top" .}}
+<div class="head">
+	<div><h1>Submissions</h1>
+	<div class="meta">{{len .Submissions}} received{{if .Unchecked}} · <span style="color:var(--warn)">{{.Unchecked}} without a Lapse check</span>{{end}}</div></div>
+	<div class="actions"><input class="search" type="search" placeholder="Filter by project or account" data-filter="#subs"></div>
+</div>
+<div class="notice"><strong>Reviewers</strong><span>Please deflate time spent typing via Lapse/Lookout. Open a submission and add its Lapse sessions; time they overlap is taken off automatically. Testing the build outside the chat isn't counted here.</span></div>
+<section class="card">
+{{if .Submissions}}<div class="scroll"><table class="t" id="subs">
+	<thead><tr><th>Project</th><th>Account</th><th>Received</th><th class="r">Claimed</th><th class="r">From logs</th><th class="r">Lapse</th><th class="r">Credited</th></tr></thead>
+	<tbody>{{range .Submissions}}<tr data-href="/admin/submissions/{{.ID}}">
+		<td><a href="/admin/submissions/{{.ID}}"><strong>{{.Project.Name}}</strong></a><span class="second mono">{{.Project.Key}}</span></td>
+		<td><a class="lnk mono" href="/admin/accounts/{{.Account}}">{{.Account}}</a></td>
+		<td class="muted">{{when .ReceivedAt}}</td>
+		<td class="r">{{secs .Claimed}}</td>
+		<td class="r">{{secs .Recomputed}}</td>
+		<td class="r">{{if .Lapse}}<span class="chip">−{{secs .LapseOverlap}}</span>{{else}}<span class="chip warn">Not checked</span>{{end}}</td>
+		<td class="r"><strong>{{secs .Credited}}</strong></td>
+	</tr>{{end}}</tbody>
+</table></div>
+{{else}}<div class="empty"><strong>No submissions yet</strong>They show up here when someone runs <span class="mono">teardrop submit</span> against this server.</div>{{end}}
+</section>
+{{template "bottom" .}}{{end}}
+
+{{define "accounts"}}{{template "top" .}}
+<div class="head">
+	<div><h1>Accounts</h1><div class="meta">{{len .Accounts}} synced</div></div>
+	<div class="actions"><input class="search" type="search" placeholder="Filter accounts" data-filter="#accts"></div>
+</div>
+<section class="card">
+{{if .Accounts}}<div class="scroll"><table class="t" id="accts">
+	<thead><tr><th>Account</th><th>Last sync</th><th class="r">Engaged</th><th class="r">Projects</th></tr></thead>
+	<tbody>{{range .Accounts}}<tr data-href="/admin/accounts/{{.ID}}"><td><a class="mono" href="/admin/accounts/{{.ID}}"><strong>{{.ID}}</strong></a></td><td class="muted">{{when .Updated}}</td><td class="r">{{secs .Engaged}}</td><td class="r">{{.Projects}}</td></tr>{{end}}</tbody>
+</table></div>
+{{else}}<div class="empty"><strong>No accounts yet</strong>An account appears after its first <span class="mono">teardrop sync</span>.</div>{{end}}
+</section>
+{{template "bottom" .}}{{end}}
+
+{{define "account"}}{{template "top" .}}
+<div class="head">
+	<div><div class="crumbs"><a href="/admin/accounts">Accounts</a> /</div><h1 class="mono">{{.ID}}</h1>
+	<div class="meta">{{if .HasReport}}Last sync {{when .Report.GeneratedAt}} · teardrop {{.Report.Teardrop}} · window {{.Report.Since}}{{else}}Has submitted but never synced{{end}}</div></div>
+	{{if .HasReport}}<div class="actions"><a class="btn" href="/api/v1/accounts/{{.ID}}/report">Signed report JSON</a></div>{{end}}
+</div>
+{{if .HasReport}}<div class="cols">
+	<div class="card fact"><div class="k">Engaged</div><div class="v">{{secs .Report.Report.Engaged}}</div></div>
+	<div class="card fact"><div class="k">Projects</div><div class="v">{{len .Report.Report.Projects}}</div></div>
+	<div class="card fact"><div class="k">Work blocks</div><div class="v">{{len .Blocks}}</div></div>
+	<div class="card fact"><div class="k">Submissions</div><div class="v">{{len .Submissions}}</div></div>
+</div>
+<section class="card"><header><h2>Projects</h2></header><div class="scroll"><table class="t">
+	<thead><tr><th>Project</th><th class="r">Engaged</th><th class="r">Session time</th><th class="r">Prompts</th><th class="r">Skipped</th><th class="r">Tokens in / out</th><th class="r">Agent lines</th><th class="r">Kept</th><th class="r">Committed</th></tr></thead>
+	<tbody>{{range .Report.Report.Projects}}<tr><td><strong>{{.Project.Name}}</strong><span class="second mono">{{.Project.Key}}</span></td><td class="r">{{secs .Engaged}}</td><td class="r">{{secs .SessionTime}}</td><td class="r">{{.Prompts}}</td>
+	<td class="r" title="gibberish {{.NoisePrompts}}, repeats {{.RepeatPrompts}}, autopilot {{.AutopilotPrompts}}">{{skipped .}}</td><td class="r">{{count .In}} / {{count .Out}}</td><td class="r">+{{.Lines.Added}} −{{.Lines.Removed}}</td><td class="r">{{.Lines.Kept}}</td><td class="r">{{.Committed}}</td></tr>{{end}}</tbody>
+</table></div></section>{{end}}
+{{if .Submissions}}<section class="card"><header><h2>Submissions</h2></header><div class="scroll"><table class="t">
+	<thead><tr><th>Project</th><th>Received</th><th class="r">Claimed</th><th class="r">Credited</th></tr></thead>
+	<tbody>{{range .Submissions}}<tr data-href="/admin/submissions/{{.ID}}"><td><a href="/admin/submissions/{{.ID}}"><strong>{{.Project.Name}}</strong></a></td><td class="muted">{{when .ReceivedAt}}</td><td class="r">{{secs .Claimed}}</td><td class="r"><strong>{{secs .Credited}}</strong></td></tr>{{end}}</tbody>
+</table></div></section>{{end}}
+{{if .Blocks}}<section class="card"><header><h2>Work blocks</h2><span class="right">newest first</span></header><div class="scroll"><table class="t">
+	<thead><tr><th>Start</th><th>Project</th><th class="r">Engaged</th><th class="r">Span</th><th class="r">Prompts</th><th class="r">Tokens in / out</th><th class="r">Lines</th><th>Tools</th></tr></thead>
+	<tbody>{{range .Blocks}}<tr><td class="muted">{{when .Start}}</td><td>{{.Project.Name}}</td><td class="r">{{secs .Engaged}}</td><td class="r">{{dur (.End.Sub .Start)}}</td><td class="r">{{.Prompts}}</td><td class="r">{{count .In}} / {{count .Out}}</td><td class="r">+{{.Lines.Added}} −{{.Lines.Removed}}</td><td>{{range .Tools}}<span class="chip">{{.}}</span> {{end}}</td></tr>{{end}}</tbody>
+</table></div></section>{{end}}
+{{template "bottom" .}}{{end}}
+
+{{define "submission"}}{{template "top" .}}
+<div class="head">
+	<div><div class="crumbs"><a href="/admin">Submissions</a> /</div><h1>{{.Rec.Project.Name}}</h1>
+	<div class="meta"><span class="mono">{{.Rec.Project.Key}}</span> · by <a class="lnk mono" href="/admin/accounts/{{.Rec.Account}}">{{.Rec.Account}}</a> · {{when .Rec.ReceivedAt}}</div></div>
+	<div class="actions"><a class="btn" href="/api/v1/submissions/{{.Rec.ID}}">Raw JSON</a></div>
+</div>
+<div class="layout">
+	<div class="stack">
+		<section class="card"><header><h2>Timeline</h2><span class="right">{{clock .Strip.From}} – {{clock .Strip.To}} UTC</span></header><div class="body">
+			<div class="lanes">
+				<div class="lane-label">Engaged</div><div class="lane">{{range .Strip.Engaged}}<i class="e" style="left:{{pct .Left}}%;width:{{pct .Width}}%"></i>{{end}}</div>
+				<div class="lane-label">Lapse</div><div class="lane">{{range .Strip.Lapse}}<i class="l" style="left:{{pct .Left}}%;width:{{pct .Width}}%"></i>{{else}}<span class="lane-empty">no Lapse sessions added</span>{{end}}</div>
+				<div class="lane-label">Prompts</div><div class="lane">{{range .Strip.Prompts}}<i class="p" style="left:{{pct .}}%"></i>{{end}}</div>
+				<div></div><div class="axis"><span>{{clock .Strip.From}}</span><span>{{clock .Strip.To}}</span></div>
+			</div>
+			<div class="legend-list">{{range .Engaged}}<span>{{clock .Start}}–{{clock .End}} <b>{{dur (.End.Sub .Start)}}</b>{{if .Lapse}} <span class="chip warn">−{{dur .Lapse}} Lapse</span>{{end}}</span>{{end}}</div>
+		</div></section>
+		{{range .Logs}}<section class="card"><header><h2>{{.Tool}}</h2><span class="mono muted">{{.ID}}</span><span class="right">{{len .Messages}} messages</span></header>
+		<div class="chat">{{range .Messages}}
+			{{if eq .Role "tool"}}<div class="msg tool{{if .InLapse}} inlapse{{end}}"><div class="time">{{clock .Time}}</div><div>{{if .Lines}}<details><summary>{{.Summary}}</summary><div class="diff">{{range .Lines}}<div class="{{.Kind}}">{{.Text}}</div>{{end}}</div></details>{{else}}<details><summary>{{.Summary}}</summary></details>{{end}}</div></div>
+			{{else}}<div class="msg {{.Role}}{{if .InLapse}} inlapse{{end}}"><div class="time">{{clock .Time}}</div><div{{if eq .Role "you"}} class="bubble"{{end}}>
+				<div class="who">{{if eq .Role "you"}}Human{{else}}Agent{{end}}{{if and (eq .Role "you") .Since}}<span class="chip">{{gap .Since}} after the last message</span>{{end}}{{if .InLapse}}<span class="chip warn">during Lapse</span>{{end}}</div>
+				<div class="text">{{.Text}}</div></div></div>{{end}}
+		{{end}}</div></section>{{end}}
+	</div>
+	<aside class="stack">
+		<section class="card"><header><h2>Hours</h2></header><div class="body ledger">
+			<div class="row"><div class="label">Claimed<small>signed by the account</small></div><div class="val">{{secs .Rec.Claimed}}</div></div>
+			<div class="row"><div class="label">From the logs<small>recomputed by this server</small></div><div class="val">{{if .Mismatch}}<span class="chip warn" title="Differs from the claim; credit the time from the logs">differs</span> {{end}}{{secs .Rec.Recomputed}}</div></div>
+			<div class="row minus"><div class="label">Lapse overlap<small>already counted on Hackatime</small></div><div class="val">−{{secs .Rec.LapseOverlap}}</div></div>
+			<div class="row total"><div class="label">Credited</div><div class="val">{{secs .Rec.Credited}}</div></div>
+		</div></section>
+		<section class="card" id="lapse"><header><h2>Lapse sessions</h2><span class="right">{{len .Rec.Lapse}} added</span></header><div class="body">
+			<form method="post" action="/admin/submissions/{{.Rec.ID}}/lapse" class="lapse-form">
+				<p class="hint">Deflate time spent typing via Lapse/Lookout: paste each session link or token for this project.</p>
+				<input class="field" name="lapse" placeholder="Session link or 64-character token" required>
+				<button class="btn primary">Add and deflate</button>
+			</form>
+			{{if .Err}}<div class="notice bad" style="margin-top:12px">{{.Err}}</div>{{end}}
+			{{if .Rec.Lapse}}<div class="sessions">{{range .Rec.Lapse}}<div class="s">
+				<div class="info"><span class="mono">{{short .Token}}</span><small>{{if .Error}}<span style="color:var(--bad)">{{.Error}}</span>{{else}}{{len .Captured}} recorded stretch{{if ne (len .Captured) 1}}es{{end}} · checked {{when .CheckedAt}}{{end}}</small></div>
+				<form method="post" action="/admin/submissions/{{$.Rec.ID}}/lapse"><input type="hidden" name="lapse" value="{{.Token}}"><button class="btn small">Recheck</button></form>
+			</div>{{end}}</div>{{end}}
+		</div></section>
+	</aside>
+</div>
+{{template "bottom" .}}{{end}}

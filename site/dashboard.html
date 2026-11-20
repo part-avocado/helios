@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Dashboard · teardrop</title>
+	<link rel="icon" href="favicon.svg">
+	<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="nav"><div class="wrap">
+	<a class="brand" href="index.html"><img src="favicon.svg" alt="">teardrop</a>
+	<div class="nav-links">
+		<a href="docs.html">Docs</a>
+		<a href="dashboard.html" class="active">Dashboard</a>
+		<a href="https://github.com/part-avocado/teardrop">GitHub</a>
+	</div>
+</div></nav>
+
+<main class="wrap dash">
+	<div class="dash-head">
+		<h1>Your stats</h1>
+		<span class="status" id="status"></span>
+		<div class="seg" id="range" role="group" aria-label="Time range">
+			<button data-days="7">7 days</button>
+			<button data-days="30" aria-pressed="true">30 days</button>
+			<button data-days="365">Year</button>
+		</div>
+	</div>
+
+	<div id="empty" class="empty" hidden>
+		<h2>No stats loaded</h2>
+		<p class="muted">Run <code>teardrop dashboard</code> on your computer for live stats, or load a report file.<br>
+		Make one with <code>teardrop export -o stats.json</code>. It's read in your browser and never uploaded.</p>
+		<label class="drop" id="drop">Drop <code>stats.json</code> here or click to choose it
+			<input type="file" id="file" accept=".json,application/json" hidden>
+		</label>
+		<p class="file-error" id="file-error" role="alert" hidden></p>
+		<p class="muted small">Each export carries a verification key that is unique to your account, its numbers, and when it was made. Files that were edited, or are more than 7 days old, are refused.</p>
+		<p><button class="btn" id="sample">Show sample data</button></p>
+	</div>
+
+	<div id="content" hidden>
+		<div class="stats">
+			<div class="stat"><div class="label">Engaged</div><div class="value" id="s-total">-</div><div class="hint" id="s-total-hint"></div></div>
+			<div class="stat"><div class="label">Today</div><div class="value" id="s-today">-</div><div class="hint" id="s-today-hint"></div></div>
+			<div class="stat"><div class="label">Streak</div><div class="value" id="s-streak">-</div><div class="hint">days in a row with activity</div></div>
+			<div class="stat"><div class="label">Top project</div><div class="value" id="s-top">-</div><div class="hint" id="s-top-hint"></div></div>
+			<div class="stat"><div class="label">Prompts</div><div class="value" id="s-prompts">-</div><div class="hint" id="s-prompts-hint"></div></div>
+			<div class="stat"><div class="label">Tokens</div><div class="value" id="s-tokens">-</div><div class="hint" id="s-tokens-hint"></div></div>
+		</div>
+		<div class="panels">
+			<div class="panel wide"><h2>Activity</h2><div class="heatmap" id="heatmap"></div>
+				<div class="legend">Less <i style="background:#23232d"></i><i style="background:#1d4a78"></i><i style="background:#2a6cb0"></i><i style="background:#4aa3ff"></i><i style="background:#9fd3ff"></i> More</div></div>
+			<div class="panel"><h2>Engaged per day</h2><div class="bars" id="bars"></div><div class="bar-labels" id="bar-labels"></div></div>
+			<div class="panel"><h2>Tools</h2><div class="rows" id="tools"></div></div>
+			<div class="panel"><h2>Projects</h2><div class="table-scroll"><table class="data" id="projects"></table></div></div>
+			<div class="panel"><h2>Time of day</h2><div class="bars" id="hours"></div><div class="bar-labels"><span>0:00</span><span>6:00</span><span>12:00</span><span>18:00</span><span>23:00</span></div></div>
+			<p class="panel wide muted small-left">Time spent testing your build outside the agent chat isn't counted here. Record it with <a href="https://lapse.hackclub.com">Lapse</a>.</p>
+			<div class="panel wide"><h2>Recent work blocks</h2><div class="table-scroll"><table class="data" id="blocks"></table></div></div>
+		</div>
+	</div>
+</main>
+<script src="site.js"></script>
+<script src="dashboard.js"></script>
+</body>
+</html>

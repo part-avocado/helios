@@ -55,11 +55,12 @@ func runHook(args []string) {
 	}
 	if ev.Human {
 		s := textscore.Analyze(in.Prompt)
-		ev.Judged, ev.Real = s.Judged, s.Real
+		ev.Judged, ev.Real, ev.Sim, ev.Low = s.Judged, s.Real, uint64(s.Sim), s.Low
 	}
 	if err := sources.AppendJournal(dataDir(), ev); err != nil {
 		fmt.Fprintln(os.Stderr, "teardrop hook:", err)
 	}
+	syncSoon()
 }
 
 // dataDir is where teardrop keeps its own records, such as the hook journal.
