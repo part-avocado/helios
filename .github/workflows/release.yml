@@ -1,0 +1,24 @@
+# Pushing a tag such as v0.1.0 publishes a release with the binaries and
+# checksums that install.sh and install.ps1 download.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./... && go test ./...
+      - run: scripts/build-release.sh dist "$GITHUB_REF_NAME"
+      - run: gh release create "$GITHUB_REF_NAME" dist/* install.sh install.ps1 --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
