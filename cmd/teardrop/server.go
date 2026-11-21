@@ -28,14 +28,14 @@ import (
 
 // server is the central server. Anyone can see an account's totals; the
 // details behind them (work blocks, submissions, and their chat logs) are
-// for admins only, who sign in with Slack and are listed by Slack user ID.
+// for admins only, who sign in with Hack Club Auth and are listed by Slack user ID.
 // Accounts are their signing keys, registered on first upload. Everything is
 // stored as files under dir, so a small VPS runs it.
 type server struct {
 	dir      string
 	maxBody  int64
 	admins   map[string]bool // Slack user IDs
-	slack    slackApp
+	hca      hcaApp
 	secret   []byte // signs sign-in cookies
 	devLogin string // Slack user ID every visitor is signed in as; local testing only
 	lookout  string // Lookout server, for Lapse sessions
@@ -49,9 +49,9 @@ func runServer(args []string) {
 	addr := fs.String("addr", ":8080", "address to listen on")
 	dir := fs.String("data", "teardrop-data", "directory to store accounts and submissions in")
 	maxMB := fs.Int64("max-submission-mb", 256, "largest submission accepted, in MB")
-	publicURL := fs.String("public-url", os.Getenv("TEARDROP_PUBLIC_URL"), "URL people reach this server at, for Slack sign-in")
+	publicURL := fs.String("public-url", os.Getenv("TEARDROP_PUBLIC_URL"), "URL people reach this server at, for Hack Club Auth sign-in")
 	lookout := fs.String("lookout", "https://lookout.hackclub.com", "Lookout server that Lapse records through")
-	devLogin := fs.String("dev-login", "", "sign every visitor in as this Slack user ID, without Slack (only on a localhost address)")
+	devLogin := fs.String("dev-login", "", "sign every visitor in as this Slack user ID, without Hack Club Auth (only on a localhost address)")
 	fs.Parse(args)
 
 	if *devLogin != "" {
@@ -66,9 +66,9 @@ func runServer(args []string) {
 	s := &server{
 		dir: *dir, maxBody: *maxMB << 20, admins: map[string]bool{}, secret: secret, devLogin: *devLogin,
 		lookout: strings.TrimRight(*lookout, "/"), client: &http.Client{Timeout: 15 * time.Second},
-		slack: slackApp{
-			base: "https://slack.com", clientID: os.Getenv("TEARDROP_SLACK_CLIENT_ID"), clientSecret: os.Getenv("TEARDROP_SLACK_CLIENT_SECRET"),
-			redirect: strings.TrimRight(*publicURL, "/") + "/auth/slack/callback",
+		hca: hcaApp{
+			base: "https://auth.hackclub.com", clientID: os.Getenv("TEARDROP_HCA_CLIENT_ID"), clientSecret: os.Getenv("TEARDROP_HCA_CLIENT_SECRET"),
+			redirect: strings.TrimRight(*publicURL, "/") + "/auth/callback",
 		},
 	}
 	for _, id := range strings.FieldsFunc(os.Getenv("TEARDROP_ADMINS"), func(r rune) bool { return r == ',' || r == ' ' }) {
@@ -80,8 +80,8 @@ func runServer(args []string) {
 	switch {
 	case len(s.admins) == 0:
 		log.Print("TEARDROP_ADMINS is empty, so no one can review submissions; set it to admins' Slack user IDs, comma-separated")
-	case *devLogin == "" && (s.slack.clientID == "" || s.slack.clientSecret == "" || *publicURL == ""):
-		log.Print("Slack sign-in is not set up; set TEARDROP_SLACK_CLIENT_ID, TEARDROP_SLACK_CLIENT_SECRET, and -public-url")
+	case *devLogin == "" && (s.hca.clientID == "" || s.hca.clientSecret == "" || *publicURL == ""):
+		log.Print("Hack Club Auth sign-in is not set up; set TEARDROP_HCA_CLIENT_ID, TEARDROP_HCA_CLIENT_SECRET, and -public-url")
 	}
 	log.Printf("teardrop server listening on %s, storing data in %s", *addr, *dir)
 	check(http.ListenAndServe(*addr, s.handler()))
@@ -100,7 +100,7 @@ func (s *server) handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/submissions/{id}", s.admin(s.getSubmission))
 	mux.HandleFunc("GET /admin.css", s.adminStyle)
 	mux.HandleFunc("GET /login", s.login)
-	mux.HandleFunc("GET /auth/slack/callback", s.slackCallback)
+	mux.HandleFunc("GET /auth/callback", s.authCallback)
 	mux.HandleFunc("POST /logout", s.logout)
 	mux.HandleFunc("GET /admin", s.admin(s.adminHome))
 	mux.HandleFunc("GET /admin/submissions/{id}", s.admin(s.adminSubmission))

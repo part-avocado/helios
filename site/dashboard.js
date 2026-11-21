@@ -111,7 +111,7 @@ function renderHeatmap(now) {
 	}
 	const end = startOfDay(now)
 	const start = new Date(end.getFullYear(), end.getMonth(), end.getDate() - 364 - end.getDay())
-	const colors = ['#23232d', '#1d4a78', '#2a6cb0', '#4aa3ff', '#9fd3ff']
+	const colors = ['#efede7', '#c9e3fb', '#8cc0f0', '#4c97e4', '#1f64c4']
 	const level = (s) => (s <= 0 ? 0 : s < 1800 ? 1 : s < 3600 ? 2 : s < 3 * 3600 ? 3 : 4)
 	const cell = 13, gap = 3
 	let rects = '', months = '', lastMonth = -1, col = 0
@@ -121,25 +121,31 @@ function renderHeatmap(now) {
 		if (row === 0 && d > start) col++
 		if (row === 0 && d.getMonth() !== lastMonth) {
 			lastMonth = d.getMonth()
-			months += `<text x="${30 + col * (cell + gap)}" y="10" fill="#9d9db0" font-size="11">${d.toLocaleString(undefined, { month: 'short' })}</text>`
+			months += `<text x="${30 + col * (cell + gap)}" y="10" fill="#8b8b94" font-size="11">${d.toLocaleString(undefined, { month: 'short' })}</text>`
 		}
 		const s = perDay.get(dayKey(d)) || 0
 		rects += `<rect x="${30 + col * (cell + gap)}" y="${18 + row * (cell + gap)}" width="${cell}" height="${cell}" rx="2" fill="${colors[level(s)]}"><title>${fmt.format(d)}: ${s ? dur(s) : 'no activity'}</title></rect>`
 	}
-	const labels = ['Mon', 'Wed', 'Fri'].map((t, i) => `<text x="0" y="${18 + (i * 2 + 1) * (cell + gap) + 10}" fill="#9d9db0" font-size="11">${t}</text>`).join('')
+	const labels = ['Mon', 'Wed', 'Fri'].map((t, i) => `<text x="0" y="${18 + (i * 2 + 1) * (cell + gap) + 10}" fill="#8b8b94" font-size="11">${t}</text>`).join('')
 	const w = 30 + (col + 1) * (cell + gap)
 	$('heatmap').innerHTML = `<svg width="${w}" height="${18 + 7 * (cell + gap)}" role="img" aria-label="Engaged time per day over the last year">${months}${labels}${rects}</svg>`
 }
 
+// One bar per day, or per week when a year of days wouldn't fit.
 function renderBars(perDay, from) {
+	const step = days > 90 ? 7 : 1
 	const vals = []
-	for (let i = 0; i < days; i++) {
+	for (let i = 0; i < days; i += step) {
 		const d = new Date(from.getFullYear(), from.getMonth(), from.getDate() + i)
-		vals.push([d, perDay.get(dayKey(d)) || 0])
+		let v = 0
+		for (let j = 0; j < step && i + j < days; j++) v += perDay.get(dayKey(new Date(d.getFullYear(), d.getMonth(), d.getDate() + j))) || 0
+		vals.push([d, v])
 	}
 	const max = Math.max(1, ...vals.map((v) => v[1]))
 	const fmt = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' })
-	$('bars').innerHTML = vals.map(([d, v]) => `<div style="height:${(v / max) * 100}%" title="${fmt.format(d)} · ${dur(v)}"></div>`).join('')
+	$('bars-title').textContent = step === 7 ? 'Engaged per week' : 'Engaged per day'
+	$('bars').classList.toggle('dense', vals.length > 40)
+	$('bars').innerHTML = vals.map(([d, v]) => `<div style="height:${(v / max) * 100}%" title="${step === 7 ? 'Week of ' : ''}${fmt.format(d)} · ${dur(v)}"></div>`).join('')
 	$('bar-labels').innerHTML = `<span>${fmt.format(vals[0][0])}</span><span>${fmt.format(vals[vals.length - 1][0])}</span>`
 }
 
@@ -179,7 +185,7 @@ async function verify(file) {
 }
 
 const verifiedNote = (p) =>
-	`<span class="tag" title="Signed by this account; any change to the numbers or times would break the key">✓ verified</span> account ${esc(p.accountID)} · key valid until ${esc(new Date(p.expires_at).toLocaleDateString())}`
+	`<span class="tag" title="Signed by this account; any change to the numbers or times would break the key"><svg class="ico" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>verified</span> account ${esc(p.accountID)} · key valid until ${esc(new Date(p.expires_at).toLocaleDateString())}`
 
 function show(rep, source) {
 	report = rep

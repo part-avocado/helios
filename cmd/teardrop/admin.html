@@ -33,7 +33,7 @@ for (const f of document.querySelectorAll('[data-filter]')) {
 <title>Admins only · teardrop</title><link rel="stylesheet" href="/admin.css"></head>
 <body><div class="center"><div class="card">
 	<h1>Admins only</h1>
-	<p>You're signed in with Slack as <span class="mono">{{.User}}</span>, which isn't on this server's admin list. Ask the operator to add it to <span class="mono">TEARDROP_ADMINS</span>.</p>
+	<p>You're signed in with Hack Club Auth as Slack user <span class="mono">{{.User}}</span>, which isn't on this server's admin list. Ask the operator to add it to <span class="mono">TEARDROP_ADMINS</span>.</p>
 	<form method="post" action="/logout"><button class="btn">Sign out</button></form>
 </div></div></body></html>{{end}}
 

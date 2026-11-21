@@ -49,7 +49,7 @@ code { font-family: var(--mono); font-size: 0.88em; }
 .pill.small { height: 36px; padding: 0 16px; font-size: 14px; }
 .textlink { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 15px; }
 .textlink:hover .arrow { transform: translateX(3px); }
-.arrow { transition: transform 0.15s; }
+.arrow { flex: none; vertical-align: -2px; transition: transform 0.15s; }
 
 /* Hero */
 .hero { padding: 168px 0 0; text-align: center; }
@@ -161,7 +161,8 @@ code { font-family: var(--mono); font-size: 0.88em; }
 .cta h2 { font-size: clamp(48px, 7vw, 88px); max-width: 860px; margin: 0 auto; }
 .cta .actions { display: flex; gap: 28px; justify-content: center; align-items: center; margin-top: 40px; flex-wrap: wrap; }
 .cta .checks { display: flex; gap: 22px; justify-content: center; flex-wrap: wrap; margin-top: 26px; font-size: 14px; color: var(--ink-2); }
-.cta .checks span::before { content: "✓"; color: var(--teal); margin-right: 6px; font-weight: 700; }
+.cta .checks span { display: inline-flex; align-items: center; gap: 6px; }
+.cta .checks svg { color: var(--teal); flex: none; }
 
 /* Footer */
 footer { border-top: 1px solid var(--rule); padding: 72px 0 32px; }

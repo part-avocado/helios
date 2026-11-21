@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -60,13 +61,17 @@ func main() {
 	since := flag.String("since", "7d", "only count events newer than this, such as 24h, 7d, or 30d")
 	asJSON := flag.Bool("json", false, "print the report as JSON")
 	verbose := flag.Bool("verbose", false, "list log files that could not be read")
+	var live bool
+	flag.BoolVar(&live, "live", false, "keep the timeline on screen and update it as you work (also -l)")
+	flag.BoolVar(&live, "l", false, "short for -live")
+	every := flag.Duration("every", 3*time.Second, "with -live, how often to reread the logs")
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	rules := timeline.DefaultRules
 	flag.DurationVar(&rules.ComposeCap, "compose-cap", rules.ComposeCap, "max credit for reading output and writing one prompt")
 	flag.DurationVar(&rules.WatchCap, "watch-cap", rules.WatchCap, "max credit for watching the agent after a prompt")
 	flag.DurationVar(&rules.BlockGap, "block-gap", rules.BlockGap, "join work blocks separated by less than this")
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "Usage: teardrop [flags]   show your AI coding timeline")
+		fmt.Fprintln(os.Stderr, "Usage: teardrop [flags]   show your AI coding timeline (-l keeps it updating live)")
 		fmt.Fprintln(os.Stderr, "       teardrop setup      check which tools are found, install hooks, fix settings that lose history")
 		fmt.Fprintln(os.Stderr, "       teardrop dashboard  open a live dashboard of your stats in the browser")
 		fmt.Fprintln(os.Stderr, "       teardrop export     write a signed report to load in the dashboard")
@@ -84,6 +89,14 @@ func main() {
 	window, err := parseSince(*since)
 	check(err)
 
+	if live {
+		if *asJSON {
+			check(fmt.Errorf("-live redraws the screen, so it can't be combined with -json"))
+		}
+		runLive(*claudeDir, *codexDir, *since, window, rules, *every)
+		return
+	}
+
 	raws, warnings := loadAll(*claudeDir, *codexDir)
 	reportWarnings(warnings, *verbose)
 	rep, sessions := buildReport(raws, time.Now().Add(-window), rules)
@@ -94,15 +107,19 @@ func main() {
 		return
 	}
 	if len(rep.Blocks) == 0 {
-		fmt.Printf("No Claude Code or Codex sessions found in the last %s.\n", *since)
-		if len(raws) == 0 {
-			fmt.Println("Run `teardrop setup` to see where teardrop looks for them.")
-		} else {
-			fmt.Println("Try a longer window, such as `teardrop -since 30d`.")
-		}
+		printEmpty(os.Stdout, *since, len(raws) > 0)
 		return
 	}
-	printReport(rep, len(sessions))
+	printReport(os.Stdout, rep, len(sessions))
+}
+
+func printEmpty(out io.Writer, since string, anyLogs bool) {
+	fmt.Fprintf(out, "No Claude Code or Codex sessions found in the last %s.\n", since)
+	if !anyLogs {
+		fmt.Fprintln(out, "Run `teardrop setup` to see where teardrop looks for them.")
+	} else {
+		fmt.Fprintln(out, "Try a longer window, such as `teardrop -since 30d`.")
+	}
 }
 
 // loadAll reads every transcript plus the hook journal.
@@ -176,8 +193,8 @@ func buildSessions(raws []sources.Raw, cutoff time.Time, resolve func(sources.Ra
 	return sessions, committed
 }
 
-func printReport(rep timeline.Report, nSessions int) {
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+func printReport(out io.Writer, rep timeline.Report, nSessions int) {
+	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "WHEN\tPROJECT\tENGAGED\tSPAN\tPROMPTS\tTOKENS IN/OUT\tTOOLS")
 	day := ""
 	for _, b := range rep.Blocks {
@@ -192,8 +209,8 @@ func printReport(rep timeline.Report, nSessions int) {
 	}
 	w.Flush()
 
-	fmt.Println()
-	w = tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(out)
+	w = tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "PROJECT\tENGAGED\tSESSION TIME\tPROMPTS\tSKIPPED\tTOKENS IN/OUT\tAGENT LINES +/-\tKEPT\tCOMMITTED")
 	var noise, repeat, auto int
 	for _, p := range rep.Projects {
@@ -202,7 +219,7 @@ func printReport(rep timeline.Report, nSessions int) {
 			p.Prompts, p.NoisePrompts+p.RepeatPrompts+p.AutopilotPrompts, tokens(p.In, p.Out), p.Lines.Added, p.Lines.Removed, p.Lines.Kept, p.Committed)
 	}
 	w.Flush()
-	fmt.Printf("\nTotal engaged: %s across %s and %s\n", dur(time.Duration(rep.Engaged)), plural(len(rep.Projects), "project"), plural(nSessions, "session"))
+	fmt.Fprintf(out, "\nTotal engaged: %s across %s and %s\n", dur(time.Duration(rep.Engaged)), plural(len(rep.Projects), "project"), plural(nSessions, "session"))
 	if skipped := noise + repeat + auto; skipped > 0 {
 		var why []string
 		for _, r := range []struct {
@@ -213,9 +230,9 @@ func printReport(rep timeline.Report, nSessions int) {
 				why = append(why, fmt.Sprintf("%d %s", r.n, r.text))
 			}
 		}
-		fmt.Printf("%s earned no time (SKIPPED): %s.\n", plural(skipped, "prompt"), strings.Join(why, "; "))
+		fmt.Fprintf(out, "%s earned no time (SKIPPED): %s.\n", plural(skipped, "prompt"), strings.Join(why, "; "))
 	}
-	fmt.Println(testingNotice)
+	fmt.Fprintln(out, testingNotice)
 }
 
 func reportWarnings(warnings []string, verbose bool) {

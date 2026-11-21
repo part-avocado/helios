@@ -146,8 +146,12 @@ table.t { width: 100%; border-collapse: collapse; }
 .msg.you .who { color: var(--accent); }
 .msg.tool details summary { list-style: none; cursor: pointer; color: var(--muted); font: 12.5px var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .msg.tool details summary::-webkit-details-marker { display: none; }
-.msg.tool details summary::before { content: "▸"; display: inline-block; width: 14px; color: var(--faint); }
-.msg.tool details[open] summary::before { content: "▾"; }
+.msg.tool details summary::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 6px; vertical-align: -1px;
+	background: var(--faint); transition: transform 0.15s;
+	-webkit-mask: var(--chevron) center / contain no-repeat; mask: var(--chevron) center / contain no-repeat;
+	--chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6 3.5l4.5 4.5L6 12.5' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+.msg.tool details[open] summary::before { transform: rotate(90deg); }
+.msg.tool summary:hover::before { background: var(--text); }
 .msg.tool summary:hover { color: var(--text); }
 .diff { margin: 6px 0 0; padding: 8px 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; font: 12px/1.55 var(--mono); max-height: 320px; overflow: auto; white-space: pre; }
 .diff .add { color: #7fe0b2; }

@@ -28,10 +28,11 @@ import (
 	"github.com/part-avocado/teardrop/internal/timeline"
 )
 
-// ---- Sign in with Slack ----
+// ---- Sign in with Hack Club Auth ----
 
-// slackApp is a Slack app used for "Sign in with Slack" (OpenID Connect).
-type slackApp struct {
+// hcaApp is an OAuth app on Hack Club Auth (auth.hackclub.com), used to learn
+// the Slack user ID of whoever signs in.
+type hcaApp struct {
 	base, clientID, clientSecret, redirect string
 }
 
@@ -76,7 +77,7 @@ func setCookie(w http.ResponseWriter, r *http.Request, name, value string, life 
 	})
 }
 
-// user returns the Slack user ID signed in on r, or "".
+// user returns the Slack user ID of who is signed in on r, or "".
 func (s *server) user(r *http.Request) string {
 	if s.devLogin != "" {
 		return s.devLogin
@@ -124,8 +125,8 @@ func (s *server) login(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, next, http.StatusFound)
 		return
 	}
-	if s.slack.clientID == "" {
-		httpError(w, http.StatusServiceUnavailable, "Slack sign-in is not set up on this server")
+	if s.hca.clientID == "" {
+		httpError(w, http.StatusServiceUnavailable, "Hack Club Auth sign-in is not set up on this server")
 		return
 	}
 	b := make([]byte, 16)
@@ -133,13 +134,13 @@ func (s *server) login(w http.ResponseWriter, r *http.Request) {
 	state := base64.RawURLEncoding.EncodeToString(b)
 	setCookie(w, r, stateCookie, s.sign(base64.RawURLEncoding.EncodeToString([]byte(state+"|"+next))), 10*time.Minute)
 	q := url.Values{
-		"response_type": {"code"}, "scope": {"openid"}, "client_id": {s.slack.clientID},
-		"redirect_uri": {s.slack.redirect}, "state": {state},
+		"response_type": {"code"}, "scope": {"openid slack_id"}, "client_id": {s.hca.clientID},
+		"redirect_uri": {s.hca.redirect}, "state": {state},
 	}
-	http.Redirect(w, r, s.slack.base+"/openid/connect/authorize?"+q.Encode(), http.StatusFound)
+	http.Redirect(w, r, s.hca.base+"/oauth/authorize?"+q.Encode(), http.StatusFound)
 }
 
-func (s *server) slackCallback(w http.ResponseWriter, r *http.Request) {
+func (s *server) authCallback(w http.ResponseWriter, r *http.Request) {
 	var state, next string
 	if c, err := r.Cookie(stateCookie); err == nil {
 		if v, ok := s.unsign(c.Value); ok {
@@ -152,10 +153,10 @@ func (s *server) slackCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setCookie(w, r, stateCookie, "", -1)
-	id, err := s.slack.userID(s.client, r.URL.Query().Get("code"))
+	id, err := s.hca.slackID(s.client, r.URL.Query().Get("code"))
 	if err != nil {
-		log.Printf("Slack sign-in failed: %v", err)
-		httpError(w, http.StatusBadGateway, "Slack sign-in failed: %v", err)
+		log.Printf("Hack Club Auth sign-in failed: %v", err)
+		httpError(w, http.StatusBadGateway, "Hack Club Auth sign-in failed: %v", err)
 		return
 	}
 	exp := time.Now().Add(sessionLife).Unix()
@@ -168,27 +169,28 @@ func (s *server) logout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
-// userID trades a sign-in code for the Slack user ID of who signed in.
-func (a slackApp) userID(c *http.Client, code string) (string, error) {
-	res, err := c.PostForm(a.base+"/api/openid.connect.token", url.Values{
-		"client_id": {a.clientID}, "client_secret": {a.clientSecret}, "code": {code}, "redirect_uri": {a.redirect},
+// slackID trades a sign-in code for the Slack user ID of who signed in.
+func (a hcaApp) slackID(c *http.Client, code string) (string, error) {
+	res, err := c.PostForm(a.base+"/oauth/token", url.Values{
+		"grant_type": {"authorization_code"}, "client_id": {a.clientID}, "client_secret": {a.clientSecret},
+		"code": {code}, "redirect_uri": {a.redirect},
 	})
 	if err != nil {
 		return "", err
 	}
 	defer res.Body.Close()
 	var tok struct {
-		OK          bool   `json:"ok"`
 		Error       string `json:"error"`
+		Description string `json:"error_description"`
 		AccessToken string `json:"access_token"`
 	}
 	if err := json.NewDecoder(res.Body).Decode(&tok); err != nil {
-		return "", err
+		return "", fmt.Errorf("token: %s", res.Status)
 	}
-	if !tok.OK {
-		return "", errors.New(tok.Error)
+	if tok.AccessToken == "" {
+		return "", fmt.Errorf("token: %s %s", tok.Error, tok.Description)
 	}
-	req, _ := http.NewRequest("GET", a.base+"/api/openid.connect.userInfo", nil)
+	req, _ := http.NewRequest("GET", a.base+"/oauth/userinfo", nil)
 	req.Header.Set("Authorization", "Bearer "+tok.AccessToken)
 	res2, err := c.Do(req)
 	if err != nil {
@@ -196,24 +198,15 @@ func (a slackApp) userID(c *http.Client, code string) (string, error) {
 	}
 	defer res2.Body.Close()
 	var info struct {
-		OK     bool   `json:"ok"`
-		Error  string `json:"error"`
-		Sub    string `json:"sub"`
-		UserID string `json:"https://slack.com/user_id"`
+		SlackID string `json:"slack_id"`
 	}
-	if err := json.NewDecoder(res2.Body).Decode(&info); err != nil {
-		return "", err
+	if res2.StatusCode != http.StatusOK || json.NewDecoder(res2.Body).Decode(&info) != nil {
+		return "", fmt.Errorf("userinfo: %s", res2.Status)
 	}
-	if !info.OK {
-		return "", errors.New(info.Error)
+	if info.SlackID == "" {
+		return "", errors.New("this Hack Club account has no Slack ID linked, or the app lacks the slack_id scope")
 	}
-	if info.UserID != "" {
-		return info.UserID, nil
-	}
-	if info.Sub == "" {
-		return "", errors.New("Slack did not say who signed in")
-	}
-	return info.Sub, nil
+	return info.SlackID, nil
 }
 
 // ---- Lapse and Lookout ----

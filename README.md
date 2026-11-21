@@ -48,6 +48,7 @@ builds every binary with `scripts/build-release.sh` and publishes them, with
 teardrop               # last 7 days
 teardrop -since 30d
 teardrop -json         # the same report as data
+teardrop -l            # keep it on screen, updating as you work (also --live)
 teardrop dashboard     # live charts in your browser, served on localhost only
 teardrop export -o stats.json   # signed report for the website's dashboard
 ```
@@ -138,21 +139,74 @@ takes off any time Lapse also recorded, since Hackatime already counts it.
 
 ```sh
 TEARDROP_ADMINS=U012ABCDEF,U034GHIJKL \
-TEARDROP_SLACK_CLIENT_ID=... TEARDROP_SLACK_CLIENT_SECRET=... \
+TEARDROP_HCA_CLIENT_ID=... TEARDROP_HCA_CLIENT_SECRET=... \
 teardrop server -addr :8080 -data /var/lib/teardrop -public-url https://teardrop.example.org
 ```
 
-Admins are Slack user IDs (in Slack: profile, ⋮, Copy member ID). They sign
-in with Slack at `/admin` and see every account, submission, and chat. To set
-up sign-in, create a Slack app, add `https://<public-url>/auth/slack/callback`
-as a redirect URL under OAuth & Permissions, and add the `openid` user
-scope. To try the review pages locally without Slack, run
-`teardrop server -addr 127.0.0.1:8080 -dev-login U012ABCDEF`.
+Admins sign in with [Hack Club Auth](https://auth.hackclub.com) at `/admin`
+and see every account, submission, and chat. `TEARDROP_ADMINS` lists their
+Slack user IDs (in Slack: profile, ⋮, Copy member ID); Hack Club Auth tells
+the server the Slack ID linked to whoever signs in.
+
+To set up sign-in, open Developer Apps on
+[auth.hackclub.com](https://auth.hackclub.com), create an app with the
+`openid` and `slack_id` scopes, and add `<public-url>/auth/callback` as its
+redirect URI. Put the app's client ID and secret in
+`TEARDROP_HCA_CLIENT_ID` and `TEARDROP_HCA_CLIENT_SECRET`. `-public-url` can
+also come from `TEARDROP_PUBLIC_URL`. To try the review pages locally without
+Hack Club Auth, run `teardrop server -addr 127.0.0.1:8080 -dev-login U012ABCDEF`.
 
 The review page shows the claimed hours, the hours the server recomputed
 from the logs, and every chat with the time between messages. Reviewers add
 a project's Lapse or Lookout sessions there, and the time they overlap is
 deflated automatically.
+
+### Deploy to Fly.io
+
+The server needs to run somewhere always on; GitHub Pages and Actions can't
+host it. The repository has a `Dockerfile` and a `fly.toml` for
+[Fly.io](https://fly.io). With [flyctl](https://fly.io/docs/flyctl/install/)
+installed and signed in, from a clone of this repository:
+
+1. Pick an app name and put it in `fly.toml` (`app`, and the host in
+   `TEARDROP_PUBLIC_URL`), then create the app:
+
+   ```sh
+   fly apps create <app>
+   ```
+
+2. Create the volume that holds accounts and submissions, in the region from
+   `fly.toml`:
+
+   ```sh
+   fly volumes create teardrop_data --region iad --size 1
+   ```
+
+3. In your Hack Club Auth app, add `https://<app>.fly.dev/auth/callback` as a
+   redirect URI. Then set the secrets:
+
+   ```sh
+   fly secrets set TEARDROP_ADMINS=U012ABCDEF \
+     TEARDROP_HCA_CLIENT_ID=... TEARDROP_HCA_CLIENT_SECRET=...
+   ```
+
+4. Deploy:
+
+   ```sh
+   fly deploy --build-arg VERSION=v0.3.0 --ha=false
+   ```
+
+Run exactly one machine: the server keeps its data in files on the volume
+(`--ha=false` stops Fly from starting a second one). It stops when idle and
+starts on the next request. Check it with `fly logs`; on start it warns if
+admins or sign-in are not set up. Then point people at it:
+
+```sh
+teardrop sync -server https://<app>.fly.dev
+```
+
+To use your own domain, run `fly certs add <domain>`, add the DNS records it
+prints, and change `TEARDROP_PUBLIC_URL` and the redirect URI to match.
 
 ## Privacy
 

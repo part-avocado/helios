@@ -145,35 +145,39 @@ func TestSubmission(t *testing.T) {
 	}
 }
 
-// Signing in goes through Slack and lands on the admin page.
-func TestSlackLogin(t *testing.T) {
+// Signing in goes through Hack Club Auth and lands on the admin page.
+func TestHCALogin(t *testing.T) {
 	var srvURL string
-	slack := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	hca := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/openid/connect/authorize": // the person approves; Slack sends them back
+		case "/oauth/authorize": // the person approves; Hack Club Auth sends them back
 			q := r.URL.Query()
+			if !strings.Contains(q.Get("scope"), "slack_id") {
+				http.Error(w, "no slack_id scope", 400)
+				return
+			}
 			http.Redirect(w, r, q.Get("redirect_uri")+"?code=c1&state="+q.Get("state"), http.StatusFound)
-		case "/api/openid.connect.token":
+		case "/oauth/token":
 			r.ParseForm()
-			if r.Form.Get("code") != "c1" || r.Form.Get("client_secret") != "sec" || r.Form.Get("redirect_uri") != srvURL+"/auth/slack/callback" {
-				w.Write([]byte(`{"ok":false,"error":"invalid_code"}`))
+			if r.Form.Get("grant_type") != "authorization_code" || r.Form.Get("code") != "c1" || r.Form.Get("client_secret") != "sec" || r.Form.Get("redirect_uri") != srvURL+"/auth/callback" {
+				http.Error(w, `{"error":"invalid_grant"}`, 400)
 				return
 			}
-			w.Write([]byte(`{"ok":true,"access_token":"at"}`))
-		case "/api/openid.connect.userInfo":
+			w.Write([]byte(`{"access_token":"at","token_type":"Bearer"}`))
+		case "/oauth/userinfo":
 			if r.Header.Get("Authorization") != "Bearer at" {
-				w.Write([]byte(`{"ok":false,"error":"invalid_auth"}`))
+				http.Error(w, `{"error":"invalid_token"}`, 401)
 				return
 			}
-			w.Write([]byte(`{"ok":true,"sub":"UADMIN","https://slack.com/user_id":"UADMIN"}`))
+			w.Write([]byte(`{"sub":"ident!x","slack_id":"UADMIN"}`))
 		}
 	}))
-	defer slack.Close()
+	defer hca.Close()
 	s := &server{dir: t.TempDir(), admins: map[string]bool{"UADMIN": true}, secret: []byte("0123456789abcdef0123456789abcdef"), client: http.DefaultClient}
 	srv := httptest.NewServer(s.handler())
 	defer srv.Close()
 	srvURL = srv.URL
-	s.slack = slackApp{base: slack.URL, clientID: "id", clientSecret: "sec", redirect: srv.URL + "/auth/slack/callback"}
+	s.hca = hcaApp{base: hca.URL, clientID: "id", clientSecret: "sec", redirect: srv.URL + "/auth/callback"}
 
 	jar, _ := cookiejar.New(nil)
 	c := &http.Client{Jar: jar}
@@ -188,7 +192,7 @@ func TestSlackLogin(t *testing.T) {
 		t.Fatalf("after sign-in: %d at %s", res.StatusCode, res.Request.URL)
 	}
 	// A callback whose state doesn't match the browser's is refused.
-	res, _ = c.Get(srv.URL + "/auth/slack/callback?code=c1&state=forged")
+	res, _ = c.Get(srv.URL + "/auth/callback?code=c1&state=forged")
 	if res.StatusCode != 400 {
 		t.Errorf("forged state: %d", res.StatusCode)
 	}
