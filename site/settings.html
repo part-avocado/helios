@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Settings · teardrop</title>
+	<link rel="icon" href="favicon.svg">
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono&family=Instrument+Serif&display=swap">
+	<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="nav" aria-label="Main">
+	<a class="brand" href="index.html"><img src="favicon.svg" alt="">teardrop</a>
+	<div class="links">
+		<a href="dashboard.html">Dashboard</a>
+		<a href="settings.html" class="active" aria-current="page">Settings</a>
+		<a href="people.html" class="admin-only">People</a>
+		<a href="docs.html" class="docs-link">Docs</a>
+	</div>
+	<form class="account hosted-only" method="post" action="/logout"><span id="account-name"></span><button class="pill">Sign out</button></form>
+</nav>
+
+<main class="wrap dash">
+	<div class="dash-head"><h1>Settings</h1></div>
+	<div class="settings">
+		<nav class="side" aria-label="Settings">
+			<a href="#setup"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2.5 3.5h11v9h-11zM5 6.5l2 1.5-2 1.5M8.5 10H11"/></svg>Setup</a>
+			<a href="#computers"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2.5 3h11v7.5h-11zM6 13.5h4M8 10.5v3"/></svg>Computers</a>
+			<a href="#upload"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M8 10.5V3M5 6l3-3 3 3M3 10.5V13h10v-2.5"/></svg>Upload</a>
+			<a href="#account"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="5.5" r="2.5"/><path d="M3 13.5c.6-2.5 2.6-4 5-4s4.4 1.5 5 4"/></svg>Account</a>
+		</nav>
+
+		<section class="pane" id="setup" hidden>
+			<h2>Set up a computer</h2>
+			<p class="muted">Do this on each computer you code on. They all add up on your dashboard.</p>
+			<div id="setup-steps"></div>
+			<h3>Sync key</h3>
+			<p class="muted">If your sync key gets out, make a new one. The old key stops working, so run the new connect command on each of your computers afterwards.</p>
+			<button class="btn small" id="new-key" type="button">Make a new key</button>
+			<p class="msg" id="key-msg" role="status" hidden></p>
+		</section>
+
+		<section class="pane" id="computers" hidden>
+			<h2>Computers</h2>
+			<p class="muted">Every computer that syncs to your account, and when it last did.</p>
+			<div class="list" id="computer-list"></div>
+			<p class="msg bad" id="computer-msg" role="alert" hidden></p>
+		</section>
+
+		<section class="pane" id="upload" hidden>
+			<h2>Upload a stats file</h2>
+			<p class="muted">For a computer that can't reach this site. Everywhere else, <a href="#setup">set up syncing</a> and you never need this.</p>
+			<ol class="steps">
+				<li><div>
+					<h3>Make the file</h3>
+					<p>On that computer, run:</p>
+					<div class="cmdbox"><div class="cmd"><code>teardrop export -o stats.json</code><button class="copy" type="button">Copy</button></div></div>
+				</div></li>
+				<li><div>
+					<h3>Upload it within 7 days</h3>
+					<label class="drop" id="drop">Drop <code>stats.json</code> here, or click to choose it
+						<input type="file" id="file" accept=".json,application/json" hidden>
+					</label>
+					<p class="msg" id="upload-msg" role="status" hidden></p>
+				</div></li>
+			</ol>
+			<p class="muted fine">The file holds times and counts, never the text of your prompts. A file that was edited after it was made is refused.</p>
+		</section>
+
+		<section class="pane" id="account" hidden>
+			<h2>Account</h2>
+			<p class="muted">You sign in with Hack Club Auth, so your name comes from there.</p>
+			<dl class="facts">
+				<div><dt>Name</dt><dd id="me-name">-</dd></div>
+				<div><dt>Slack ID</dt><dd id="me-slack">-</dd></div>
+			</dl>
+			<form method="post" action="/logout"><button class="btn small">Sign out</button></form>
+		</section>
+	</div>
+</main>
+<script src="site.js"></script>
+<script src="account.js"></script>
+<script src="settings.js"></script>
+</body>
+</html>

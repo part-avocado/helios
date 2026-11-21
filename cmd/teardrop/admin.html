@@ -110,17 +110,17 @@ for (const f of document.querySelectorAll('[data-filter]')) {
 </div>
 <div class="layout">
 	<div class="stack">
-		<section class="card"><header><h2>Timeline</h2><span class="right">{{clock .Strip.From}} – {{clock .Strip.To}} UTC</span></header><div class="body">
+		<section class="card"><header><h2>Timeline</h2><span class="right">{{stamp .Strip.From}} – {{stamp .Strip.To}} UTC</span></header><div class="body">
 			<div class="lanes">
 				<div class="lane-label">Engaged</div><div class="lane">{{range .Strip.Engaged}}<i class="e" style="left:{{pct .Left}}%;width:{{pct .Width}}%"></i>{{end}}</div>
 				<div class="lane-label">Lapse</div><div class="lane">{{range .Strip.Lapse}}<i class="l" style="left:{{pct .Left}}%;width:{{pct .Width}}%"></i>{{else}}<span class="lane-empty">no Lapse sessions added</span>{{end}}</div>
 				<div class="lane-label">Prompts</div><div class="lane">{{range .Strip.Prompts}}<i class="p" style="left:{{pct .}}%"></i>{{end}}</div>
-				<div></div><div class="axis"><span>{{clock .Strip.From}}</span><span>{{clock .Strip.To}}</span></div>
+				<div></div><div class="axis"><span>{{stamp .Strip.From}}</span><span>{{stamp .Strip.To}}</span></div>
 			</div>
-			<div class="legend-list">{{range .Engaged}}<span>{{clock .Start}}–{{clock .End}} <b>{{dur (.End.Sub .Start)}}</b>{{if .Lapse}} <span class="chip warn">−{{dur .Lapse}} Lapse</span>{{end}}</span>{{end}}</div>
+			<div class="legend-list">{{range .Engaged}}{{if .Day}}<span class="day">{{.Day}}</span>{{end}}<span>{{clock .Start}}–{{clock .End}} <b>{{dur (.End.Sub .Start)}}</b>{{if .Lapse}} <span class="chip warn">−{{dur .Lapse}} Lapse</span>{{end}}</span>{{end}}</div>
 		</div></section>
 		{{range .Logs}}<section class="card"><header><h2>{{.Tool}}</h2><span class="mono muted">{{.ID}}</span><span class="right">{{len .Messages}} messages</span></header>
-		<div class="chat">{{range .Messages}}
+		<div class="chat">{{range .Messages}}{{if .Day}}<div class="day">{{.Day}}</div>{{end}}
 			{{if eq .Role "tool"}}<div class="msg tool{{if .InLapse}} inlapse{{end}}"><div class="time">{{clock .Time}}</div><div>{{if .Lines}}<details><summary>{{.Summary}}</summary><div class="diff">{{range .Lines}}<div class="{{.Kind}}">{{.Text}}</div>{{end}}</div></details>{{else}}<details><summary>{{.Summary}}</summary></details>{{end}}</div></div>
 			{{else}}<div class="msg {{.Role}}{{if .InLapse}} inlapse{{end}}"><div class="time">{{clock .Time}}</div><div{{if eq .Role "you"}} class="bubble"{{end}}>
 				<div class="who">{{if eq .Role "you"}}Human{{else}}Agent{{end}}{{if and (eq .Role "you") .Since}}<span class="chip">{{gap .Since}} after the last message</span>{{end}}{{if .InLapse}}<span class="chip warn">during Lapse</span>{{end}}</div>
@@ -131,6 +131,7 @@ for (const f of document.querySelectorAll('[data-filter]')) {
 		<section class="card"><header><h2>Hours</h2></header><div class="body ledger">
 			<div class="row"><div class="label">Claimed<small>signed by the account</small></div><div class="val">{{secs .Rec.Claimed}}</div></div>
 			<div class="row"><div class="label">From the logs<small>recomputed by this server</small></div><div class="val">{{if .Mismatch}}<span class="chip warn" title="Differs from the claim; credit the time from the logs">differs</span> {{end}}{{secs .Rec.Recomputed}}</div></div>
+			{{if .Rec.EarlierOverlap}}<div class="row minus"><div class="label">Already submitted<small>in this account's <a class="lnk" href="/admin/accounts/{{.Rec.Account}}">earlier submissions</a> of the project</small></div><div class="val">−{{secs .Rec.EarlierOverlap}}</div></div>{{end}}
 			<div class="row minus"><div class="label">Lapse overlap<small>already counted on Hackatime</small></div><div class="val">−{{secs .Rec.LapseOverlap}}</div></div>
 			<div class="row total"><div class="label">Credited</div><div class="val">{{secs .Rec.Credited}}</div></div>
 		</div></section>

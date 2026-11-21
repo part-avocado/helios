@@ -1,6 +1,7 @@
 package timeline
 
 import (
+	"slices"
 	"testing"
 	"time"
 )
@@ -69,5 +70,17 @@ func TestOverlap(t *testing.T) {
 	}
 	if got := Total(a); got != 20*time.Minute {
 		t.Errorf("Total = %v, want 20m", got)
+	}
+}
+
+// Days splits engaged time at local midnight and counts overlap once.
+func TestDays(t *testing.T) {
+	loc := time.FixedZone("UTC+2", 2*60*60)
+	utc := func(h, m int) time.Time { return time.Date(2026, 11, 20, h, m, 0, 0, time.UTC) }
+	// In UTC+2 these are 23:40-00:20 and 23:30-23:50, overlapping from 23:40 to 23:50.
+	got := Days([]Interval{{utc(21, 40), utc(22, 20)}, {utc(21, 30), utc(21, 50)}}, loc)
+	want := []Day{{"2026-11-20", Seconds(30 * time.Minute)}, {"2026-11-21", Seconds(20 * time.Minute)}}
+	if !slices.Equal(got, want) {
+		t.Errorf("Days = %v, want %v", got, want)
 	}
 }

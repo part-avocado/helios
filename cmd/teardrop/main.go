@@ -54,6 +54,10 @@ func main() {
 		case "server":
 			runServer(os.Args[2:])
 			return
+		case "help":
+			os.Args[1] = "-h"
+		case "version":
+			os.Args[1] = "-version"
 		}
 	}
 	claudeDir := flag.String("claude-dir", "", "Claude Code config directories, comma-separated (default: $CLAUDE_CONFIG_DIR, ~/.claude, ~/.config/claude)")
@@ -66,22 +70,27 @@ func main() {
 	flag.BoolVar(&live, "l", false, "short for -live")
 	every := flag.Duration("every", 3*time.Second, "with -live, how often to reread the logs")
 	showVersion := flag.Bool("version", false, "print the version and exit")
+	// The rules are not flags: the help would spell out how time is credited,
+	// and hours counted with other rules wouldn't match an export or a sync.
 	rules := timeline.DefaultRules
-	flag.DurationVar(&rules.ComposeCap, "compose-cap", rules.ComposeCap, "max credit for reading output and writing one prompt")
-	flag.DurationVar(&rules.WatchCap, "watch-cap", rules.WatchCap, "max credit for watching the agent after a prompt")
-	flag.DurationVar(&rules.BlockGap, "block-gap", rules.BlockGap, "join work blocks separated by less than this")
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage: teardrop [flags]   show your AI coding timeline (-l keeps it updating live)")
 		fmt.Fprintln(os.Stderr, "       teardrop setup      check which tools are found, install hooks, fix settings that lose history")
 		fmt.Fprintln(os.Stderr, "       teardrop dashboard  open a live dashboard of your stats in the browser")
-		fmt.Fprintln(os.Stderr, "       teardrop export     write a signed report to load in the dashboard")
-		fmt.Fprintln(os.Stderr, "       teardrop sync       upload your signed counts (time, prompts, tokens, lines; no text) to the central server")
+		fmt.Fprintln(os.Stderr, "       teardrop export     write a signed report to upload on the website, under Settings")
+		fmt.Fprintln(os.Stderr, "       teardrop sync       upload your signed counts (time, prompts, tokens, lines; no text) to your account on the website")
 		fmt.Fprintln(os.Stderr, "       teardrop submit     submit a project's hours with the full chat logs behind them, for review")
-		fmt.Fprintln(os.Stderr, "       teardrop server     run the central server")
+		fmt.Fprintln(os.Stderr, "       teardrop server     run the review server")
 		fmt.Fprintln(os.Stderr)
 		flag.PrintDefaults()
 	}
 	flag.Parse()
+	if flag.NArg() > 0 {
+		// Without this, a mistyped command would quietly print the timeline.
+		fmt.Fprintf(os.Stderr, "teardrop: unknown command %q\n\n", flag.Arg(0))
+		flag.Usage()
+		os.Exit(2)
+	}
 	if *showVersion {
 		fmt.Println("teardrop", version)
 		return
@@ -124,14 +133,38 @@ func printEmpty(out io.Writer, since string, anyLogs bool) {
 
 // loadAll reads every transcript plus the hook journal.
 func loadAll(claudeDir, codexDir string) ([]sources.Raw, []string) {
-	raws, _, warnings := load(locations(claudeDir, codexDir))
+	return loadSince(claudeDir, codexDir, time.Time{})
+}
+
+// loadSince is loadAll without the transcripts last written before since.
+func loadSince(claudeDir, codexDir string, since time.Time) ([]sources.Raw, []string) {
+	raws, _, warnings := load(locations(claudeDir, codexDir), since)
 	journal, jw := sources.ReadJournal(dataDir())
 	return mergeJournal(raws, journal), append(warnings, jw...)
 }
 
+// lookups holds what a report learns about projects from git and their
+// files: which project a log belongs to, the words in its files, and its
+// commits. Live mode keeps one between refreshes, so git isn't asked and the
+// files aren't reread every few seconds.
+type lookups struct {
+	// resolve names a log's project and the directory holding its files, if any.
+	resolve func(sources.Raw) (timeline.Project, string)
+	vocabs  map[string]textscore.Vocab // by project directory
+	commits map[string]*commitLines    // by project directory, as read
+}
+
+func newLookups(resolve func(sources.Raw) (timeline.Project, string)) *lookups {
+	return &lookups{resolve: resolve, vocabs: map[string]textscore.Vocab{}, commits: map[string]*commitLines{}}
+}
+
 // buildReport credits the events of raws after cutoff.
 func buildReport(raws []sources.Raw, cutoff time.Time, rules timeline.Rules) (timeline.Report, []timeline.Session) {
-	sessions, committed := buildSessions(raws, cutoff, localProjects())
+	return buildReportWith(newLookups(localProjects()), raws, cutoff, rules)
+}
+
+func buildReportWith(look *lookups, raws []sources.Raw, cutoff time.Time, rules timeline.Rules) (timeline.Report, []timeline.Session) {
+	sessions, committed := buildSessions(raws, cutoff, look)
 	rep := timeline.Build(sessions, rules)
 	for i := range rep.Projects {
 		rep.Projects[i].Committed = committed[rep.Projects[i].Project.Key]
@@ -142,11 +175,9 @@ func buildReport(raws []sources.Raw, cutoff time.Time, rules timeline.Rules) (ti
 // buildSessions resolves each log to a project, keeps events after cutoff,
 // marks prompts that fail the text check as noise, and finds the lines agents
 // wrote that were later committed. It also returns the lines committed to
-// each project's repository in the window. resolve names a log's project and
-// the directory holding its files, if any.
-func buildSessions(raws []sources.Raw, cutoff time.Time, resolve func(sources.Raw) (timeline.Project, string)) ([]timeline.Session, map[string]int) {
-	vocabs := map[string]textscore.Vocab{}
-	repos := map[string]*commitLines{}
+// each project's repository in the window.
+func buildSessions(raws []sources.Raw, cutoff time.Time, look *lookups) ([]timeline.Session, map[string]int) {
+	repos := map[string]*commitLines{} // this report's copies, which edits claim lines from
 	committed := map[string]int{}
 	var sessions []timeline.Session
 	for _, r := range raws {
@@ -154,7 +185,7 @@ func buildSessions(raws []sources.Raw, cutoff time.Time, resolve func(sources.Ra
 			project timeline.Project
 			root    string
 		}
-		p.project, p.root = resolve(r)
+		p.project, p.root = look.resolve(r)
 		// Classify the whole session, so prompts before the window still count
 		// as context for repeats and autopilot runs.
 		all := slices.Clone(r.Events)
@@ -163,10 +194,10 @@ func buildSessions(raws []sources.Raw, cutoff time.Time, resolve func(sources.Ra
 				return false // outside the window: only context, so skip reading the repo
 			}
 			// Read the project's files only when a prompt has words the dictionary lacks.
-			v, built := vocabs[p.root]
+			v, built := look.vocabs[p.root]
 			if len(s.Unknown) > 0 && !built {
 				v = textscore.RepoVocab(p.root)
-				vocabs[p.root] = v
+				look.vocabs[p.root] = v
 			}
 			return s.Noise(v) > noiseThreshold
 		})
@@ -177,7 +208,12 @@ func buildSessions(raws []sources.Raw, cutoff time.Time, resolve func(sources.Ra
 			}
 			c := repos[p.root]
 			if c == nil {
-				c = readCommits(p.root, cutoff)
+				read := look.commits[p.root]
+				if read == nil {
+					read = readCommits(p.root, cutoff)
+					look.commits[p.root] = read
+				}
+				c = read.clone()
 				repos[p.root] = c
 				committed[p.project.Key] += c.added
 			}
@@ -212,25 +248,17 @@ func printReport(out io.Writer, rep timeline.Report, nSessions int) {
 	fmt.Fprintln(out)
 	w = tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "PROJECT\tENGAGED\tSESSION TIME\tPROMPTS\tSKIPPED\tTOKENS IN/OUT\tAGENT LINES +/-\tKEPT\tCOMMITTED")
-	var noise, repeat, auto int
+	skipped := 0
 	for _, p := range rep.Projects {
-		noise, repeat, auto = noise+p.NoisePrompts, repeat+p.RepeatPrompts, auto+p.AutopilotPrompts
+		skipped += p.NoisePrompts + p.RepeatPrompts + p.AutopilotPrompts
 		fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%d\t%s\t+%d/-%d\t%d\t%d\n", p.Project.Name, dur(time.Duration(p.Engaged)), dur(time.Duration(p.SessionTime)),
 			p.Prompts, p.NoisePrompts+p.RepeatPrompts+p.AutopilotPrompts, tokens(p.In, p.Out), p.Lines.Added, p.Lines.Removed, p.Lines.Kept, p.Committed)
 	}
 	w.Flush()
 	fmt.Fprintf(out, "\nTotal engaged: %s across %s and %s\n", dur(time.Duration(rep.Engaged)), plural(len(rep.Projects), "project"), plural(nSessions, "session"))
-	if skipped := noise + repeat + auto; skipped > 0 {
-		var why []string
-		for _, r := range []struct {
-			n    int
-			text string
-		}{{noise, "gibberish"}, {repeat, "repeated the same request a third time or more"}, {auto, "autopilot: the third or later \"continue\" or \"fix it\" in a row"}} {
-			if r.n > 0 {
-				why = append(why, fmt.Sprintf("%d %s", r.n, r.text))
-			}
-		}
-		fmt.Fprintf(out, "%s earned no time (SKIPPED): %s.\n", plural(skipped, "prompt"), strings.Join(why, "; "))
+	if skipped > 0 {
+		// Says that prompts were skipped, not which check skipped them.
+		fmt.Fprintf(out, "%s earned no time (SKIPPED). Prompts that don't reflect real work aren't counted.\n", plural(skipped, "prompt"))
 	}
 	fmt.Fprintln(out, testingNotice)
 }

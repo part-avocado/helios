@@ -1,0 +1,16 @@
+# Settings for running the Worker on your computer. Copy this file to
+# .dev.vars, which git ignores.
+
+# Signs sign-in cookies. Any long random text.
+SESSION_SECRET=local-only-secret-change-me
+
+# Signs every visitor in as this Slack user ID, without Hack Club Auth. It
+# only works on localhost.
+DEV_LOGIN=U012ABCDEF
+
+# Slack user IDs of admins, comma-separated.
+ADMINS=U012ABCDEF
+
+# A Hack Club Auth app, to try real sign-in. Remove DEV_LOGIN to use it.
+HCA_CLIENT_ID=
+HCA_CLIENT_SECRET=

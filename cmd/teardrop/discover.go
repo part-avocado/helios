@@ -75,13 +75,14 @@ func pick(flag, env string, defaults ...string) []string {
 }
 
 // load parses every location. A file reached through two locations, such as
-// a symlinked config dir, is read once.
-func load(locs []location) (raws []sources.Raw, stats []found, warnings []string) {
+// a symlinked config dir, is read once. Files last written before since are
+// skipped; the zero time reads every file.
+func load(locs []location, since time.Time) (raws []sources.Raw, stats []found, warnings []string) {
 	seen := map[string]bool{}
 	for _, loc := range locs {
 		f := found{location: loc}
 		for _, root := range loc.Logs {
-			rs, w := sources.Walk(root, loc.Parser)
+			rs, w := sources.Walk(root, loc.Parser, since)
 			warnings = append(warnings, w...)
 			for _, r := range rs {
 				if seen[r.Path] {

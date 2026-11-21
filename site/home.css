@@ -186,8 +186,8 @@ footer .bottom a:hover { color: var(--ink); }
 }
 @media (max-width: 520px) {
 	.nav { left: 12px; right: 12px; transform: none; padding-left: 16px; }
-	.nav .links { display: none; }
-	.nav .pill { margin-left: auto; }
+	.nav .links { margin-left: auto; }
+	.nav .brand { margin-right: 0; }
 	.hero { padding-top: 132px; }
 	.term { font-size: 11px; padding: 16px; }
 }

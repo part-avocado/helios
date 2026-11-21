@@ -73,6 +73,9 @@ func serverURL(set string) (string, error) {
 		if err := os.MkdirAll(dataDir(), 0o700); err != nil {
 			return "", err
 		}
+		if old, _ := os.ReadFile(path); strings.TrimSpace(string(old)) != s {
+			os.Remove(keyPath()) // the remembered key belongs to the old server
+		}
 		return s, os.WriteFile(path, []byte(s+"\n"), 0o600)
 	}
 	if s := os.Getenv("TEARDROP_SERVER"); s != "" {
@@ -80,14 +83,47 @@ func serverURL(set string) (string, error) {
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return "", errors.New("no server set; run `teardrop sync -server https://...` once")
+		return "", errors.New("no server set; sign in on your teardrop site and run the command under Settings, or run `teardrop sync -server https://...` once")
 	}
 	return strings.TrimSpace(string(b)), nil
 }
 
-func post(server, path string, body []byte) ([]byte, error) {
+func keyPath() string { return filepath.Join(dataDir(), "key") }
+
+// syncKey returns the key that says whose account on server this computer
+// syncs to: -key (remembered for later runs), else $TEARDROP_KEY, else the
+// remembered one. It is "" for a server without accounts.
+func syncKey(set, server string) (string, error) {
+	if set != "" {
+		if err := os.MkdirAll(dataDir(), 0o700); err != nil {
+			return "", err
+		}
+		return set, os.WriteFile(keyPath(), []byte(set+"\n"), 0o600)
+	}
+	if k := os.Getenv("TEARDROP_KEY"); k != "" {
+		return k, nil
+	}
+	// The remembered key goes only to the remembered server, never to one
+	// named by $TEARDROP_SERVER.
+	if remembered, _ := os.ReadFile(filepath.Join(dataDir(), "server")); strings.TrimSpace(string(remembered)) != server {
+		return "", nil
+	}
+	b, _ := os.ReadFile(keyPath())
+	return strings.TrimSpace(string(b)), nil
+}
+
+// post sends body to the server, with the sync key if there is one.
+func post(server, key, path string, body []byte) ([]byte, error) {
+	req, err := http.NewRequest("POST", server+path, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
 	c := &http.Client{Timeout: 5 * time.Minute}
-	res, err := c.Post(server+path, "application/json", bytes.NewReader(body))
+	res, err := c.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -104,11 +140,14 @@ func post(server, path string, body []byte) ([]byte, error) {
 func runSync(args []string) {
 	fs := flag.NewFlagSet("sync", flag.ExitOnError)
 	server := fs.String("server", "", "central server URL, remembered for later runs")
+	key := fs.String("key", "", "your sync key from the server's Settings page, remembered for later runs")
 	quiet := fs.Bool("quiet", false, "print only errors (used by hooks)")
 	claudeDir := fs.String("claude-dir", "", "Claude Code config directories, comma-separated")
 	codexDir := fs.String("codex-dir", "", "Codex home directories, comma-separated")
 	fs.Parse(args)
 	srv, err := serverURL(*server)
+	check(err)
+	k, err := syncKey(*key, srv)
 	check(err)
 
 	window, _ := parseSince(syncWindow)
@@ -119,15 +158,24 @@ func runSync(args []string) {
 	check(err)
 	b, err := json.Marshal(signed)
 	check(err)
-	_, err = post(srv, "/api/v1/reports", b)
+	res, err := post(srv, k, "/api/v1/reports", b)
 	check(err)
 	os.WriteFile(filepath.Join(dataDir(), "last-sync"), nil, 0o600)
-	if !*quiet {
-		priv, _ := accountKey()
-		id := accountID(priv.Public().(ed25519.PublicKey))
-		fmt.Printf("Synced %s engaged across %s as account %s.\nProfile: %s/api/v1/accounts/%s\n",
-			dur(time.Duration(rep.Engaged)), plural(len(rep.Projects), "project"), id, srv, id)
+	if *quiet {
+		return
 	}
+	priv, _ := accountKey()
+	id := accountID(priv.Public().(ed25519.PublicKey))
+	// A server with accounts answers with the page that shows these stats.
+	var r struct {
+		URL string `json:"url"`
+	}
+	json.Unmarshal(res, &r)
+	if r.URL == "" {
+		r.URL = srv + "/api/v1/accounts/" + id
+	}
+	fmt.Printf("Synced %s engaged across %s from this computer (%s).\nSee it at %s\n",
+		dur(time.Duration(rep.Engaged)), plural(len(rep.Projects), "project"), id, r.URL)
 }
 
 // syncSoon starts a background sync when a server is set and the last one
@@ -170,8 +218,8 @@ func runSubmit(args []string) {
 		fmt.Fprintln(os.Stderr, "Usage: teardrop submit [flags] <project>")
 		fs.PrintDefaults()
 	}
-	fs.Parse(args)
-	if fs.NArg() != 1 {
+	projects := parseAnywhere(fs, args)
+	if len(projects) != 1 {
 		fs.Usage()
 		os.Exit(2)
 	}
@@ -181,7 +229,7 @@ func runSubmit(args []string) {
 	now := time.Now()
 	raws, _ := loadAll(*claudeDir, *codexDir)
 	rep, sessions := buildReport(raws, now.Add(-window), timeline.DefaultRules)
-	key, err := pickProject(rep, fs.Arg(0))
+	key, err := pickProject(rep, projects[0])
 	check(err)
 	sub, err := makeSubmission(key, rep, sessions, *since, now)
 	check(err)
@@ -213,7 +261,9 @@ func runSubmit(args []string) {
 			os.Exit(1)
 		}
 	}
-	res, err := post(srv, "/api/v1/submissions", b)
+	k, err := syncKey("", srv)
+	check(err)
+	res, err := post(srv, k, "/api/v1/submissions", b)
 	check(err)
 	var r struct {
 		ID string `json:"id"`
@@ -221,6 +271,20 @@ func runSubmit(args []string) {
 	json.Unmarshal(res, &r)
 	fmt.Printf("Submitted as %s.\n", r.ID)
 	fmt.Fprintln(os.Stderr, testingNotice)
+}
+
+// parseAnywhere parses flags that come before or after the other arguments,
+// which it returns, so `teardrop submit myproject -yes` works.
+func parseAnywhere(fs *flag.FlagSet, args []string) []string {
+	var rest []string
+	for {
+		fs.Parse(args)
+		if fs.NArg() == 0 {
+			return rest
+		}
+		rest = append(rest, fs.Arg(0))
+		args = fs.Args()[1:]
+	}
 }
 
 // testingNotice tells people where testing time goes.

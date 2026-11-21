@@ -217,3 +217,24 @@ func TestEdits(t *testing.T) {
 		t.Errorf("codex edits = %v, want %v", lines, want)
 	}
 }
+
+// Walk with a since time leaves out logs that were last written before it.
+func TestWalkSince(t *testing.T) {
+	dir := t.TempDir()
+	line := `{"type":"user","timestamp":"2026-11-20T15:00:00.000Z","message":{"content":"fix the bug"}}` + "\n"
+	for _, name := range []string{"old.jsonl", "new.jsonl"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(line), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	now := time.Now()
+	os.Chtimes(filepath.Join(dir, "old.jsonl"), now.Add(-10*24*time.Hour), now.Add(-10*24*time.Hour))
+
+	if all, _ := Walk(dir, ClaudeParser(), time.Time{}); len(all) != 2 {
+		t.Errorf("without a since time: %d logs, want 2", len(all))
+	}
+	recent, _ := Walk(dir, ClaudeParser(), now.Add(-2*24*time.Hour))
+	if len(recent) != 1 || recent[0].ID != "new" {
+		t.Errorf("since 2 days ago: %+v, want only new.jsonl", recent)
+	}
+}

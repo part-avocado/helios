@@ -1,5 +1,6 @@
-// Package site is the teardrop website: a static site published to GitHub
-// Pages, also embedded in the binary so `teardrop dashboard` can serve it.
+// Package site is the teardrop website. The Worker in ../worker serves it on
+// Cloudflare, and it is embedded in the binary so `teardrop dashboard` can
+// serve it too.
 package site
 
 import "embed"

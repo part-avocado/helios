@@ -160,6 +160,33 @@ type Report struct {
 	Blocks   []Block        `json:"blocks"`
 	Projects []ProjectTotal `json:"projects"`
 	Engaged  Seconds        `json:"engaged_seconds"` // across projects, overlap counted once
+	Days     []Day          `json:"days"`            // Engaged, split by calendar day
+}
+
+// Day is the engaged time on one calendar day. Like Report.Engaged, time
+// spent on two projects at once counts once; summing blocks would count it twice.
+type Day struct {
+	Date    string  `json:"date"` // YYYY-MM-DD in the time zone of the machine that made the report
+	Engaged Seconds `json:"engaged_seconds"`
+}
+
+// Days totals the union of iv per calendar day in loc, in order.
+func Days(iv []Interval, loc *time.Location) []Day {
+	var out []Day
+	for _, x := range merge(iv, 0) {
+		for s := x.Start.In(loc); s.Before(x.End); {
+			y, m, d := s.Date()
+			next := earlier(time.Date(y, m, d+1, 0, 0, 0, 0, loc), x.End)
+			date := s.Format("2006-01-02")
+			if n := len(out); n > 0 && out[n-1].Date == date {
+				out[n-1].Engaged += Seconds(next.Sub(s))
+			} else {
+				out = append(out, Day{date, Seconds(next.Sub(s))})
+			}
+			s = next
+		}
+	}
+	return out
 }
 
 func Build(sessions []Session, r Rules) Report {
@@ -260,6 +287,7 @@ func Build(sessions []Session, r Rules) Report {
 	sort.Slice(rep.Blocks, func(i, j int) bool { return rep.Blocks[i].Start.Before(rep.Blocks[j].Start) })
 	sort.SliceStable(rep.Projects, func(i, j int) bool { return rep.Projects[i].Engaged > rep.Projects[j].Engaged })
 	rep.Engaged = Seconds(total(merge(everything, 0)))
+	rep.Days = Days(everything, time.Local)
 	return rep
 }
 

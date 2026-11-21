@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"maps"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -48,6 +49,10 @@ func readCommits(root string, since time.Time) *commitLines {
 	}
 	cmd.Wait()
 	return c
+}
+
+func (c *commitLines) clone() *commitLines {
+	return &commitLines{added: c.added, hashes: maps.Clone(c.hashes)}
 }
 
 // claim counts the hashes found among the committed lines, matching each

@@ -32,7 +32,7 @@ func runSetup(args []string) {
 
 	fmt.Println("Looking for AI coding tools on this machine...")
 	fmt.Println()
-	_, stats, warnings := load(locations(*claudeDir, *codexDir))
+	_, stats, warnings := load(locations(*claudeDir, *codexDir), time.Time{})
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	anyFound := false
 	for _, f := range stats {

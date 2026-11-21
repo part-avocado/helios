@@ -63,8 +63,9 @@ type Parser func(r io.Reader, id string) (Raw, error)
 
 // Walk parses every .jsonl and .jsonl.zst file under root. A missing root
 // yields nothing. A file that cannot be read or parsed is reported in
-// warnings and skipped, so one bad file never stops a run.
-func Walk(root string, parse Parser) (out []Raw, warnings []string) {
+// warnings and skipped, so one bad file never stops a run. Files last
+// written before since are not read; the zero time reads every file.
+func Walk(root string, parse Parser, since time.Time) (out []Raw, warnings []string) {
 	filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			if !os.IsNotExist(err) {
@@ -78,6 +79,12 @@ func Walk(root string, parse Parser) (out []Raw, warnings []string) {
 		name := d.Name()
 		if d.IsDir() || !(strings.HasSuffix(name, ".jsonl") || strings.HasSuffix(name, ".jsonl.zst")) {
 			return nil
+		}
+		if !since.IsZero() {
+			// Stat follows symlinks and asks the file itself, which a directory listing may lag behind.
+			if st, err := os.Stat(path); err == nil && st.ModTime().Before(since) {
+				return nil
+			}
 		}
 		r, err := parseFile(path, parse)
 		if err != nil {

@@ -84,7 +84,9 @@ func runServer(args []string) {
 		log.Print("Hack Club Auth sign-in is not set up; set TEARDROP_HCA_CLIENT_ID, TEARDROP_HCA_CLIENT_SECRET, and -public-url")
 	}
 	log.Printf("teardrop server listening on %s, storing data in %s", *addr, *dir)
-	check(http.ListenAndServe(*addr, s.handler()))
+	// No limit on reading a body: a large submission on a slow connection takes a while.
+	srv := &http.Server{Addr: *addr, Handler: s.handler(), ReadHeaderTimeout: 15 * time.Second, IdleTimeout: 2 * time.Minute}
+	check(srv.ListenAndServe())
 }
 
 var accountRe = regexp.MustCompile(`^td-[0-9a-f]{12}$`)
@@ -252,8 +254,12 @@ type submissionRecord struct {
 	Recomputed timeline.Seconds    `json:"recomputed_seconds"`
 	Engaged    []timeline.Interval `json:"engaged"` // recomputed engaged time
 	Lapse      []lapseCheck        `json:"lapse,omitempty"`
+	// Recomputed time that this account's earlier submissions of the project
+	// already cover, so sending a project again doesn't count its hours twice.
+	Earlier        []timeline.Interval `json:"earlier,omitempty"`
+	EarlierOverlap timeline.Seconds    `json:"earlier_overlap_seconds"`
 	// Recomputed time that Lapse sessions also cover, which Hackatime already
-	// counts, and what is left to credit.
+	// counts, and what is left to credit after both are taken off.
 	LapseOverlap timeline.Seconds `json:"lapse_overlap_seconds"`
 	Credited     timeline.Seconds `json:"credited_seconds"`
 }
@@ -278,14 +284,26 @@ func (s *server) postSubmission(w http.ResponseWriter, r *http.Request) {
 	}
 	sum := sha256.Sum256([]byte(sub.Signed.Payload))
 	rec.ID = "sub-" + hex.EncodeToString(sum[:8])
+	// The same submission sent again keeps its record, with the Lapse sessions
+	// reviewers have added to it.
+	if old, _, _, err := s.loadSubmission(rec.ID); err == nil {
+		writeJSON(w, old)
+		return
+	}
 	for _, l := range sub.Lapse {
 		if tok := lookoutToken(l); tok != "" {
-			rec.Lapse = setLapse(rec.Lapse, s.checkLapse(tok))
+			rec.Lapse = setLapse(rec.Lapse, s.checkLapse(tok)) // before locking: it waits on Lookout
 		}
 	}
-	rec.deflate()
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	for _, old := range s.records() {
+		if old.Account == rec.Account && old.Project.Key == rec.Project.Key && old.ID != rec.ID {
+			rec.Earlier = append(rec.Earlier, old.Engaged...)
+		}
+	}
+	rec.Earlier = timeline.Union(rec.Earlier)
+	rec.deflate()
 	dir := filepath.Join(s.dir, "submissions", rec.ID)
 	if writeFile(filepath.Join(dir, "submission.json"), body) != nil || s.saveRecord(rec) != nil {
 		httpError(w, http.StatusInternalServerError, "could not store the submission")
@@ -351,10 +369,14 @@ func checkSubmission(sub Submission, now time.Time) (submissionRecord, error) {
 	}
 	// The server has no copy of the repository, so it can't use its
 	// vocabulary or commits; every log belongs to the submitted project.
-	sessions, _ := buildSessions(raws, h.GeneratedAt.Add(-window), func(sources.Raw) (timeline.Project, string) {
+	sessions, _ := buildSessions(raws, h.GeneratedAt.Add(-window), newLookups(func(sources.Raw) (timeline.Project, string) {
 		return p.Project, ""
-	})
+	}))
 	got := timeline.Build(sessions, timeline.DefaultRules)
+	// The hours come from the logs, so they too must end before the signing time.
+	if err := blocksBefore(got, h.GeneratedAt); err != nil {
+		return rec, errors.New("its logs have activity after the time it was made")
+	}
 
 	// Every claimed block must overlap time the logs earn.
 	for _, b := range p.Report.Blocks {

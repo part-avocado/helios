@@ -275,12 +275,15 @@ func (s *server) checkLapse(tok string) lapseCheck {
 	return c
 }
 
-// deflate takes the time Lapse sessions also cover off the recomputed hours.
-// Lapse time goes to Hackatime, so counting it here too would count it twice.
+// deflate takes time that is already counted off the recomputed hours: time
+// Lapse sessions also cover, which goes to Hackatime, and time the account's
+// earlier submissions of the project cover. Time that is both comes off once.
 func (rec *submissionRecord) deflate() {
-	overlap := timeline.Overlap(rec.Engaged, rec.lapseTime())
-	rec.LapseOverlap = timeline.Seconds(overlap)
-	rec.Credited = timeline.Seconds(max(0, time.Duration(rec.Recomputed)-overlap))
+	lapse := rec.lapseTime()
+	rec.LapseOverlap = timeline.Seconds(timeline.Overlap(rec.Engaged, lapse))
+	rec.EarlierOverlap = timeline.Seconds(timeline.Overlap(rec.Engaged, rec.Earlier))
+	counted := timeline.Overlap(rec.Engaged, append(lapse, rec.Earlier...))
+	rec.Credited = timeline.Seconds(max(0, time.Duration(rec.Recomputed)-counted))
 }
 
 func (rec submissionRecord) lapseTime() []timeline.Interval {
@@ -400,6 +403,7 @@ type chatLog struct {
 
 type chatMessage struct {
 	sources.Message
+	Day     string        // the date, on the first message of each day
 	Since   time.Duration // since the message before it
 	InLapse bool          // a Lapse session was recording then
 	Summary string        // a tool call's first line
@@ -411,8 +415,12 @@ type diffLine struct{ Text, Kind string }
 // engagedRow is one stretch of recomputed engaged time.
 type engagedRow struct {
 	timeline.Interval
+	Day   string        // the date, on the first stretch of each day
 	Lapse time.Duration // of it, covered by Lapse
 }
+
+// reviewDay names the day of t on the review page, which shows UTC throughout.
+func reviewDay(t time.Time) string { return t.UTC().Format("Mon, Jan 2") }
 
 // bar is a stretch of the timeline, in percent of its width.
 type bar struct{ Left, Width float64 }
@@ -486,6 +494,10 @@ func (s *server) adminSubmission(w http.ResponseWriter, r *http.Request) {
 			if j > 0 {
 				cm.Since = m.Time.Sub(msgs[j-1].Time)
 			}
+			// Submissions cover days or weeks, so a clock time alone doesn't say when.
+			if j == 0 || reviewDay(m.Time) != reviewDay(msgs[j-1].Time) {
+				cm.Day = reviewDay(m.Time)
+			}
 			switch m.Role {
 			case "you":
 				prompts = append(prompts, m.Time)
@@ -511,10 +523,14 @@ func (s *server) adminSubmission(w http.ResponseWriter, r *http.Request) {
 		logs = append(logs, c)
 	}
 	var engaged []engagedRow
-	for _, iv := range rec.Engaged {
+	for i, iv := range rec.Engaged {
 		widen(iv.Start)
 		widen(iv.End)
-		engaged = append(engaged, engagedRow{iv, timeline.Overlap([]timeline.Interval{iv}, lapse)})
+		row := engagedRow{Interval: iv, Lapse: timeline.Overlap([]timeline.Interval{iv}, lapse)}
+		if i == 0 || reviewDay(iv.Start) != reviewDay(rec.Engaged[i-1].Start) {
+			row.Day = reviewDay(iv.Start)
+		}
+		engaged = append(engaged, row)
 	}
 	diff := time.Duration(rec.Claimed) - time.Duration(rec.Recomputed)
 	s.render(w, http.StatusOK, "submission", map[string]any{
@@ -529,6 +545,7 @@ var adminFuncs = template.FuncMap{
 	"secs":  func(s timeline.Seconds) string { return dur(time.Duration(s)) },
 	"when":  func(t time.Time) string { return t.UTC().Format("Jan 2, 15:04 UTC") },
 	"clock": func(t time.Time) string { return t.UTC().Format("15:04") },
+	"stamp": func(t time.Time) string { return t.UTC().Format("Jan 2, 15:04") },
 	"pct":   func(f float64) string { return strconv.FormatFloat(f, 'f', 2, 64) },
 	"short": func(s string) string {
 		if len(s) > 12 {

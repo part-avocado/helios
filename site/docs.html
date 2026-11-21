@@ -30,6 +30,7 @@
 	<div class="group">Using teardrop</div>
 	<a href="#report">The report</a>
 	<a href="#dashboard">The dashboard</a>
+	<a href="#account">Your account</a>
 	<a href="#verification-keys">Verification keys</a>
 	<a href="#what-counts">What counts</a>
 	<a href="#tokens">Tokens</a>
@@ -42,6 +43,8 @@
 	<a href="#commands">Commands and flags</a>
 	<a href="#files">Files and folders</a>
 	<a href="#server">Sync and submit</a>
+	<a href="#run-server">Running a server</a>
+	<a href="#cloudflare">Deploy to Cloudflare</a>
 	<a href="#privacy">Privacy</a>
 	<a href="#troubleshooting">Troubleshooting</a>
 	<a href="#uninstall">Uninstall</a>
@@ -56,6 +59,7 @@
 		<li>Answer the questions <code>teardrop setup</code> asks. Saying yes to each is the recommended setup.</li>
 		<li>Use Claude Code, Codex, or Amp as you normally do.</li>
 		<li>Run <code>teardrop</code> for your timeline, or <code>teardrop dashboard</code> for charts.</li>
+		<li>To see every computer's hours in one place, sign in to the <a href="dashboard.html">dashboard</a> and connect each one.</li>
 	</ol>
 
 	<h2 id="install">Install</h2>
@@ -97,16 +101,33 @@
 	<p>A project is identified by its git remote, then its repository folder, then its working folder, so the same repo adds up across tools and clones. Add <code>-json</code> to get the report as data.</p>
 
 	<h2 id="dashboard">The dashboard</h2>
-	<p>Run <code>teardrop dashboard</code> to open live charts in your browser: an activity heatmap, daily totals, projects, tools, and recent work blocks. It refreshes every 30 seconds.</p>
-	<p>The dashboard runs on <code>localhost</code> only and refuses requests from other sites, so your stats never leave your computer. You can also open the <a href="dashboard.html">dashboard on this website</a> and drop in a file from <code>teardrop export -o stats.json</code>; the file is read in your browser and not uploaded.</p>
+	<p>The dashboard shows an activity heatmap, daily totals, projects, tools, and recent work blocks. There are two ways to open it.</p>
+	<h3 id="account">On the website, with an account</h3>
+	<p>The <a href="dashboard.html">dashboard on the website</a> adds up the hours from every computer you code on. Only you and your server's admins can see them.</p>
+	<ol>
+		<li>Open the <a href="dashboard.html">dashboard</a> and sign in with Hack Club. Your first sign-in creates your account.</li>
+		<li>Run the two commands it shows: one installs teardrop, the other connects that computer to your account.</li>
+		<li>Keep working. The page fills in as soon as the first sync arrives, and teardrop syncs again every 15 minutes while you use Claude Code or Amp. Run <code>teardrop sync</code> to update it right away.</li>
+	</ol>
+	<p><a href="settings.html">Settings</a> has the rest:</p>
+	<table>
+		<tr><th>Pane</th><th>What it's for</th></tr>
+		<tr><td>Setup</td><td>The commands to connect another computer, and a button to make a new sync key if yours gets out.</td></tr>
+		<tr><td>Computers</td><td>Each computer that syncs to you and when it last did. Remove one to drop its hours.</td></tr>
+		<tr><td>Upload</td><td>For a computer that can't reach the website: make a file with <code>teardrop export -o stats.json</code> and upload it within 7 days.</td></tr>
+		<tr><td>Account</td><td>Your name and Slack ID from Hack Club Auth, and sign out.</td></tr>
+	</table>
+	<p>A computer syncs to one account. To move it to another, remove it under Computers first.</p>
+	<h3>On your computer, without an account</h3>
+	<p>Run <code>teardrop dashboard</code> to open the same charts with live data from this computer, refreshed every 30 seconds. It runs on <code>localhost</code> only and refuses requests from other sites, so your stats never leave your computer.</p>
 	<h3 id="verification-keys">Verification keys</h3>
-	<p>Every export carries a verification key: an Ed25519 signature, made by your account, over the report's numbers, the time it was made, and the time it expires. Change one minute of engaged time, the account, or a date, and the key no longer matches. The dashboard refuses a file that:</p>
+	<p>Every sync and export carries a verification key: an Ed25519 signature, made by your account, over the report's numbers, the time it was made, and the time it expires. Change one minute of engaged time, the account, or a date, and the key no longer matches. The website refuses a report that:</p>
 	<ul>
 		<li>has no key, or a key that doesn't match its contents;</li>
 		<li>is more than 7 days old, so an old or reused file can't stand in for current numbers;</li>
 		<li>claims to be made in the future, or contains activity after the time it was made.</li>
 	</ul>
-	<p>Your account key is created the first time you export and kept in teardrop's data folder as <code>account.key</code>. The dashboard shows the account ID it belongs to, such as <code>td-4283292a8f76</code>.</p>
+	<p>Each computer's key is created the first time it syncs or exports and kept in teardrop's data folder as <code>account.key</code>. Settings lists your computers by the ID of that key, such as <code>td-4283292a8f76</code>.</p>
 	<div class="callout warning"><p class="callout-title"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"/></svg>Warning</p><p>Verification proves a file wasn't edited after <code>teardrop export</code> made it. Because the account key lives on your computer, a file alone can't prove the numbers are real. For hours that count, use <a href="#server"><code>teardrop submit</code></a>: the server checks the hours against the chat logs behind them.</p></div>
 
 	<h2 id="what-counts">What counts</h2>
@@ -139,10 +160,10 @@
 		<tr><td><code>teardrop</code></td><td>Print your timeline and project totals.</td></tr>
 		<tr><td><code>teardrop setup</code></td><td>Check tools, keep history, install hooks and the Amp plugin.</td></tr>
 		<tr><td><code>teardrop dashboard</code></td><td>Open the live dashboard on localhost.</td></tr>
-		<tr><td><code>teardrop export</code></td><td>Write a signed report for the dashboard (<code>-o file</code>, <code>-since</code>, default 365d).</td></tr>
-		<tr><td><code>teardrop sync</code></td><td>Upload your signed counts to the central server (<code>-server URL</code> once; remembered).</td></tr>
+		<tr><td><code>teardrop export</code></td><td>Write a signed report to upload under Settings on the website (<code>-o file</code>, <code>-since</code>, default 365d).</td></tr>
+		<tr><td><code>teardrop sync</code></td><td>Upload your signed counts to your account (<code>-server URL -key KEY</code> once; both are remembered).</td></tr>
 		<tr><td><code>teardrop submit &lt;project&gt;</code></td><td>Submit a project's hours with the chat logs behind them (<code>-o file</code> to write instead, <code>-lapse</code> for Lapse sessions, <code>-yes</code>).</td></tr>
-		<tr><td><code>teardrop server</code></td><td>Run the central server with its admin review pages (<code>-addr</code>, <code>-data</code>, <code>-public-url</code>).</td></tr>
+		<tr><td><code>teardrop server</code></td><td>Run the review server with its admin pages (<code>-addr</code>, <code>-data</code>, <code>-public-url</code>).</td></tr>
 		<tr><td><code>teardrop -version</code></td><td>Print the installed version.</td></tr>
 	</table>
 	<table>
@@ -159,6 +180,7 @@
 	<h2 id="files">Files and folders</h2>
 	<table>
 		<tr><th>What</th><th>Where</th></tr>
+		<tr><td>Server and sync key</td><td><code>server</code> and <code>key</code> in the journal folder below. <code>TEARDROP_SERVER</code> and <code>TEARDROP_KEY</code> override them.</td></tr>
 		<tr><td>Account key</td><td><code>account.key</code> in the journal folder below. Keep it private; deleting it starts a new account.</td></tr>
 		<tr><td>Hook journal</td><td><code>~/.local/share/teardrop</code>, <code>~/Library/Application Support/teardrop</code> on macOS, <code>%LOCALAPPDATA%\teardrop</code> on Windows. Override with <code>TEARDROP_DATA_DIR</code>.</td></tr>
 		<tr><td>Claude Code hooks</td><td>The <code>hooks</code> setting in Claude Code's <code>settings.json</code>.</td></tr>
@@ -167,9 +189,90 @@
 	</table>
 
 	<h2 id="server">Sync and submit</h2>
-	<p><code>teardrop sync -server https://…</code> uploads your signed counts: time blocks, prompt and skipped-prompt counts, tokens, and line counts. Once a server is set, hooks sync in the background every 15 minutes. Sync never uploads text.</p>
-	<p><code>teardrop submit &lt;project&gt;</code> sends a project's hours for review together with the full chat logs behind them: your prompts, the agent's replies, and its code changes. It asks before uploading; <code>-o file</code> writes the submission so you can read it first. The server refuses a submission whose logs were changed after signing, or that claims a block no log backs, and recomputes the hours from the logs itself. Add your Lapse sessions with <code>-lapse &lt;link&gt;,…</code>; time they also cover is taken off, since Hackatime already counts it.</p>
-	<p>Anyone can see an account's totals. Work blocks, submissions, and chats are visible only to admins, who sign in with Hack Club Auth at <code>/admin</code> on the server. See the <a href="https://github.com/part-avocado/teardrop#running-a-server">README</a> to run a server.</p>
+	<p><code>teardrop sync</code> uploads your signed counts to your account: time blocks, prompt and skipped-prompt counts, tokens, and line counts. It never uploads text. The first time, copy the command from <a href="settings.html">Settings</a> on the website. It looks like this:</p>
+	<pre><code>teardrop sync -server https://your-site -key tdk_…</code></pre>
+	<p>teardrop remembers the server and the key, so later it's just <code>teardrop sync</code>, and hooks sync in the background every 15 minutes. The key can only upload stats. If the server answers that it needs your sync key, run the command from Settings again.</p>
+	<p><code>teardrop submit &lt;project&gt;</code> sends a project's hours for review together with the full chat logs behind them: your prompts, the agent's replies, and its code changes. It asks before uploading; <code>-o file</code> writes the submission so you can read it first. The server refuses a submission whose logs were changed after signing, or that claims a block no log backs, and recomputes the hours from the logs itself. You can submit a project again as it grows; time an earlier submission already covered is credited once. Add your Lapse sessions with <code>-lapse &lt;link&gt;,…</code>; time they also cover is taken off, since Hackatime already counts it.</p>
+	<p>Your stats on the website are visible to you and to admins. Submissions and their chats are visible only to admins, who review them at <code>/admin</code> on the review server. To host either, see <a href="#run-server">Running a server</a>.</p>
+
+	<h2 id="run-server">Running a server</h2>
+	<p>There are two parts, and you can run either without the other:</p>
+	<table>
+		<tr><th>Part</th><th>What it does</th><th>Where it runs</th></tr>
+		<tr><td>The website</td><td>Accounts, sign-in, synced stats, and the dashboard.</td><td>Cloudflare Workers, with its data in a D1 database.</td></tr>
+		<tr><td>The review server</td><td>Takes <code>teardrop submit</code>, recomputes the hours from the chat logs, and serves the review pages.</td><td>Any machine that stays on, such as Fly.io.</td></tr>
+	</table>
+
+	<h3 id="cloudflare">The website, on Cloudflare</h3>
+	<p>The Worker is in the <code>worker</code> folder of the <a href="https://github.com/part-avocado/teardrop">repository</a> and serves the pages in <code>site</code>. You need a Cloudflare account and Node.js 22 or later.</p>
+	<p>To try it on your computer first:</p>
+	<pre><code>cd worker
+npm install
+cp .dev.vars.example .dev.vars
+npm run dev</code></pre>
+	<p><code>.dev.vars</code> signs every visitor in as the Slack user ID in <code>DEV_LOGIN</code>, which only works on localhost. Open the address it prints and follow the setup steps on the dashboard.</p>
+	<p>To put it online:</p>
+	<ol>
+		<li>Sign in: <code>npx wrangler login</code>.</li>
+		<li>Make the database: <code>npx wrangler d1 create teardrop</code>. Add the ID it prints to <code>wrangler.jsonc</code>, as <code>"database_id"</code> next to <code>"database_name"</code>.</li>
+		<li>Create a Hack Club Auth app as in <a href="#hca-app">Set up sign-in</a> below, with the <code>openid</code>, <code>profile</code>, and <code>slack_id</code> scopes and <code>https://your-site/auth/callback</code> as its redirect URI.</li>
+		<li>Write the secrets to a file named <code>.secrets</code>, which git ignores:
+<pre><code>SESSION_SECRET=a-long-random-string
+HCA_CLIENT_ID=...
+HCA_CLIENT_SECRET=...
+ADMINS=U012ABCDEF,U034GHIJKL</code></pre></li>
+		<li>Deploy: <code>npm run deploy -- --secrets-file .secrets</code>. This creates the tables, then uploads the Worker. Later deploys are <code>npm run deploy</code>.</li>
+	</ol>
+	<table>
+		<tr><th>Setting</th><th>Meaning</th></tr>
+		<tr><td><code>SESSION_SECRET</code></td><td>Signs sign-in cookies. Changing it signs everyone out.</td></tr>
+		<tr><td><code>HCA_CLIENT_ID</code>, <code>HCA_CLIENT_SECRET</code></td><td>Your Hack Club Auth app.</td></tr>
+		<tr><td><code>ADMINS</code></td><td>Slack user IDs of the people who can open People and see everyone's stats, separated by commas.</td></tr>
+		<tr><td><code>REVIEW_SERVER</code></td><td>Optional, in <code>wrangler.jsonc</code>. The address of your review server. With it set, <code>teardrop submit</code> works against the website's address, and submissions need a sync key.</td></tr>
+	</table>
+	<p>To change a secret later, run <code>npx wrangler secret put ADMINS</code>. For your own domain, add a <a href="https://developers.cloudflare.com/workers/configuration/routing/custom-domains/">custom domain</a> to the Worker and use it in the redirect URI. Cloudflare accepts uploads of up to 100 MB, so a larger submission has to go to the review server directly.</p>
+
+	<h3 id="review-server">The review server</h3>
+	<p>The review server is the same <code>teardrop</code> binary. It keeps everything as files in one folder, so it needs a machine that stays on and a disk that lasts; Cloudflare Workers can't host it.</p>
+	<h3>Try it on your computer</h3>
+	<pre><code>teardrop server -addr 127.0.0.1:8080 -dev-login U012ABCDEF</code></pre>
+	<p><code>-dev-login</code> signs every visitor in as that Slack user ID without Hack Club Auth, and only works on a localhost address. Open <code>http://127.0.0.1:8080/admin</code>, then send it something from another terminal with <code>teardrop sync -server http://127.0.0.1:8080</code>.</p>
+	<h3 id="hca-app">Set up sign-in</h3>
+	<ol>
+		<li>Open Developer Apps on <a href="https://auth.hackclub.com">auth.hackclub.com</a> and create an app with the <code>openid</code> and <code>slack_id</code> scopes.</li>
+		<li>Add <code>https://your-server/auth/callback</code> as its redirect URI.</li>
+		<li>Copy the app's client ID and client secret.</li>
+		<li>Collect the Slack user ID of each admin: in Slack, open their profile, choose ⋮, then Copy member ID.</li>
+	</ol>
+	<h3>Run it</h3>
+	<pre><code>TEARDROP_ADMINS=U012ABCDEF,U034GHIJKL \
+TEARDROP_HCA_CLIENT_ID=... TEARDROP_HCA_CLIENT_SECRET=... \
+teardrop server -addr :8080 -data /var/lib/teardrop -public-url https://your-server</code></pre>
+	<table>
+		<tr><th>Setting</th><th>Meaning</th></tr>
+		<tr><td><code>TEARDROP_ADMINS</code></td><td>Slack user IDs of the people who may review, separated by commas. Only they can open <code>/admin</code>.</td></tr>
+		<tr><td><code>TEARDROP_HCA_CLIENT_ID</code>, <code>TEARDROP_HCA_CLIENT_SECRET</code></td><td>The Hack Club Auth app from step 2.</td></tr>
+		<tr><td><code>-public-url</code></td><td>The address people reach the server at. Also read from <code>TEARDROP_PUBLIC_URL</code>.</td></tr>
+		<tr><td><code>-addr</code></td><td>Address to listen on. Default <code>:8080</code>.</td></tr>
+		<tr><td><code>-data</code></td><td>Folder for accounts, submissions, and the sign-in key. Default <code>teardrop-data</code>. Back it up.</td></tr>
+		<tr><td><code>-max-submission-mb</code></td><td>Largest submission accepted. Default 256.</td></tr>
+	</table>
+	<p>Put it behind HTTPS, such as a reverse proxy that sets <code>X-Forwarded-Proto</code>. Run one copy only: two servers sharing a data folder would overwrite each other. On start, the log says if admins or sign-in are not set up.</p>
+	<h3>Deploy to Fly.io</h3>
+	<p>The repository has a <code>Dockerfile</code> and a <code>fly.toml</code>. With <a href="https://fly.io/docs/flyctl/install/">flyctl</a> installed and signed in, from a clone of the <a href="https://github.com/part-avocado/teardrop">repository</a>:</p>
+	<ol>
+		<li>Pick an app name and put it in <code>fly.toml</code>, both as <code>app</code> and in <code>TEARDROP_PUBLIC_URL</code>. Then run <code>fly apps create &lt;app&gt;</code>.</li>
+		<li>Create the disk: <code>fly volumes create teardrop_data --region iad --size 1</code>.</li>
+		<li>Add <code>https://&lt;app&gt;.fly.dev/auth/callback</code> as a redirect URI in your Hack Club Auth app.</li>
+		<li>Set the secrets: <code>fly secrets set TEARDROP_ADMINS=... TEARDROP_HCA_CLIENT_ID=... TEARDROP_HCA_CLIENT_SECRET=...</code>.</li>
+		<li>Deploy: <code>fly deploy --build-arg VERSION=v0.4.0 --ha=false</code>. <code>--ha=false</code> keeps Fly from starting a second machine.</li>
+	</ol>
+	<p>Check it with <code>fly logs</code>. For your own domain, run <code>fly certs add &lt;domain&gt;</code>, then change <code>TEARDROP_PUBLIC_URL</code> and the redirect URI to match.</p>
+	<h3>Point people at it</h3>
+	<p>With <code>REVIEW_SERVER</code> set on the website, people need nothing more: <code>teardrop submit</code> goes through the website they already sync to. Without the website, each person runs this once:</p>
+	<pre><code>teardrop sync -server https://your-server</code></pre>
+	<h3>Reviewing</h3>
+	<p><code>/admin</code> lists submissions. Each one shows the hours the account claimed, the hours the server recomputed from the logs, and every chat with the time between messages. Paste the project's Lapse or Lookout sessions there and the time they overlap is taken off. Time an earlier submission of the same project covered is taken off as well. <code>/admin/accounts</code> lists every account that has synced.</p>
 
 	<h2 id="privacy">Privacy</h2>
 	<p>teardrop reads timestamps, token counts, line counts, and working folders from your logs. Prompt text is only scored in memory to count recognized words; it is never stored or printed, and <code>sync</code> never uploads it. Your chat logs leave your computer only when you run <code>teardrop submit</code> and confirm.</p>

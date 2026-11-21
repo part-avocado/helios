@@ -1,0 +1,55 @@
+// The teardrop website on Cloudflare Workers: the pages in ../site, sign-in,
+// and each person's synced stats in D1.
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "teardrop",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-11-21",
+	"assets": {
+		"directory": "../site",
+		"binding": "ASSETS",
+		// These reach the Worker before the files in ../site: the API, sign-in,
+		// and the pages that need an account.
+		"run_worker_first": [
+			"/api/*",
+			"/auth/*",
+			"/logout",
+			"/login",
+			"/login.html",
+			"/dashboard",
+			"/dashboard.html",
+			"/settings",
+			"/settings.html",
+			"/people",
+			"/people.html"
+		]
+	},
+	"d1_databases": [
+		{
+			// Make the database once with `npx wrangler d1 create teardrop`, and
+			// add the ID it prints here as "database_id".
+			"binding": "DB",
+			"database_name": "teardrop",
+			"migrations_dir": "migrations"
+		}
+	],
+	"vars": {
+		"HCA_URL": "https://auth.hackclub.com",
+		// Optional. The Go review server that takes `teardrop submit`, such as
+		// https://teardrop-review.fly.dev. Submissions are passed on to it.
+		"REVIEW_SERVER": "",
+		// Local testing only: signs every visitor in as this Slack user ID. Set
+		// it in .dev.vars. It is ignored on any address but localhost.
+		"DEV_LOGIN": ""
+	},
+	// The first deploy takes them from a file (see the docs, "Running a
+	// server"); change one later with `npx wrangler secret put <NAME>`. For
+	// local runs they come from .dev.vars.
+	"secrets": {
+		"required": ["SESSION_SECRET", "HCA_CLIENT_ID", "HCA_CLIENT_SECRET", "ADMINS"]
+	},
+	"observability": {
+		"enabled": true,
+		"traces": { "enabled": true }
+	}
+}

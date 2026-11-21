@@ -1,0 +1,16 @@
+{
+	"name": "teardrop-worker",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "wrangler d1 migrations apply DB --local && wrangler dev",
+		"deploy": "wrangler d1 migrations apply DB --remote && wrangler deploy",
+		"check": "wrangler types --strict-vars false && tsc --noEmit && tsc --noEmit -p test",
+		"test": "node --test \"test/*.test.ts\""
+	},
+	"devDependencies": {
+		"@types/node": "^26.6.6",
+		"typescript": "^7.0.2",
+		"wrangler": "^4.166.0"
+	}
+}

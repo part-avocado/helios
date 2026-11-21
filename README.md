@@ -31,10 +31,13 @@ With Go 1.25 or later you can also run
 
 ### Website
 
-`site/` is the website: a landing page, docs, and the dashboard. Pushing a
-change to it on `main` publishes it to GitHub Pages with
-`.github/workflows/pages.yml`. The same files are built into the binary, so
-`teardrop dashboard` serves them with live data from `/api/report`.
+`site/` is the website: a landing page, docs, the dashboard, and settings.
+`worker/` serves it on Cloudflare Workers and adds accounts: people sign in
+with Hack Club Auth, and their synced stats are kept in a D1 database. See
+[The website, on Cloudflare](#the-website-on-cloudflare).
+
+The same files are built into the binary, so `teardrop dashboard` serves the
+dashboard with live data from this machine, with no account.
 
 ### Releasing
 
@@ -50,24 +53,21 @@ teardrop -since 30d
 teardrop -json         # the same report as data
 teardrop -l            # keep it on screen, updating as you work (also --live)
 teardrop dashboard     # live charts in your browser, served on localhost only
-teardrop export -o stats.json   # signed report for the website's dashboard
+teardrop export -o stats.json   # signed report to upload on the website, under Settings
 ```
 
-Exports carry a verification key: an Ed25519 signature by this install's
-account key over the numbers, the export time, and a 7-day expiry. The
-dashboard refuses files that were edited, have no key, or have expired. The
-account key lives on your machine, so this stops editing a file, not someone
-who extracts the key; that needs the planned server.
+Syncs and exports carry a verification key: an Ed25519 signature by this
+install's account key over the numbers, the time it was made, and a 7-day
+expiry. The website refuses reports that were edited, have no key, or have
+expired. The account key lives on your machine, so a file alone can't prove its numbers
+are real. For hours that count, use `teardrop submit` (below): the server
+checks the hours against the chat logs behind them.
 
-**ENGAGED** counts only time you were plausibly involved: writing prompts and
-reading replies (up to 5 minutes before each prompt) and watching the agent
-(up to 10 minutes after each prompt). An agent left running alone earns
-nothing. Prompts made mostly of unrecognized words, checked against an English
-dictionary, code-like words, and words from your own repository, earn no time.
-So do repeats (a prompt nearly the same as two of the session's last five)
-and autopilot (the third or later "continue", "yes", or "fix it" in a row).
-These are listed as **SKIPPED**. Repeats are found with a 64-bit fingerprint
-of each prompt; prompt text is never stored.
+**ENGAGED** counts the time you spend working with your AI tools: writing
+prompts, reading replies, and steering the agent. An agent left running on
+its own doesn't earn time, and parallel sessions on one project count once.
+Prompts that don't reflect real work aren't counted; they're listed as
+**SKIPPED**. Prompt text is never stored.
 
 ## Supported tools
 
@@ -112,21 +112,32 @@ LINES**, from Claude Code's Edit, MultiEdit, and Write calls and Codex's
 A session that looks busy but leaves nothing in git shows up here. Lines are
 matched by a hash; the code itself is not kept.
 
-## Central server
+## Accounts, sync, and submit
 
-`teardrop sync -server https://...` uploads your signed counts: time blocks,
-prompt and skipped-prompt counts, tokens, and line counts. Once a server is
-set, hooks sync in the background every 15 minutes. It never uploads text.
+On the website, sign in with Hack Club and open the dashboard. With nothing
+synced yet it shows the two commands that connect a computer; the second is
+
+```sh
+teardrop sync -server https://your-site -key tdk_...
+```
+
+`sync` uploads your signed counts: time blocks, prompt and skipped-prompt
+counts, tokens, and line counts. It never uploads text. teardrop remembers
+the server and the key (which can only upload stats), so hooks sync in the
+background every 15 minutes. The dashboard adds up every computer you
+connect. Settings lists them, makes a new key, and takes a
+`teardrop export` file from a computer that can't reach the site.
 
 `teardrop submit <project>` submits a project's hours for review together
 with the full chat logs behind them: your prompts, the agent's replies, and
 its code changes. It asks first, and `-o file` writes the submission so you
 can read it before sending. The server refuses a submission whose logs were
 changed after signing or that claims a block no log backs, and recomputes the
-hours from the logs itself.
+hours from the logs itself. Submitting a project again is fine: time that an
+earlier submission of it already covered is credited once.
 
-Anyone can see an account's totals at `/api/v1/accounts/<id>`. Work blocks,
-submissions, and chat logs are for admins only.
+Your stats on the website are visible to you and to admins. Submissions and
+chat logs are for admins only.
 
 ### Testing time and Lapse
 
@@ -135,7 +146,38 @@ teardrop. Record it with [Lapse](https://lapse.hackclub.com) instead. Pass
 your Lapse sessions with `teardrop submit -lapse <link>,...` and the server
 takes off any time Lapse also recorded, since Hackatime already counts it.
 
-### Running a server
+### The website, on Cloudflare
+
+```sh
+cd worker
+npm install
+cp .dev.vars.example .dev.vars   # signs you in as DEV_LOGIN, on localhost only
+npm run dev
+```
+
+To deploy it:
+
+1. `npx wrangler login`
+2. `npx wrangler d1 create teardrop`, then add the ID it prints to
+   `wrangler.jsonc` as `"database_id"`.
+3. Create a Hack Club Auth app with the `openid`, `profile`, and `slack_id`
+   scopes and `https://your-site/auth/callback` as its redirect URI.
+4. Write `SESSION_SECRET` (any long random text), `HCA_CLIENT_ID`,
+   `HCA_CLIENT_SECRET`, and `ADMINS` (Slack user IDs, comma-separated) to
+   `worker/.secrets`, one `NAME=value` per line.
+5. `npm run deploy -- --secrets-file .secrets`. Later deploys are
+   `npm run deploy`.
+
+Admins get a People page that lists everyone and opens anyone's dashboard.
+Set `REVIEW_SERVER` in `wrangler.jsonc` to the address of the review server
+below and `teardrop submit` goes through the website, which then asks for a
+sync key. `npm test` runs the Worker's tests in the Workers runtime.
+
+### The review server
+
+The review server takes `teardrop submit`, recomputes the hours from the
+chat logs, and serves the review pages. It keeps its data in files, so it
+needs a machine that stays on.
 
 ```sh
 TEARDROP_ADMINS=U012ABCDEF,U034GHIJKL \
@@ -163,8 +205,8 @@ deflated automatically.
 
 ### Deploy to Fly.io
 
-The server needs to run somewhere always on; GitHub Pages and Actions can't
-host it. The repository has a `Dockerfile` and a `fly.toml` for
+The server needs to run somewhere always on; Cloudflare Workers and GitHub
+Actions can't host it. The repository has a `Dockerfile` and a `fly.toml` for
 [Fly.io](https://fly.io). With [flyctl](https://fly.io/docs/flyctl/install/)
 installed and signed in, from a clone of this repository:
 
@@ -193,7 +235,7 @@ installed and signed in, from a clone of this repository:
 4. Deploy:
 
    ```sh
-   fly deploy --build-arg VERSION=v0.3.0 --ha=false
+   fly deploy --build-arg VERSION=v0.4.0 --ha=false
    ```
 
 Run exactly one machine: the server keeps its data in files on the volume

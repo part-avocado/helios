@@ -143,6 +143,47 @@ func TestSubmission(t *testing.T) {
 	if code, body := send(fake); code != 400 || !strings.Contains(body, "no log backs") {
 		t.Errorf("unbacked block: %d %s", code, body)
 	}
+
+	// Sending the same submission again keeps its record and Lapse checks.
+	again := sub
+	again.Lapse = nil
+	code, body = send(again)
+	var kept submissionRecord
+	json.Unmarshal([]byte(body), &kept)
+	if code != 200 || kept.ID != rec.ID || kept.Credited != rec.Credited || len(kept.Lapse) != 1 {
+		t.Errorf("same submission again: %d %s", code, body)
+	}
+
+	// A later submission that also covers the first one's time is credited
+	// only for the new time.
+	exchange := func(session string, minute int) string {
+		return `{"type":"user","timestamp":"` + at(minute) + `","cwd":"/nowhere/app","sessionId":"` + session + `","message":{"content":"add a settings page with a dark mode toggle"}}` + "\n" +
+			`{"type":"assistant","timestamp":"` + at(minute+10) + `","message":{"id":"` + session + `","content":[{"type":"text","text":"ok"}]}}` + "\n"
+	}
+	os.WriteFile(filepath.Join(dir, "s2.jsonl"), []byte(exchange("s2", 30)), 0o600)
+	raws, _ = loadAll(claude, filepath.Join(home, "nocodex"))
+	rep2, sessions2 := buildReport(raws, now.Add(-24*time.Hour), timeline.DefaultRules)
+	sub2, _ := makeSubmission(key, rep2, sessions2, "1d", now.Add(time.Second))
+	code, body = send(sub2)
+	var rec2 submissionRecord
+	json.Unmarshal([]byte(body), &rec2)
+	if code != 200 || rec2.Recomputed != timeline.Seconds(20*time.Minute) || rec2.EarlierOverlap != timeline.Seconds(10*time.Minute) || rec2.Credited != timeline.Seconds(10*time.Minute) {
+		t.Errorf("second submission: %d recomputed %v, already submitted %v, credited %v; want 20m, 10m, 10m",
+			code, time.Duration(rec2.Recomputed), time.Duration(rec2.EarlierOverlap), time.Duration(rec2.Credited))
+	}
+
+	// Logs can't earn time after the signing time, even when no block claims it.
+	os.WriteFile(filepath.Join(dir, "s3.jsonl"), []byte(exchange("s3", 180)), 0o600)
+	raws, _ = loadAll(claude, filepath.Join(home, "nocodex"))
+	rep3, sessions3 := buildReport(raws, now.Add(-24*time.Hour), timeline.DefaultRules)
+	if len(rep3.Blocks) != 3 {
+		t.Fatalf("want 3 blocks with the future one last, got %+v", rep3.Blocks)
+	}
+	rep3.Blocks = rep3.Blocks[:2]
+	early, _ := makeSubmission(key, rep3, sessions3, "1d", now.Add(2*time.Second))
+	if code, body := send(early); code != 400 || !strings.Contains(body, "logs have activity after") {
+		t.Errorf("logs from the future: %d %s", code, body)
+	}
 }
 
 // Signing in goes through Hack Club Auth and lands on the admin page.

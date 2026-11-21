@@ -1,24 +1,24 @@
-// The dashboard reads a teardrop report: live from `teardrop dashboard`
-// (/api/report), or from a `teardrop -json` file the visitor loads.
-const $ = (id) => document.getElementById(id)
+// The dashboard shows teardrop reports. On the hosted site they are the
+// signed-in visitor's synced reports (/api/report). From `teardrop dashboard`
+// it is one signed report made live on this computer.
 const DAY = 86400000
+const hosted = 'hosted' in document.documentElement.dataset
+// Set when an admin opens someone else's stats from the People page.
+const viewing = hosted ? new URLSearchParams(location.search).get('user') : null
 let report = null
 let days = 30
 let live = false
 
-const esc = (s) => String(s).replace(/[&<>\"']/g, (c) => `&#${c.charCodeAt(0)};`)
-const dur = (sec) => {
-	const m = Math.round(sec / 60)
-	return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`
-}
 const count = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(n))
 const dayKey = (d) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
 const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate())
+// Calendar days, not 24-hour steps, which land on the wrong day across a clock change.
+const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n)
 
 function render() {
 	if (!report) return
 	const now = new Date()
-	const from = new Date(startOfDay(now).getTime() - (days - 1) * DAY)
+	const from = addDays(now, -(days - 1))
 	const blocks = (report.blocks || [])
 		.map((b) => ({ ...b, s: new Date(b.start), e: new Date(b.end), tools: b.tools || [] }))
 		.filter((b) => b.e >= from)
@@ -53,16 +53,29 @@ function render() {
 			tools.set(t, (tools.get(t) || 0) + b.engaged_seconds / Math.max(1, b.tools.length))
 		}
 	}
+	// Reports from teardrop 0.4 and later carry per-day totals that count time
+	// on two projects at once only once, as the teardrop command does. Summing
+	// blocks, the fallback for older reports, counts that time twice.
+	const totals = dayTotals()
+	if (totals) {
+		perDay.clear()
+		total = 0
+		for (let i = 0; i < days; i++) {
+			const k = dayKey(addDays(from, i)), v = totals.get(k) || 0
+			if (v) perDay.set(k, v)
+			total += v
+		}
+	}
 	const noise = (report.projects || []).reduce((n, p) => n + (p.noise_prompts || 0) + (p.repeat_prompts || 0) + (p.autopilot_prompts || 0), 0)
 
 	// Streak: consecutive days with activity, ending today (or yesterday, if nothing yet today).
 	const allDays = new Set((report.blocks || []).map((b) => dayKey(new Date(b.start))))
 	let streak = 0
 	let d = startOfDay(now)
-	if (!allDays.has(dayKey(d))) d = new Date(d.getTime() - DAY)
+	if (!allDays.has(dayKey(d))) d = addDays(d, -1)
 	while (allDays.has(dayKey(d))) {
 		streak++
-		d = new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1)
+		d = addDays(d, -1)
 	}
 
 	const ranked = [...projects.values()].sort((a, b) => b.engaged - a.engaged)
@@ -102,12 +115,21 @@ function render() {
 			'<tr><td colspan="7" class="muted">No activity in this range.</td></tr>')
 }
 
+// dayTotals returns the report's engaged seconds per day, keyed like dayKey,
+// or null for a report without them.
+function dayTotals() {
+	if (!Array.isArray(report.days)) return null
+	return new Map(report.days.map((d) => [d.date.split('-').map(Number).join('-'), d.engaged_seconds]))
+}
+
 // A year of days, one column per week, like a contribution graph.
 function renderHeatmap(now) {
-	const perDay = new Map()
-	for (const b of report.blocks || []) {
-		const k = dayKey(new Date(b.start))
-		perDay.set(k, (perDay.get(k) || 0) + b.engaged_seconds)
+	const perDay = dayTotals() || new Map()
+	if (!perDay.size) {
+		for (const b of report.blocks || []) {
+			const k = dayKey(new Date(b.start))
+			perDay.set(k, (perDay.get(k) || 0) + b.engaged_seconds)
+		}
 	}
 	const end = startOfDay(now)
 	const start = new Date(end.getFullYear(), end.getMonth(), end.getDate() - 364 - end.getDay())
@@ -131,14 +153,17 @@ function renderHeatmap(now) {
 	$('heatmap').innerHTML = `<svg width="${w}" height="${18 + 7 * (cell + gap)}" role="img" aria-label="Engaged time per day over the last year">${months}${labels}${rects}</svg>`
 }
 
-// One bar per day, or per week when a year of days wouldn't fit.
+// One bar per day, or per week when a year of days wouldn't fit. Weeks are
+// counted back from today, so no bar stands for less than a whole week.
 function renderBars(perDay, from) {
 	const step = days > 90 ? 7 : 1
+	const n = Math.floor(days / step)
+	const first = addDays(from, days - n * step)
 	const vals = []
-	for (let i = 0; i < days; i += step) {
-		const d = new Date(from.getFullYear(), from.getMonth(), from.getDate() + i)
+	for (let i = 0; i < n; i++) {
+		const d = addDays(first, i * step)
 		let v = 0
-		for (let j = 0; j < step && i + j < days; j++) v += perDay.get(dayKey(new Date(d.getFullYear(), d.getMonth(), d.getDate() + j))) || 0
+		for (let j = 0; j < step; j++) v += perDay.get(dayKey(addDays(d, j))) || 0
 		vals.push([d, v])
 	}
 	const max = Math.max(1, ...vals.map((v) => v[1]))
@@ -146,23 +171,23 @@ function renderBars(perDay, from) {
 	$('bars-title').textContent = step === 7 ? 'Engaged per week' : 'Engaged per day'
 	$('bars').classList.toggle('dense', vals.length > 40)
 	$('bars').innerHTML = vals.map(([d, v]) => `<div style="height:${(v / max) * 100}%" title="${step === 7 ? 'Week of ' : ''}${fmt.format(d)} · ${dur(v)}"></div>`).join('')
-	$('bar-labels').innerHTML = `<span>${fmt.format(vals[0][0])}</span><span>${fmt.format(vals[vals.length - 1][0])}</span>`
+	$('bar-labels').innerHTML = `<span>${fmt.format(first)}</span><span>${fmt.format(addDays(from, days - 1))}</span>`
 }
 
-// verify checks a signed report from `teardrop export` and returns its payload.
+// verify checks a signed report from `teardrop dashboard` and returns its payload.
 // The key is an Ed25519 signature of the payload text by the account inside it,
 // so editing any number, the account, or a time makes it fail.
 const SKEW = 5 * 60000
 const b64u = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0))
 async function verify(file) {
 	if (!file || typeof file.payload !== 'string' || typeof file.key !== 'string') {
-		throw new Error('This file has no verification key. Make one with: teardrop export -o stats.json')
+		throw new Error('This report has no verification key.')
 	}
 	let p
 	try {
 		p = JSON.parse(file.payload)
 	} catch {
-		throw new Error('This file is damaged. Export it again.')
+		throw new Error('This report is damaged.')
 	}
 	let ok = false
 	try {
@@ -172,12 +197,12 @@ async function verify(file) {
 		if (!crypto.subtle) throw new Error('Verification needs a secure page (https or localhost).')
 		if (e?.name === 'NotSupportedError') throw new Error('This browser cannot check verification keys. Update it and try again.')
 	}
-	if (!ok) throw new Error('The verification key does not match this file. It was changed after it was exported.')
+	if (!ok) throw new Error('The verification key does not match this report.')
 	const generated = Date.parse(p.generated_at), expires = Date.parse(p.expires_at), now = Date.now()
-	if (!(generated <= now + SKEW)) throw new Error('This file says it was made in the future. Check your clock and export it again.')
-	if (!(now <= expires)) throw new Error(`This file's key expired on ${new Date(expires).toLocaleString()}. Export a fresh one.`)
+	if (!(generated <= now + SKEW)) throw new Error('This report says it was made in the future. Check your clock.')
+	if (!(now <= expires)) throw new Error(`This report's key expired on ${new Date(expires).toLocaleString()}.`)
 	if ((p.report?.blocks || []).some((b) => Date.parse(b.end) > generated + SKEW)) {
-		throw new Error('This file has activity after the time it was made, which is not possible. Export it again.')
+		throw new Error('This report has activity after the time it was made, which is not possible.')
 	}
 	const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', b64u(p.account)))
 	p.accountID = 'td-' + [...digest.slice(0, 6)].map((x) => x.toString(16).padStart(2, '0')).join('')
@@ -187,14 +212,82 @@ async function verify(file) {
 const verifiedNote = (p) =>
 	`<span class="tag" title="Signed by this account; any change to the numbers or times would break the key"><svg class="ico" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>verified</span> account ${esc(p.accountID)} · key valid until ${esc(new Date(p.expires_at).toLocaleDateString())}`
 
+// The page shows one of three things: stats, the setup steps, or a notice.
+function reveal(id) {
+	for (const part of ['content', 'setup', 'notice']) $(part).hidden = part !== id
+	$('range').hidden = id !== 'content'
+}
+
 function show(rep, source) {
 	report = rep
-	$('empty').hidden = true
-	$('content').hidden = false
+	reveal('content')
 	$('status').innerHTML = source
 	render()
 }
 
+function notice(title, html) {
+	reveal('notice')
+	$('status').textContent = ''
+	$('notice-title').textContent = title
+	$('notice-text').innerHTML = html
+}
+
+// merge adds up the latest report of each of a person's computers.
+function merge(computers) {
+	const reports = computers.map((c) => c.report.report || {})
+	const perDay = new Map()
+	for (const r of reports) for (const d of r.days || []) perDay.set(d.date, (perDay.get(d.date) || 0) + d.engaged_seconds)
+	return {
+		blocks: reports.flatMap((r) => r.blocks || []),
+		projects: reports.flatMap((r) => r.projects || []),
+		// Without per-day totals from every computer, render() adds up blocks instead.
+		days: reports.every((r) => Array.isArray(r.days)) ? [...perDay].map(([date, engaged_seconds]) => ({ date, engaged_seconds })) : undefined,
+	}
+}
+
+let setupReady = false
+let sampled = false
+
+// showSetup nudges a signed-in visitor with nothing synced to connect a computer.
+async function showSetup() {
+	if (!setupReady) {
+		renderSetup($('setup-steps'), (await api('/api/me')).api_key)
+		setupReady = true
+	}
+	reveal('setup')
+	$('status').textContent = ''
+}
+
+async function loadHosted() {
+	let body
+	try {
+		body = await api('/api/report' + (viewing ? `?user=${encodeURIComponent(viewing)}` : ''))
+		if (viewing) {
+			$('title').textContent = body.person.name ? `Stats for ${body.person.name}` : 'Their stats'
+			document.querySelector('.nav .links .active')?.classList.remove('active')
+		}
+		if (!body.computers.length) {
+			if (viewing) notice('Nothing synced yet', 'This person has signed in, but no computer of theirs has synced. <a href="people.html">Back to people</a>')
+			else if (!sampled) await showSetup()
+			setTimeout(loadHosted, 10000) // so the stats appear as soon as the first sync lands
+			return
+		}
+	} catch (e) {
+		if (report) $('status').textContent = 'Could not reach the server. Trying again.'
+		else notice(viewing ? 'Could not load these stats' : 'Could not load your stats', esc(e.message))
+		setTimeout(loadHosted, 15000)
+		return
+	}
+	sampled = false
+	const last = Math.max(...body.computers.map((c) => c.synced_at))
+	const stale = Date.now() - last > 3 * DAY
+	const from = body.computers.length === 1 ? '1 computer' : `${body.computers.length} computers`
+	show(merge(body.computers), `<span class="dot${stale ? ' old' : ''}"></span>Synced ${esc(ago(last))} from ${from}` +
+		(viewing ? ' · <a href="people.html">all people</a>' : stale ? ' · run <code>teardrop sync</code> to update' : ''))
+	setTimeout(loadHosted, 5 * 60000)
+}
+
+// poll reads the live report that `teardrop dashboard` serves on this computer.
 async function poll() {
 	let body
 	try {
@@ -202,7 +295,14 @@ async function poll() {
 		if (!res.ok) throw new Error(res.status)
 		body = await res.json()
 	} catch {
-		if (!live) $('empty').hidden = false
+		if (!live) {
+			// A copy of the site with nothing behind it to ask.
+			notice('Your stats live on your computer', 'Run <code>teardrop dashboard</code> to see them here, updated as you work. New to teardrop? <a href="docs.html#quick-start">Start here</a>.')
+			return
+		}
+		// teardrop dashboard was stopped or the computer slept: keep the last stats and keep asking.
+		$('status').textContent = 'Lost contact with teardrop dashboard. Start it again to keep updating.'
+		setTimeout(poll, 5000)
 		return
 	}
 	try {
@@ -213,31 +313,6 @@ async function poll() {
 		$('status').textContent = e.message
 	}
 	setTimeout(poll, 30000)
-}
-
-function loadFile(file) {
-	$('file-error').hidden = true
-	file.text().then(async (t) => {
-		try {
-			let body
-			try {
-				body = JSON.parse(t)
-			} catch {
-				throw new Error('That file is not a teardrop report. Make one with: teardrop export -o stats.json')
-			}
-			const p = await verify(body)
-			show(p.report, `${esc(file.name)} · ${verifiedNote(p)} · <a href="#" id="clear">load another</a>`)
-			$('clear').onclick = (e) => {
-				e.preventDefault()
-				$('content').hidden = true
-				$('empty').hidden = false
-			}
-		} catch (e) {
-			$('file-error').textContent = e.message
-			$('file-error').hidden = false
-		}
-	})
-	$('file').value = '' // so choosing the same file again still loads it
 }
 
 // Plausible fake data so visitors can see the dashboard before installing.
@@ -273,15 +348,20 @@ for (const b of document.querySelectorAll('#range button')) {
 		render()
 	})
 }
-$('file').addEventListener('change', (e) => e.target.files[0] && loadFile(e.target.files[0]))
-const drop = $('drop')
-drop.addEventListener('dragover', (e) => (e.preventDefault(), drop.classList.add('over')))
-drop.addEventListener('dragleave', () => drop.classList.remove('over'))
-drop.addEventListener('drop', (e) => {
-	e.preventDefault()
-	drop.classList.remove('over')
-	if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0])
-})
-$('sample').addEventListener('click', () => show(sample(), 'Sample data · <a href="docs.html#dashboard">see your own</a>'))
+for (const el of document.querySelectorAll('.sample')) {
+	el.addEventListener('click', (e) => {
+		e.preventDefault()
+		sampled = true
+		show(sample(), 'Sample data · <a href="#" id="unsample">hide it</a>')
+		$('unsample').onclick = (e) => {
+			e.preventDefault()
+			sampled = false
+			report = null
+			if (hosted) showSetup()
+			else poll()
+		}
+	})
+}
 
-poll()
+if (hosted) loadHosted()
+else poll()

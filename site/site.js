@@ -1,27 +1,31 @@
 // Shared behavior: OS tabs that pick the visitor's OS, and copy buttons.
-for (const box of document.querySelectorAll('[data-tabs]')) {
-	const buttons = [...box.querySelectorAll('.tabs button')]
-	const select = (name) => {
-		for (const b of buttons) b.setAttribute('aria-selected', String(b.dataset.tab === name))
-		for (const p of box.querySelectorAll('.tab-panel')) p.hidden = p.dataset.tab !== name
-	}
-	for (const b of buttons) b.addEventListener('click', () => select(b.dataset.tab))
-	const platform = (navigator.userAgentData?.platform || navigator.platform || navigator.userAgent).toLowerCase()
-	select(platform.includes('win') ? 'windows' : platform.includes('mac') ? 'mac' : 'linux')
-}
-
-for (const btn of document.querySelectorAll('.copy')) {
-	btn.addEventListener('click', async () => {
-		const text = btn.parentElement.querySelector('code').textContent
-		try {
-			await navigator.clipboard.writeText(text)
-			btn.textContent = 'Copied'
-		} catch {
-			btn.textContent = 'Select and copy'
+function initTabs(root = document) {
+	for (const box of root.querySelectorAll('[data-tabs]')) {
+		const buttons = [...box.querySelectorAll('.tabs button')]
+		const select = (name) => {
+			for (const b of buttons) b.setAttribute('aria-selected', String(b.dataset.tab === name))
+			for (const p of box.querySelectorAll('.tab-panel')) p.hidden = p.dataset.tab !== name
 		}
-		setTimeout(() => (btn.textContent = 'Copy'), 1500)
-	})
+		for (const b of buttons) b.addEventListener('click', () => select(b.dataset.tab))
+		const platform = (navigator.userAgentData?.platform || navigator.platform || navigator.userAgent).toLowerCase()
+		select(platform.includes('win') ? 'windows' : platform.includes('mac') ? 'mac' : 'linux')
+	}
 }
+initTabs()
+
+// Copy buttons copy the command next to them, including ones added to the page later.
+document.addEventListener('click', async (e) => {
+	const btn = e.target.closest?.('.copy')
+	if (!btn) return
+	const text = btn.parentElement.querySelector('code').textContent
+	try {
+		await navigator.clipboard.writeText(text)
+		btn.textContent = 'Copied'
+	} catch {
+		btn.textContent = 'Select and copy'
+	}
+	setTimeout(() => (btn.textContent = 'Copy'), 1500)
+})
 
 // Docs: highlight the sidebar link of the section in view.
 const links = [...document.querySelectorAll('.docs aside a[href^="#"]')]

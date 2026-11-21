@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>People · teardrop</title>
+	<link rel="icon" href="favicon.svg">
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono&family=Instrument+Serif&display=swap">
+	<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="nav" aria-label="Main">
+	<a class="brand" href="index.html"><img src="favicon.svg" alt="">teardrop</a>
+	<div class="links">
+		<a href="dashboard.html">Dashboard</a>
+		<a href="settings.html">Settings</a>
+		<a href="people.html" class="active" aria-current="page">People</a>
+		<a href="docs.html" class="docs-link">Docs</a>
+	</div>
+	<form class="account hosted-only" method="post" action="/logout"><span id="account-name"></span><button class="pill">Sign out</button></form>
+</nav>
+
+<main class="wrap dash">
+	<div class="dash-head">
+		<h1>People</h1>
+		<span class="status" id="status"></span>
+	</div>
+	<div class="panel">
+		<div class="table-scroll"><table class="data people" id="people"></table></div>
+	</div>
+	<p class="muted fine">Only admins can open this page. Choose a person to see their dashboard as they see it.</p>
+</main>
+<script src="site.js"></script>
+<script src="account.js"></script>
+<script>
+// Everyone with an account, for admins.
+if (!('hosted' in document.documentElement.dataset)) location.replace('dashboard.html')
+else api('/api/admin/people').then(({ people }) => {
+	$('status').textContent = people.length === 1 ? '1 person' : `${people.length} people`
+	$('people').innerHTML = '<tr><th>Name</th><th>Slack ID</th><th>Engaged, past year</th><th>Computers</th><th>Last sync</th></tr>' +
+		(people.map((p) => `<tr>
+			<td><a href="dashboard.html?user=${p.id}">${esc(p.name || 'No name')}</a></td>
+			<td>${p.slack_id ? `<code>${esc(p.slack_id)}</code>` : '<span class="muted">none</span>'}</td>
+			<td>${dur(p.engaged_seconds)}</td><td>${p.computers}</td>
+			<td>${p.synced_at ? esc(ago(p.synced_at)) : '<span class="muted">never</span>'}</td>
+		</tr>`).join('') || '<tr><td colspan="5" class="muted">No one has signed in yet.</td></tr>')
+}).catch((e) => ($('status').textContent = e.message))
+</script>
+</body>
+</html>

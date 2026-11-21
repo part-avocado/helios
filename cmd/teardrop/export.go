@@ -171,6 +171,6 @@ func runExport(args []string) {
 		check(os.WriteFile(*out, b, 0o644))
 	}
 	priv, _ := accountKey()
-	fmt.Fprintf(os.Stderr, "Signed by account %s. The key is valid until %s; load the file in the dashboard before then.\n",
+	fmt.Fprintf(os.Stderr, "Signed by account %s. The key is valid until %s; upload it on the website, under Settings, before then.\n",
 		accountID(priv.Public().(ed25519.PublicKey)), now.Add(keyLifetime).Local().Format("Mon Jan 2 15:04"))
 }
