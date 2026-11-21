@@ -5,6 +5,7 @@
 //	teardrop          show your timeline for the last 7 days
 //	teardrop setup    check which tools are found, install hooks, fix settings that lose history
 //	teardrop setup amp   set up one tool only: claude, codex, or amp
+//	teardrop update   replace this teardrop with the latest release
 //	teardrop hook claude-code   record one Claude Code hook event (run by Claude Code)
 package main
 
@@ -50,6 +51,9 @@ func main() {
 		case "sync":
 			runSync(os.Args[2:])
 			return
+		case "update":
+			runUpdate(os.Args[2:])
+			return
 		case "submit":
 			runSubmit(os.Args[2:])
 			return
@@ -84,6 +88,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "       teardrop sync       upload your signed counts (time, prompts, tokens, lines; no text) to your account on the website")
 		fmt.Fprintln(os.Stderr, "       teardrop submit     submit a project's hours with the full chat logs behind them, for review")
 		fmt.Fprintln(os.Stderr, "       teardrop server     run the review server")
+		fmt.Fprintln(os.Stderr, "       teardrop update     download the latest teardrop and replace this one with it")
 		fmt.Fprintln(os.Stderr)
 		flag.PrintDefaults()
 	}

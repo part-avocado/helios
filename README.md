@@ -19,8 +19,12 @@ irm https://raw.githubusercontent.com/part-avocado/teardrop/main/install.ps1 | i
 ```
 
 The installer downloads the right binary for your computer, checks its
-checksum, puts it on your PATH, and runs `teardrop setup`. Run it again to
-update. No admin rights are needed. It installs to `~/.local/bin`, or
+checksum, puts it on your PATH, and runs `teardrop setup`. To update later,
+run `teardrop update` (or the installer again): it downloads the latest
+release, checks its checksum, replaces the installed teardrop, and runs setup
+again. `teardrop update -check` only says whether a newer version is out, and
+`teardrop update v0.5.0` installs that version, even if it is older. No admin
+rights are needed. It installs to `~/.local/bin`, or
 `%LOCALAPPDATA%\Programs\teardrop` on Windows.
 
 `setup` lists the tools it found and offers to stop Claude Code from deleting
