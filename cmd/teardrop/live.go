@@ -46,7 +46,7 @@ func runLive(claudeDir, codexDir, since string, window time.Duration, rules time
 		}
 		status, report := liveFrame(look, claudeDir, codexDir, since, began.Add(-window), rules)
 		wait := max(every, liveRest*time.Since(began)).Round(time.Second)
-		head := fmt.Sprintf("teardrop live · last %s · updated %s · every %s · Ctrl-C to quit", since, began.Format("15:04:05"), wait)
+		head := fmt.Sprintf("teardrop live - last %s - updated %s - every %s - Ctrl-C to quit", since, began.Format("15:04:05"), wait)
 		lines := append(append([]string{head}, status...), "")
 		if tty {
 			cols, rows, _ := console(os.Stdout) // asked every time, so resizing the window works

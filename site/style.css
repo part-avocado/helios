@@ -1,4 +1,5 @@
-/* Docs and dashboard. Same light, editorial look as the homepage (home.css). */
+/* Docs and dashboard. Same light look as the homepage (home.css). One plain
+   sans-serif for everything people read, chosen to stay easy on the eyes. */
 :root {
 	--bg: #fbfaf7;
 	--panel: #ffffff;
@@ -14,8 +15,7 @@
 	--warn: #c98a12;
 	--bad: #d63851;
 	--radius: 16px;
-	--serif: "Instrument Serif", "Iowan Old Style", Georgia, serif;
-	--sans: Geist, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+	--sans: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 	--mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 	color-scheme: light;
 }
@@ -39,7 +39,7 @@ h1, h2, h3 { line-height: 1.15; }
 	padding: 8px 8px 8px 22px; border-radius: 999px; background: rgba(255, 255, 255, 0.72); backdrop-filter: blur(14px) saturate(1.4);
 	-webkit-backdrop-filter: blur(14px) saturate(1.4); border: 1px solid rgba(0, 0, 0, 0.08);
 	box-shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.9); white-space: nowrap; }
-.nav .brand { display: flex; align-items: center; gap: 7px; font: 22px/1 var(--serif); color: var(--text); margin-right: 14px; }
+.nav .brand { display: flex; align-items: center; gap: 7px; font: 600 17px/1 var(--sans); letter-spacing: -0.02em; color: var(--text); margin-right: 14px; }
 .nav .brand:hover { text-decoration: none; }
 .nav .brand img { width: 17px; height: 17px; }
 .nav .links a { padding: 8px 12px; font-size: 14px; color: var(--muted); border-radius: 999px; }
@@ -71,8 +71,8 @@ h1, h2, h3 { line-height: 1.15; }
 .docs aside .group:first-child { margin-top: 0; }
 .docs article { max-width: 760px; }
 .docs article > p, .docs article li { color: #3d3d44; }
-.docs article h1 { font: 400 clamp(48px, 6vw, 68px)/1 var(--serif); letter-spacing: -0.02em; margin: 0 0 14px; }
-.docs article h2 { font: 400 40px/1.05 var(--serif); letter-spacing: -0.01em; margin: 64px 0 14px; padding-top: 28px; border-top: 1px solid var(--line); scroll-margin-top: 110px; }
+.docs article h1 { font: 700 clamp(34px, 4.2vw, 44px)/1.12 var(--sans); letter-spacing: -0.03em; margin: 0 0 14px; }
+.docs article h2 { font: 600 26px/1.2 var(--sans); letter-spacing: -0.02em; margin: 64px 0 14px; padding-top: 28px; border-top: 1px solid var(--line); scroll-margin-top: 110px; }
 .docs article h3 { font-size: 17px; font-weight: 600; margin: 28px 0 8px; scroll-margin-top: 110px; }
 .docs article pre { background: #0e0f12; color: #e4e5ea; border-radius: 12px; padding: 16px 18px; overflow-x: auto; font-size: 13px; }
 .docs table { width: 100%; border-collapse: collapse; margin: 14px 0 22px; font-size: 15px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
@@ -95,7 +95,7 @@ h1, h2, h3 { line-height: 1.15; }
 /* Dashboard */
 .dash { padding-top: 132px; padding-bottom: 96px; }
 .dash-head { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
-.dash-head h1 { margin: 0; font: 400 clamp(44px, 5vw, 60px)/1 var(--serif); letter-spacing: -0.02em; }
+.dash-head h1 { margin: 0; font: 600 clamp(28px, 3.4vw, 36px)/1.15 var(--sans); letter-spacing: -0.025em; }
 .status { font-size: 13px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; padding-bottom: 6px; }
 .status a { color: var(--text); text-decoration: underline; }
 .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--good); }
@@ -108,7 +108,7 @@ h1, h2, h3 { line-height: 1.15; }
 .stats { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); margin-bottom: 16px; }
 .stat { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px; }
 .stat .label { font-size: 13px; color: var(--muted); }
-.stat .value { font: 400 34px/1.1 var(--serif); margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stat .value { font: 600 26px/1.2 var(--sans); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .stat .hint { font-size: 12px; color: var(--faint); margin-top: 2px; }
 .panels { display: grid; gap: 16px; grid-template-columns: 2fr 1fr; }
 .panels .wide { grid-column: 1 / -1; }
@@ -170,7 +170,7 @@ table.data th:first-child, table.data td:first-child, #blocks th:nth-child(2), #
 table.data th { color: var(--muted); font-weight: 500; font-size: 13px; }
 .table-scroll { overflow-x: auto; }
 .empty { text-align: center; padding: 56px 24px; border: 1px solid var(--line); border-radius: 20px; background: var(--panel); }
-.empty h2 { margin-top: 0; font: 400 40px/1.1 var(--serif); }
+.empty h2 { margin-top: 0; font: 600 28px/1.2 var(--sans); letter-spacing: -0.02em; }
 .drop { display: block; padding: 28px; text-align: center; border: 1.5px dashed #d4d1c9; border-radius: var(--radius); cursor: pointer; background: var(--bg); color: var(--muted); }
 .drop:hover, .drop.over { border-color: var(--accent); color: var(--text); }
 .tag { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px; background: #e9f6f1; color: var(--good); margin-left: 4px; }
@@ -228,7 +228,7 @@ p.panel.small-left { padding: 14px 20px; }
 .side a[aria-current="page"] { color: var(--text); background: var(--panel); box-shadow: inset 0 0 0 1px var(--line); }
 .side svg, .back svg { flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .pane { max-width: 760px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 30px 32px 32px; }
-.pane h2 { margin: 0 0 6px; font: 400 34px/1.1 var(--serif); }
+.pane h2 { margin: 0 0 6px; font: 600 24px/1.2 var(--sans); letter-spacing: -0.02em; }
 .pane > h3 { margin: 34px 0 4px; padding-top: 26px; border-top: 1px solid var(--line); font-size: 16px; font-weight: 600; }
 .pane > .muted { margin: 0 0 22px; font-size: 15px; }
 .pane > h3 + .muted { margin-bottom: 14px; font-size: 14px; }
@@ -317,7 +317,7 @@ table.people a.flag { display: inline-block; min-width: 22px; padding: 0 7px; bo
 .signin .card { padding: 40px 32px 30px; background: var(--panel); border: 1px solid var(--line); border-radius: 20px;
 	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 20px 40px -24px rgba(0, 0, 0, 0.18); }
 .signin img { width: 36px; height: 36px; }
-.signin h1 { margin: 12px 0 8px; font: 400 40px/1.05 var(--serif); letter-spacing: -0.01em; }
+.signin h1 { margin: 12px 0 8px; font: 600 28px/1.15 var(--sans); letter-spacing: -0.02em; }
 .signin .card > .muted { margin: 0; }
 .signin .pill { width: 100%; height: 46px; justify-content: center; margin-top: 26px; font-size: 15px; }
 .signin .card > .fine { margin-top: 14px; }

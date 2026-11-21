@@ -3,11 +3,11 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>Review a person · teardrop</title>
+	<title>Review a person - teardrop</title>
 	<link rel="icon" href="favicon.svg">
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono&family=Instrument+Serif&display=swap">
+	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Geist+Mono&display=swap">
 	<link rel="stylesheet" href="style.css">
 	<link rel="stylesheet" href="nav.css">
 </head>
@@ -38,7 +38,7 @@
 		<h1 id="title">Review a person</h1>
 		<span class="status" id="status"></span>
 		<form class="lookup" id="lookup" role="search" action="person.html">
-			<input name="slack" id="slack" aria-label="Slack ID" placeholder="Slack ID, such as U0A06EPFV45" autocomplete="off" spellcheck="false" required>
+			<input name="slack" id="slack" aria-label="Slack ID" placeholder="Slack ID, such as U012ABCDEF" autocomplete="off" spellcheck="false" required>
 			<button class="btn">Look up</button>
 		</form>
 	</div>
@@ -51,7 +51,7 @@
 	<div id="content" hidden>
 		<div class="stats">
 			<div class="stat"><div class="label">Engaged, as synced</div><div class="value" id="s-engaged">-</div><div class="hint" id="s-engaged-hint"></div></div>
-			<div class="stat"><div class="label">Not checkable</div><div class="value" id="s-unchecked">-</div><div class="hint">arrived in a computer's first report</div></div>
+			<div class="stat"><div class="label">Not checkable</div><div class="value" id="s-unchecked">-</div><div class="hint">earlier history from first syncs</div></div>
 			<div class="stat"><div class="label">Flagged reports</div><div class="value" id="s-flagged">-</div><div class="hint" id="s-flagged-hint"></div></div>
 			<div class="stat"><div class="label">Refused reports</div><div class="value" id="s-refused">-</div><div class="hint">of <span id="s-entries"></span> log entries</div></div>
 		</div>
@@ -145,7 +145,7 @@ async function load(before) {
 	}
 	const { person, computers, counts } = body
 	const name = person.name || (person.deleted_at ? 'Deleted account' : 'No name')
-	document.title = `${name} · teardrop`
+	document.title = `${name} - teardrop`
 	$('title').textContent = name
 	$('status').innerHTML = person.slack_id ? `<code>${esc(person.slack_id)}</code>` : 'No Slack ID'
 	$('slack').value = person.slack_id

@@ -143,7 +143,7 @@ function render() {
 
 	// With a day picked, list that day's blocks, even if it is outside the range above.
 	const listed = (pick ? scoped.filter((b) => b.s >= pick.from && b.s < pick.to) : blocks).slice().sort((a, b) => b.s - a.s)
-	$('blocks-title').textContent = pick ? `Work blocks · ${pick.label}` : 'Recent work blocks'
+	$('blocks-title').textContent = pick ? `Work blocks - ${pick.label}` : 'Recent work blocks'
 	$('blocks').innerHTML = '<tr><th>When</th><th>Project</th><th>Engaged</th><th>Span</th><th>Prompts</th><th>Tokens</th><th>Tools</th></tr>' +
 		(listed.slice(0, pick ? 100 : 25).map((b) =>
 			`<tr><td>${fmtDay.format(b.s)}, ${hm.format(b.s)}–${hm.format(b.e)}</td><td>${esc(b.project.name)}</td><td>${dur(b.engaged_seconds)}</td><td>${dur((b.e - b.s) / 1000)}</td><td>${b.prompts}</td><td>${count(b.tokens_in)}/${count(b.tokens_out)}</td><td>${b.tools.map((t) => `<span class="tag">${esc(t)}</span>`).join('')}</td></tr>`).join('') ||
@@ -157,7 +157,7 @@ function renderChips(projects, scoped) {
 	if (pick) {
 		const inPick = scoped.filter((b) => b.s >= pick.from && b.s < pick.to)
 		const secs = inPick.reduce((n, b) => n + b.engaged_seconds, 0)
-		chips.push(`<button type="button" class="chip" data-clear="pick" title="Back to the whole range">${esc(pick.label)} · ${dur(secs)}${X}</button>`)
+		chips.push(`<button type="button" class="chip" data-clear="pick" title="Back to the whole range">${esc(pick.label)} - ${dur(secs)}${X}</button>`)
 		chips.push('<a class="link" href="#blocks-panel">See its work blocks</a>')
 	}
 	$('chips').hidden = !chips.length
@@ -268,7 +268,7 @@ async function verify(file) {
 }
 
 const verifiedNote = (p) =>
-	`<span class="tag" title="Signed by this account; any change to the numbers or times would break the key"><svg class="ico" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>verified</span> account ${esc(p.accountID)} · key valid until ${esc(new Date(p.expires_at).toLocaleDateString())}`
+	`<span class="tag" title="Signed by this account; any change to the numbers or times would break the key"><svg class="ico" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>verified</span> account ${esc(p.accountID)} - key valid until ${esc(new Date(p.expires_at).toLocaleDateString())}`
 
 // The page shows one of three things: stats, the setup steps, or a notice.
 function reveal(id) {
@@ -339,7 +339,7 @@ async function loadHosted() {
 	const stale = Date.now() - last > 3 * DAY
 	const from = body.computers.length === 1 ? '1 computer' : `${body.computers.length} computers`
 	show(merge(body.computers), `<span class="dot${stale ? ' old' : ''}"></span>Synced ${esc(ago(last))} from ${from}` +
-		(viewing ? ` · <a href="person.html?id=${encodeURIComponent(viewing)}">review</a> · <a href="people.html">all people</a>` : stale ? ' · run <code>teardrop sync</code> to update' : ''))
+		(viewing ? ` - <a href="person.html?id=${encodeURIComponent(viewing)}">review</a> - <a href="people.html">all people</a>` : stale ? ' - run <code>teardrop sync</code> to update' : ''))
 	setTimeout(loadHosted, 5 * 60000)
 }
 
@@ -364,7 +364,7 @@ async function poll() {
 	try {
 		const p = await verify(body)
 		live = true
-		show(p.report, `<span class="dot live"></span>Live from this computer · updated ${new Date().toLocaleTimeString()} · ${verifiedNote(p)}`)
+		show(p.report, `<span class="dot live"></span>Live from this computer - updated ${new Date().toLocaleTimeString()} - ${verifiedNote(p)}`)
 	} catch (e) {
 		$('status').textContent = e.message
 	}

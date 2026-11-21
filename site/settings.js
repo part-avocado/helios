@@ -26,7 +26,7 @@ const change = (path, method, body) => api(path, { method, body })
 function listComputers(computers) {
 	$('computer-list').innerHTML = computers.map((c) => `<div class="item">
 			<div class="grow"><code>${esc(c.id)}</code>
-				<div class="sub">Synced ${esc(ago(c.synced_at))} · ${dur(c.engaged_seconds)} in the past year${c.teardrop_version ? ` · teardrop ${esc(c.teardrop_version)}` : ''}</div></div>
+				<div class="sub">Synced ${esc(ago(c.synced_at))} - ${dur(c.engaged_seconds)} in the past year${c.teardrop_version ? ` - teardrop ${esc(c.teardrop_version)}` : ''}</div></div>
 			<button class="btn small danger" type="button" data-remove="${esc(c.id)}">Remove</button>
 		</div>`).join('') ||
 		'<div class="item"><div class="grow muted">No computers yet. <a href="#setup">Set one up</a> and it appears here after its first sync.</div></div>'

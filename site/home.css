@@ -1,4 +1,4 @@
-/* Homepage only. Light, editorial: serif display type, a floating pill nav,
+/* Homepage only. Light: large sans-serif headings, a floating pill nav,
    and soft painted backdrops. Docs and the dashboard keep style.css. */
 :root {
 	--paper: #fbfaf7;
@@ -9,8 +9,7 @@
 	--card: #ffffff;
 	--teal: #1f8a83;
 	--sky: #2f80ed;
-	--serif: "Instrument Serif", "Iowan Old Style", Georgia, serif;
-	--sans: Geist, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+	--sans: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 	--mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 	color-scheme: light;
 }
@@ -27,7 +26,7 @@ code { font-family: var(--mono); font-size: 0.88em; }
 .wrap { max-width: 1152px; margin: 0 auto; padding: 0 32px; }
 
 /* Display type: dark words fading to grey */
-.display { font-family: var(--serif); font-weight: 400; letter-spacing: -0.02em; line-height: 0.98; margin: 0; }
+.display { font-family: var(--sans); font-weight: 600; letter-spacing: -0.035em; line-height: 1.06; margin: 0; text-wrap: balance; }
 .display .soft { color: #6b6b72; }
 .eyebrow { color: var(--teal); font-size: 14px; font-weight: 500; margin: 0 0 14px; }
 .lead { color: var(--ink-2); font-size: 18px; line-height: 1.6; }
@@ -37,7 +36,7 @@ code { font-family: var(--mono); font-size: 0.88em; }
 	padding: 8px 8px 8px 22px; border-radius: 999px; background: rgba(255, 255, 255, 0.72); backdrop-filter: blur(14px) saturate(1.4);
 	-webkit-backdrop-filter: blur(14px) saturate(1.4); border: 1px solid rgba(0, 0, 0, 0.08);
 	box-shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.9); white-space: nowrap; }
-.nav .brand { display: flex; align-items: center; gap: 7px; font: 22px/1 var(--serif); margin-right: 14px; }
+.nav .brand { display: flex; align-items: center; gap: 7px; font: 600 17px/1 var(--sans); letter-spacing: -0.02em; margin-right: 14px; }
 .nav .brand img { width: 17px; height: 17px; }
 .nav .links a { padding: 8px 12px; font-size: 14px; color: var(--ink-2); border-radius: 999px; transition: color 0.15s; }
 .nav .links a:hover { color: var(--ink); }
@@ -57,11 +56,10 @@ code { font-family: var(--mono); font-size: 0.88em; }
 	background: var(--card); font-size: 14px; color: var(--ink-2); margin-bottom: 36px; transition: border-color 0.15s; }
 .badge:hover { border-color: #cfccc4; }
 .badge b { background: var(--ink); color: #fff; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
-.hero h1 { font-size: clamp(52px, 8.4vw, 104px); max-width: 980px; margin: 0 auto; }
+.hero h1 { font-size: clamp(38px, 6vw, 72px); max-width: 980px; margin: 0 auto; }
 .hero .lead { max-width: 580px; margin: 28px auto 0; }
 .hero .actions { display: flex; gap: 28px; justify-content: center; align-items: center; margin-top: 36px; flex-wrap: wrap; }
 .hero .meta { margin-top: 26px; font-size: 14px; color: var(--ink-3); display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
-.hero .meta .dot { width: 3px; height: 3px; border-radius: 50%; background: currentColor; align-self: center; }
 
 /* Install card */
 .install { max-width: 680px; margin: 44px auto 0; text-align: left; background: var(--card); border: 1px solid var(--rule); border-radius: 16px;
@@ -117,12 +115,12 @@ code { font-family: var(--mono); font-size: 0.88em; }
 
 /* Product: numbered features */
 .product { padding: 96px 0 40px; }
-.product h2 { font-size: clamp(44px, 6vw, 76px); max-width: 940px; }
+.product h2 { font-size: clamp(32px, 4.4vw, 54px); max-width: 940px; }
 .product .lead { max-width: 560px; margin: 24px 0 0; }
 .features { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; margin-top: 64px; }
 .feature { background: var(--card); border: 1px solid var(--rule); border-radius: 20px; padding: 32px; display: flex; flex-direction: column; gap: 10px; min-height: 340px; }
 .feature .num { font: 13px var(--mono); color: var(--ink-3); }
-.feature h3 { font: 400 34px/1.05 var(--serif); letter-spacing: -0.01em; margin: 6px 0 0; }
+.feature h3 { font: 600 24px/1.2 var(--sans); letter-spacing: -0.02em; margin: 6px 0 0; }
 .feature p { margin: 0; color: var(--ink-2); max-width: 420px; }
 .feature .art { margin-top: auto; padding-top: 24px; }
 
@@ -137,28 +135,28 @@ code { font-family: var(--mono); font-size: 0.88em; }
 .receipt div { display: flex; justify-content: space-between; }
 .receipt .total { color: var(--ink); font-weight: 600; border-top: 1px dashed #d9d6cf; margin-top: 6px; padding-top: 6px; }
 .lapse { display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: 14px; background: linear-gradient(135deg, #fff6e5, #fdeccc); border: 1px solid #f2dcaf; color: #7a5a17; font-size: 14px; }
-.lapse b { font-family: var(--serif); font-weight: 400; font-size: 26px; color: #5a3f0a; line-height: 1; }
+.lapse b { font-weight: 600; font-size: 20px; letter-spacing: -0.02em; color: #5a3f0a; line-height: 1; }
 
 /* How it works */
 .how { margin-top: 100px; padding: 120px 0 140px; text-align: center; }
 .how.scene { background:
 	radial-gradient(50% 40% at 50% 0%, var(--paper), transparent 100%),
 	linear-gradient(180deg, var(--paper) 0%, #e9f1e2 35%, #c9ddb4 70%, #9cc07e 100%); }
-.how h2 { font-size: clamp(44px, 6vw, 76px); position: relative; z-index: 3; }
+.how h2 { font-size: clamp(32px, 4.4vw, 54px); position: relative; z-index: 3; }
 .how .lead { position: relative; z-index: 3; margin: 18px auto 0; max-width: 520px; }
 .steps { position: relative; z-index: 3; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; margin-top: 72px; text-align: left; }
 .step { background: rgba(255, 255, 255, 0.78); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.9);
 	border-radius: 18px; padding: 26px; box-shadow: 0 20px 40px -24px rgba(30, 60, 20, 0.35); display: flex; flex-direction: column; gap: 8px; }
 .step .n { width: 28px; height: 28px; border-radius: 50%; background: var(--ink); color: #fff; display: grid; place-items: center; font: 600 13px var(--mono); }
-.step h3 { margin: 8px 0 0; font: 400 28px/1.1 var(--serif); }
+.step h3 { margin: 8px 0 0; font: 600 21px/1.2 var(--sans); letter-spacing: -0.02em; }
 .step p { margin: 0; color: var(--ink-2); font-size: 15px; }
 .step code { background: rgba(0, 0, 0, 0.05); padding: 1px 6px; border-radius: 5px; }
 .step .foot { margin-top: auto; padding-top: 12px; border-top: 1px solid rgba(0, 0, 0, 0.08); font-size: 13px; color: var(--ink-3); }
-.step .foot b { font: 400 22px var(--serif); color: var(--ink); margin-right: 6px; }
+.step .foot b { font: 600 17px var(--sans); color: var(--ink); margin-right: 6px; }
 
 /* Closing call to action */
 .cta { padding: 140px 0 120px; text-align: center; }
-.cta h2 { font-size: clamp(48px, 7vw, 88px); max-width: 860px; margin: 0 auto; }
+.cta h2 { font-size: clamp(34px, 5vw, 60px); max-width: 860px; margin: 0 auto; }
 .cta .actions { display: flex; gap: 28px; justify-content: center; align-items: center; margin-top: 40px; flex-wrap: wrap; }
 .cta .checks { display: flex; gap: 22px; justify-content: center; flex-wrap: wrap; margin-top: 26px; font-size: 14px; color: var(--ink-2); }
 .cta .checks span { display: inline-flex; align-items: center; gap: 6px; }
@@ -167,12 +165,12 @@ code { font-family: var(--mono); font-size: 0.88em; }
 /* Footer */
 footer { border-top: 1px solid var(--rule); padding: 72px 0 32px; }
 footer .cols { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 32px; }
-footer .tag { font: 26px var(--serif); margin: 0 0 6px; display: flex; align-items: center; gap: 8px; }
+footer .tag { font: 600 19px var(--sans); letter-spacing: -0.02em; margin: 0 0 6px; display: flex; align-items: center; gap: 8px; }
 footer .tag img { width: 18px; }
 footer h4 { margin: 0 0 14px; font-size: 14px; font-weight: 600; }
 footer ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; font-size: 14px; color: var(--ink-2); }
 footer ul a:hover { color: var(--ink); }
-.wordmark { margin: 72px 0 40px; text-align: center; font: 400 clamp(96px, 20vw, 260px)/0.85 var(--serif); letter-spacing: -0.03em;
+.wordmark { margin: 72px 0 40px; text-align: center; font: 700 clamp(72px, 17vw, 220px)/1 var(--sans); letter-spacing: -0.06em;
 	background: linear-gradient(180deg, #4ba6ff 0%, #1f64c4 60%, #123f80 100%); -webkit-background-clip: text; background-clip: text; color: transparent; user-select: none; }
 footer .bottom { display: flex; gap: 20px; flex-wrap: wrap; justify-content: space-between; padding-top: 24px; border-top: 1px solid var(--rule); font-size: 13px; color: var(--ink-3); }
 footer .bottom a:hover { color: var(--ink); }
