@@ -29,12 +29,25 @@ async function api(path, init) {
 	return res.json()
 }
 
-// renderSetup fills el with the two steps that connect a computer to this
+// renderSetup fills el with the steps that connect a computer to this
 // account. key is the visitor's sync key.
 function renderSetup(el, key) {
 	const sh = 'curl -fsSL https://raw.githubusercontent.com/part-avocado/teardrop/main/install.sh | sh'
 	const ps = 'irm https://raw.githubusercontent.com/part-avocado/teardrop/main/install.ps1 | iex'
+	const connect = `teardrop sync -server ${location.origin} -key ${key}`
 	const cmd = (text, kind = '') => `<div class="cmd ${kind}"><code>${esc(text)}</code><button class="copy" type="button">Copy</button></div>`
+	// What to paste into an agent so it does the setup itself. The questions
+	// teardrop setup asks are answered up front, since an agent can't answer them.
+	const prompt = [
+		'Set up teardrop on this computer and connect it to my account.',
+		'',
+		`1. Install it: run \`${sh}\` (on Windows, in PowerShell: \`${ps}\`). Set TEARDROP_NO_SETUP=1 first so the installer does not stop to ask questions.`,
+		'2. Run `teardrop setup -yes`. It adds the Claude Code hooks and the Amp plugin for the tools I have.',
+		`3. Run \`${connect}\`.`,
+		'4. Run `teardrop` and show me its output.',
+		'',
+		'Do not repeat the sync key in your replies. If you are Amp, tell me to run "plugins: reload" in my open threads.',
+	].join('\n')
 	el.innerHTML = `<ol class="steps">
 		<li><div>
 			<h3>Install teardrop</h3>
@@ -53,8 +66,28 @@ function renderSetup(el, key) {
 		<li><div>
 			<h3>Connect it to your account</h3>
 			<p>Open a new terminal and run this once. It uploads your hours, and teardrop keeps them up to date while you work in Claude Code or Amp.</p>
-			<div class="cmdbox">${cmd(`teardrop sync -server ${location.origin} -key ${key}`)}</div>
+			<div class="cmdbox">${cmd(connect)}</div>
 			<p class="fine">The command includes your sync key, which can only upload your stats. Keep it to yourself.</p>
+		</div></li>
+		<li><div>
+			<h3>Check your tools</h3>
+			<p><code>teardrop setup</code> already looked for these. Run it again any time to add one you installed later.</p>
+			<div class="cmdbox tools" data-tabs data-default="claude">
+				<div class="tabs" role="tablist">
+					<button type="button" data-tab="claude" role="tab">Claude Code</button>
+					<button type="button" data-tab="codex" role="tab">Codex</button>
+					<button type="button" data-tab="amp" role="tab">Amp</button>
+				</div>
+				<div class="tab-panel" data-tab="claude"><p>Setup adds hooks to Claude Code's settings, so each prompt is recorded as you send it. Your past sessions are read from its logs, so they count too. Nothing else to do.</p></div>
+				<div class="tab-panel" data-tab="codex"><p>teardrop reads Codex's session logs, so there is nothing to install. Use Codex as usual; your sessions show up after the next sync.</p></div>
+				<div class="tab-panel" data-tab="amp"><p>Amp keeps threads on its own servers, so setup writes a small plugin to <code>~/.config/amp/plugins/teardrop.ts</code>. It records when you send a prompt and when Amp finishes, never the prompt text.</p>${cmd('teardrop setup')}<p>New Amp threads load the plugin on their own. In a thread that is already open, run <b>plugins: reload</b> from the command palette.</p></div>
+			</div>
+		</div></li>
+		<li><div>
+			<h3>Or let your agent do it</h3>
+			<p>Paste this into Amp or Claude Code and it runs the steps above for you. It answers setup's questions in advance, since an agent can't.</p>
+			<div class="prompt"><code>${esc(prompt)}</code><button class="copy" type="button">Copy</button></div>
+			<p class="fine">This prompt includes your sync key, so it ends up in that thread's history. Make a new key under Settings if you'd rather not leave it there.</p>
 		</div></li>
 	</ol>`
 	initTabs(el)

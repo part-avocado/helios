@@ -2,7 +2,7 @@
 // stands in for Hack Club Auth and the review server with a local HTTP server.
 import assert from 'node:assert/strict'
 import { generateKeyPairSync, sign } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { after, before, test } from 'node:test'
@@ -51,8 +51,10 @@ before(async () => {
 	})
 	await server.listen()
 	const env = await server.getWorker<{ DB: { prepare(sql: string): { run(): Promise<unknown> } } }>().getEnv()
-	const schema = readFileSync(new URL('../migrations/0001_init.sql', import.meta.url), 'utf8')
-	for (const statement of unstable_splitSqlQuery(schema)) await env.DB.prepare(statement).run()
+	const migrations = new URL('../migrations/', import.meta.url)
+	for (const file of readdirSync(migrations).sort()) {
+		for (const statement of unstable_splitSqlQuery(readFileSync(new URL(file, migrations), 'utf8'))) await env.DB.prepare(statement).run()
+	}
 })
 
 after(async () => {
@@ -95,13 +97,13 @@ async function reports(cookie: string, query = '') {
 function computer() {
 	const { publicKey, privateKey } = generateKeyPairSync('ed25519')
 	const account = publicKey.export({ format: 'jwk' }).x!
-	return (report: object, generatedAt = Date.now()) => {
+	return (report: object, generatedAt = Date.now(), version = 'v0.0.1') => {
 		const payload = JSON.stringify({
 			account,
 			generated_at: new Date(generatedAt).toISOString(),
 			expires_at: new Date(generatedAt + 7 * DAY).toISOString(),
 			since: '365d',
-			teardrop_version: 'v0-test',
+			teardrop_version: version,
 			report,
 		})
 		return JSON.stringify({ v: 1, payload, key: sign(null, Buffer.from(payload), privateKey).toString('base64url') })
@@ -128,7 +130,8 @@ test('pages and data need an account', async () => {
 
 test('a server without its secrets says so', async () => {
 	const bare = createTestHarness({
-		workers: [{ configPath: new URL('../wrangler.jsonc', import.meta.url), vars: { DEV_LOGIN: '' }, secrets: { SESSION_SECRET: 'x' } }],
+		// The rest are given as empty, so a .dev.vars file on this computer doesn't supply them.
+		workers: [{ configPath: new URL('../wrangler.jsonc', import.meta.url), vars: { DEV_LOGIN: '' }, secrets: { SESSION_SECRET: 'x', HCA_CLIENT_ID: '', HCA_CLIENT_SECRET: '', ADMINS: '' } }],
 	})
 	try {
 		await bare.listen()
@@ -163,6 +166,7 @@ test('signing in creates one account per person and keeps its sync key', async (
 	assert.match(html, /<html[^>]* data-hosted/)
 	assert.match(html, /&lt;b&gt;ada&lt;\/b&gt;/, 'the name from Hack Club Auth is shown as text, not markup')
 	assert.doesNotMatch(html, /data-admin/)
+	assert.match(html, /id="account-initial"[^>]*>b</, 'the avatar shows the name\'s first letter')
 })
 
 test('a sign-in that this browser did not start is refused', async () => {
@@ -274,6 +278,144 @@ test('only admins see other people', async () => {
 	for (const id of ['999999', 'x', '1e3']) assert.equal((await call(`/api/report?user=${id}`, { cookie: admin })).status, 404, id)
 })
 
+type LogRow = { event: string; computer_id: string; refusal: string; flagged: number; engaged_seconds: number; past_added_seconds: number | null; findings: string[]; remarks: string[] }
+type Review = {
+	person: { id: number; slack_id: string; deleted_at: number | null }
+	computers: { id: string }[]
+	counts: { entries: number; flagged: number; refused: number }
+	unchecked_seconds: number
+	impossible_days: string[]
+	log: LogRow[]
+	more: number | null
+}
+
+const day = (ms: number) => new Date(ms).toISOString().slice(0, 10)
+
+test('reviewers look a person up by Slack ID and read their log', async () => {
+	const admin = await signIn('admin')
+	const cookie = await signIn('logged')
+	const { api_key: key } = await me(cookie)
+	const review = async (query = 'slack=ulogged') => {
+		const res = await call(`/api/admin/person?${query}`, { cookie: admin })
+		assert.equal(res.status, 200, await res.clone().text())
+		return (await res.json()) as Review
+	}
+	const signed = computer()
+	const now = Date.now()
+	const days = (totals: Record<number, number>) => Object.entries(totals).map(([ago, engaged_seconds]) => ({ date: day(now - Number(ago) * DAY), engaged_seconds }))
+	const sync = async (report: object, generatedAt: number) => {
+		const res = await call('/api/v1/reports', { method: 'POST', body: signed(report, generatedAt), key })
+		assert.equal(res.status, 200, await res.clone().text())
+		return (await review()).log[0]!
+	}
+
+	// Only admins, and only for people who exist.
+	assert.equal((await call('/api/admin/person?slack=ULOGGED', { cookie })).status, 403)
+	assert.equal((await call('/person?slack=ULOGGED', { cookie })).headers.get('Location'), '/dashboard')
+	assert.equal((await call('/person?slack=ULOGGED', { cookie: admin })).status, 200)
+	for (const query of ['slack=UNOBODY', 'id=999999', 'id=1e3', '']) assert.equal((await call(`/api/admin/person?${query}`, { cookie: admin })).status, 404, query)
+	assert.deepEqual([(await review()).person.slack_id, (await review()).log], ['ULOGGED', []])
+
+	// A first report has nothing to be compared with: noted, not flagged.
+	let row = await sync({ engaged_seconds: 4200, blocks: [], days: days({ 10: 3600, 4: 600 }) }, now - 3 * DAY)
+	assert.deepEqual([row.event, row.flagged, row.findings.length, row.engaged_seconds], ['sync', 0, 0, 4200])
+	assert.match(row.remarks.join(' '), /First report/)
+	assert.equal((await review()).unchecked_seconds, 4200)
+
+	// Three days later: today's work, and half an hour that moved to the day
+	// before (a change of time zone). Nothing wrong.
+	row = await sync({ engaged_seconds: 6000, blocks: [], days: days({ 11: 1800, 10: 1800, 4: 600, 0: 1800 }) }, now - 3000)
+	assert.deepEqual([row.flagged, row.past_added_seconds, row.findings], [0, 0, []])
+
+	// An hour appears on a day that was long over.
+	row = await sync({ engaged_seconds: 9600, blocks: [], days: days({ 11: 1800, 10: 5400, 4: 600, 0: 1800 }) }, now - 2000)
+	assert.deepEqual([row.flagged, row.past_added_seconds], [1, 3600])
+	assert.match(row.findings.join(' '), /1h 00m to days that were already over/)
+	assert.match(row.findings.join(' '), /only 0m had passed/)
+
+	// More time today than has passed since the last report.
+	row = await sync({ engaged_seconds: 9600 + 7200, blocks: [], days: days({ 11: 1800, 10: 5400, 4: 600, 0: 9000 }) }, now - 1000)
+	assert.deepEqual([row.flagged, row.past_added_seconds, row.findings.length], [1, 0, 1])
+	assert.match(row.findings[0]!, /Added 2h 00m of engaged time, but only 0m had passed/)
+
+	// Refused reports are in the log too. An edited one is flagged; a late one is not.
+	const edited = JSON.parse(signed({ engaged_seconds: 600, blocks: [] }, now))
+	edited.payload = edited.payload.replace('"engaged_seconds":600', '"engaged_seconds":99999')
+	assert.equal((await call('/api/reports', { method: 'POST', body: JSON.stringify(edited), cookie, origin: SITE })).status, 400)
+	row = (await review()).log[0]!
+	assert.deepEqual([row.event, row.flagged, row.engaged_seconds], ['upload', 1, 99999])
+	assert.match(row.refusal, /changed after it was made/)
+	assert.equal((await call('/api/v1/reports', { method: 'POST', body: signed({ blocks: [] }, now - 5000), key })).status, 409)
+	row = (await review()).log[0]!
+	assert.deepEqual([row.flagged, row.refusal], [0, 'The server already has a newer report from this computer.'])
+
+	// Removing a computer is logged, and doesn't give it a clean start.
+	const id = (await review()).computers[0]!.id
+	assert.equal((await call(`/api/computers/${id}`, { method: 'DELETE', cookie, origin: SITE })).status, 200)
+	row = (await review()).log[0]!
+	assert.deepEqual([row.event, row.computer_id, row.engaged_seconds], ['remove', id, 16800])
+	row = await sync({ engaged_seconds: 16800 + 36000, blocks: [], days: days({ 5: 36000 + 16800 }) }, now)
+	assert.equal(row.flagged, 1)
+	assert.match(row.findings.join(' '), /Added 10h 00m of engaged time/)
+	assert.match(row.remarks.join(' '), /removed and added again/)
+
+	// The counts, and the log narrowed to what was flagged or refused.
+	const all = await review()
+	assert.deepEqual(all.counts, { entries: 8, flagged: 4, refused: 2 })
+	assert.equal(all.unchecked_seconds, 4200)
+	assert.equal((await review('slack=ULOGGED&show=flagged')).log.length, 4)
+	assert.deepEqual((await review('slack=ULOGGED&show=refused')).log.map((r) => r.flagged), [0, 1])
+	assert.deepEqual((await review(`id=${all.person.id}`)).counts, all.counts)
+	const { people } = (await (await call('/api/admin/people', { cookie: admin })).json()) as { people: { slack_id: string; flagged: number }[] }
+	assert.equal(people.find((p) => p.slack_id === 'ULOGGED')!.flagged, 4)
+
+	// Two computers that together claim more than a day holds.
+	const second = computer()
+	const busy = { engaged_seconds: 14 * 3600, blocks: [], days: days({ 5: 14 * 3600 }) }
+	assert.equal((await call('/api/v1/reports', { method: 'POST', body: second(busy, now), key })).status, 200)
+	const both = await review()
+	assert.equal(both.log[0]!.flagged, 0)
+	assert.equal(both.impossible_days.length, 1)
+	assert.match(both.impossible_days[0]!, new RegExp(`^${day(now - 5 * DAY)}: their computers add up to 28h 40m`))
+
+	// A day that left the report's window doesn't hide time added to a later
+	// one, and a new version of teardrop is pointed out.
+	const third = computer()
+	const old = { engaged_seconds: 4200, blocks: [], days: days({ 20: 3600, 9: 600 }) }
+	assert.equal((await call('/api/v1/reports', { method: 'POST', body: third(old, now - 4 * DAY), key })).status, 200)
+	const slid = { engaged_seconds: 4200, blocks: [], days: days({ 9: 4200 }) }
+	assert.equal((await call('/api/v1/reports', { method: 'POST', body: third(slid, now, 'v0-next'), key })).status, 200)
+	row = (await review()).log[0]!
+	assert.deepEqual([row.flagged, row.past_added_seconds], [1, 3600])
+	assert.match(row.remarks.join(' '), /teardrop changed from v0.0.1 to v0-next.*teardrop v0-next, which is not a released version/)
+
+	// Deleting the account empties it, and leaves the log for reviewers.
+	const before = await review()
+	assert.equal(before.computers.length, 3)
+	assert.equal((await call('/api/account', { method: 'DELETE', cookie, origin: SITE })).status, 200)
+	assert.equal((await call('/api/me', { cookie })).status, 401)
+	assert.equal((await call('/api/v1/reports', { method: 'POST', body: signed({ blocks: [] }, now + 500), key })).status, 401)
+	const left = await review()
+	assert.ok(left.person.deleted_at! >= now)
+	assert.deepEqual([left.person.id, left.computers], [before.person.id, []])
+	assert.deepEqual(left.log.slice(0, 4).map((r) => r.event), ['delete', 'remove', 'remove', 'remove'])
+	assert.deepEqual(left.counts, { ...before.counts, entries: before.counts.entries + 4 })
+	const listed = ((await (await call('/api/admin/people', { cookie: admin })).json()) as { people: { slack_id: string; flagged: number; computers: number; deleted_at: number | null }[] }).people.find((p) => p.slack_id === 'ULOGGED')!
+	assert.deepEqual([listed.flagged, listed.computers, Boolean(listed.deleted_at)], [before.counts.flagged, 0, true])
+
+	// Signing in again reopens the same account: empty, with a new sync key
+	// and its log. A computer that comes back is held to what it had.
+	const back = await me(await signIn('logged'))
+	assert.notEqual(back.api_key, key)
+	assert.deepEqual(back.computers, [])
+	assert.equal((await review()).person.deleted_at, null)
+	const more = { engaged_seconds: 16800 + 36000 + 7200, blocks: [], days: days({ 5: 16800 + 36000 + 7200 }) }
+	assert.equal((await call('/api/v1/reports', { method: 'POST', body: signed(more, now + 1000), key: back.api_key })).status, 200)
+	row = (await review()).log[0]!
+	assert.equal(row.flagged, 1)
+	assert.match(row.findings.join(' '), /Added 2h 00m of engaged time/)
+})
+
 test('project submissions go on to the review server', async () => {
 	const { api_key: key } = await me(await signIn('submitter'))
 	const body = JSON.stringify({ signed: { v: 1 }, logs: ['x'.repeat(200_000)] })
@@ -281,4 +423,50 @@ test('project submissions go on to the review server', async () => {
 	const res = await call('/api/v1/submissions', { method: 'POST', body, key })
 	assert.deepEqual(await res.json(), { id: 'sub-0123456789abcdef' })
 	assert.deepEqual(submissions, [body])
+})
+
+test('home and docs work for anyone, and show the account menu once signed in', async () => {
+	for (const page of ['/', '/docs']) {
+		const plain = await call(page)
+		assert.equal(plain.status, 200, page)
+		assert.doesNotMatch(await plain.text(), /<html[^>]* data-hosted/)
+		const cookie = await signIn('menu')
+		const signedIn = await (await call(page, { cookie })).text()
+		assert.match(signedIn, /<html[^>]* data-hosted/, page)
+		assert.match(signedIn, /id="account-name-full"[^>]*>&lt;b&gt;menu&lt;\/b&gt;</, page)
+	}
+	// Home stays up before the secrets exist.
+	const bare = createTestHarness({ workers: [{ configPath: new URL('../wrangler.jsonc', import.meta.url), vars: { DEV_LOGIN: '' }, secrets: { SESSION_SECRET: '' } }] })
+	try {
+		await bare.listen()
+		assert.equal((await bare.fetch(SITE + '/')).status, 200)
+		assert.equal((await bare.fetch(SITE + '/', { headers: { Cookie: 'teardrop_session=junk.junk' } })).status, 200)
+	} finally {
+		await bare.close()
+	}
+})
+
+test('exporting and deleting your own data', async () => {
+	const cookie = await signIn('leaver')
+	const { api_key: key } = await me(cookie)
+	const now = Date.now()
+	assert.equal((await call('/api/v1/reports', { method: 'POST', body: computer()({ engaged_seconds: 600, blocks: [block(now - 1000)] }), key })).status, 200)
+
+	const out = await call('/api/export', { cookie })
+	assert.match(out.headers.get('Content-Disposition')!, /attachment/)
+	const data = (await out.json()) as { profile: { name: string; slack_id: string }; computers: unknown[] }
+	assert.deepEqual([data.profile.slack_id, data.computers.length], ['ULEAVER', 1])
+	assert.doesNotMatch(JSON.stringify(data), /tdk_/, 'the sync key stays out of the export')
+	assert.equal((await call('/api/export')).status, 401)
+
+	assert.equal((await call('/api/account', { method: 'DELETE', cookie })).status, 403, 'no Origin')
+	const gone = await call('/api/account', { method: 'DELETE', cookie, origin: SITE })
+	assert.equal(gone.status, 200)
+	assert.equal(cookies(gone), 'teardrop_session=')
+	// The old session and sync key are dead, and the computer is free to join someone else.
+	assert.equal((await call('/api/me', { cookie })).status, 401)
+	assert.equal((await call('/api/v1/reports', { method: 'POST', body: '{}', key })).status, 401)
+	const env = await server.getWorker<{ DB: { prepare(sql: string): { first(): Promise<{ n: number }> } } }>().getEnv()
+	assert.equal((await env.DB.prepare("SELECT COUNT(*) AS n FROM computers WHERE user_id NOT IN (SELECT id FROM users)").first()).n, 0)
+	assert.equal((await env.DB.prepare('SELECT COUNT(*) AS n FROM report_chunks WHERE computer_id NOT IN (SELECT id FROM computers)').first()).n, 0)
 })

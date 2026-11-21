@@ -1,7 +1,8 @@
 // Signed reports from `teardrop sync` and `teardrop export`: checking them,
 // storing the latest one of each computer, and reading them back.
-import type { User } from './auth.ts'
+import { newKey, type User } from './auth.ts'
 import { fromBase64Url, Refusal } from './http.ts'
+import { dayTotals, type Entry, findings, logEntry, type LogEvent, logRemoval, parseDays, pastAdded, removedReport } from './log.ts'
 
 /** The largest report accepted, the same as the Go server. */
 export const MAX_REPORT_BYTES = 16 << 20
@@ -20,18 +21,50 @@ interface Payload {
 	account?: string
 	generated_at?: string
 	expires_at?: string
+	since?: string
 	teardrop_version?: string
-	report?: { engaged_seconds?: number; blocks?: { end?: string }[] }
+	report?: { engaged_seconds?: number; blocks?: { end?: string }[]; days?: unknown }
 }
+
+/** A refusal that reviewers should see, because the teardrop CLI never causes it. */
+class FlaggedRefusal extends Refusal {}
 
 const refuse = (why: string) => new Refusal(400, `Report refused: ${why}`)
 
 /**
  * storeReport checks a signed report the way `teardrop` itself does and keeps
  * it as the latest report of the computer that signed it. It returns the
- * computer's ID.
+ * computer's ID. Stored or refused, the report goes in the person's log.
  */
-export async function storeReport(env: Env, user: User, body: string): Promise<string> {
+export async function storeReport(env: Env, user: User, body: string, event: LogEvent): Promise<string> {
+	// What the log will say about this report, filled in as it is read.
+	const entry: Entry = {
+		at: Date.now(),
+		event,
+		computer_id: '',
+		refusal: '',
+		flagged: 0,
+		generated_at: null,
+		teardrop_version: '',
+		since: '',
+		engaged_seconds: 0,
+		prev_generated_at: null,
+		prev_since: null,
+		prev_engaged_seconds: null,
+		prev_teardrop_version: null,
+		past_added_seconds: null,
+	}
+	try {
+		return await store(env, user, body, entry)
+	} catch (e) {
+		if (!(e instanceof Refusal)) throw e
+		const refused: Entry = { ...entry, refusal: e.message, flagged: Number(e instanceof FlaggedRefusal), prev_generated_at: null, prev_since: null, prev_engaged_seconds: null, prev_teardrop_version: null, past_added_seconds: null }
+		await env.DB.batch(logEntry(env, user.id, refused))
+		throw e
+	}
+}
+
+async function store(env: Env, user: User, body: string, entry: Entry): Promise<string> {
 	let signed: { v?: unknown; payload?: unknown; key?: unknown }
 	let p: Payload
 	try {
@@ -49,27 +82,44 @@ export async function storeReport(env: Env, user: User, body: string): Promise<s
 		const key = await crypto.subtle.importKey('raw', publicKey, { name: 'Ed25519' }, false, ['verify'])
 		valid = await crypto.subtle.verify('Ed25519', key, signature, new TextEncoder().encode(signed.payload))
 	}
-	if (!valid || !publicKey) throw refuse('its key does not match its contents, so it was changed after it was made.')
-
-	const now = Date.now()
+	const digest = publicKey?.length === 32 ? new Uint8Array(await crypto.subtle.digest('SHA-256', publicKey)) : null
+	const id = digest ? 'td-' + [...digest.slice(0, 6)].map((b) => b.toString(16).padStart(2, '0')).join('') : ''
+	const now = entry.at
 	const generated = Date.parse(p.generated_at ?? '')
+	const engaged = Math.round(Number(p.report?.engaged_seconds) || 0)
+	const version = String(p.teardrop_version ?? '').slice(0, 64)
+	const since = String(p.since ?? '').slice(0, 32)
+	Object.assign(entry, { computer_id: id, generated_at: Number.isFinite(generated) ? generated : null, teardrop_version: version, since, engaged_seconds: engaged })
+	if (!valid || !publicKey) throw new FlaggedRefusal(400, 'Report refused: its key does not match its contents, so it was changed after it was made.')
+
 	const expires = Date.parse(p.expires_at ?? '')
 	if (!(generated <= now + CLOCK_SKEW)) throw refuse('it says it was made in the future. Check the clock on your computer.')
 	if (!(now < expires)) throw refuse('its key has expired. Run teardrop sync, or export a fresh file.')
-	if (expires - generated > KEY_LIFETIME) throw refuse('its key is valid for longer than teardrop allows.')
+	if (expires - generated > KEY_LIFETIME) throw new FlaggedRefusal(400, 'Report refused: its key is valid for longer than teardrop allows.')
 	if ((p.report?.blocks ?? []).some((b) => !(Date.parse(b.end ?? '') <= generated + CLOCK_SKEW))) {
 		throw refuse('it has activity after the time it was made.')
 	}
 
-	const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', publicKey))
-	const id = 'td-' + [...digest.slice(0, 6)].map((b) => b.toString(16).padStart(2, '0')).join('')
-	const taken = new Refusal(409, 'This computer already syncs to another account. Remove it there, under Settings, then Computers, and sync again.')
+	const taken = new FlaggedRefusal(409, 'This computer already syncs to another account. Remove it there, under Settings, then Computers, and sync again.')
 	const stale = new Refusal(409, 'The server already has a newer report from this computer.')
-	const existing = await env.DB.prepare('SELECT user_id, public_key, generated_at FROM computers WHERE id = ?')
+	const existing = await env.DB.prepare('SELECT user_id, public_key, generated_at, engaged_seconds, teardrop_version, since, days FROM computers WHERE id = ?')
 		.bind(id)
-		.first<{ user_id: number; public_key: string; generated_at: number }>()
+		.first<{ user_id: number; public_key: string; generated_at: number; engaged_seconds: number; teardrop_version: string; since: string; days: string }>()
 	if (existing && (existing.user_id !== user.id || existing.public_key !== p.account)) throw taken
 	if (existing && existing.generated_at >= generated) throw stale
+
+	// Compare the report with the one it replaces. A computer that was removed
+	// and comes back is compared with what it had when it left.
+	const days = dayTotals(p.report?.days)
+	const before = existing ?? (await removedReport(env, user.id, id))
+	if (before) {
+		entry.prev_generated_at = before.generated_at
+		entry.prev_since = before.since
+		entry.prev_engaged_seconds = before.engaged_seconds
+		entry.prev_teardrop_version = before.teardrop_version
+		if (existing?.days && existing.since === since) entry.past_added_seconds = pastAdded(parseDays(existing.days), days, existing.generated_at)
+	}
+	entry.flagged = Number(findings(entry).length > 0)
 
 	const chunks: string[] = []
 	for (let at = 0; at < signed.payload.length; ) {
@@ -84,17 +134,19 @@ export async function storeReport(env: Env, user: User, body: string): Promise<s
 	const applied = 'EXISTS (SELECT 1 FROM computers WHERE id = ?1 AND signature = ?2)'
 	const results = await env.DB.batch([
 		env.DB.prepare(
-			`INSERT INTO computers (id, user_id, public_key, signature, generated_at, synced_at, teardrop_version, engaged_seconds)
-			 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+			`INSERT INTO computers (id, user_id, public_key, signature, generated_at, synced_at, teardrop_version, engaged_seconds, since, days)
+			 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
 			 ON CONFLICT (id) DO UPDATE SET signature = excluded.signature, generated_at = excluded.generated_at,
-				synced_at = excluded.synced_at, teardrop_version = excluded.teardrop_version, engaged_seconds = excluded.engaged_seconds
+				synced_at = excluded.synced_at, teardrop_version = excluded.teardrop_version, engaged_seconds = excluded.engaged_seconds,
+				since = excluded.since, days = excluded.days
 			 WHERE computers.user_id = excluded.user_id AND computers.public_key = excluded.public_key
 				AND computers.generated_at < excluded.generated_at`,
-		).bind(id, user.id, p.account, signed.key, generated, now, String(p.teardrop_version ?? ''), Math.round(Number(p.report?.engaged_seconds) || 0)),
+		).bind(id, user.id, p.account, signed.key, generated, now, version, engaged, since, JSON.stringify(days)),
 		env.DB.prepare(`DELETE FROM report_chunks WHERE computer_id = ?1 AND ${applied}`).bind(id, signed.key),
 		...chunks.map((data, seq) =>
 			env.DB.prepare(`INSERT INTO report_chunks (computer_id, seq, data) SELECT ?1, ?3, ?4 WHERE ${applied}`).bind(id, signed.key, seq, data),
 		),
+		...logEntry(env, user.id, entry, 'EXISTS (SELECT 1 FROM computers WHERE id = ? AND signature = ?)', id, signed.key),
 	])
 	if (!results[0]?.meta.changes) throw stale
 	return id
@@ -130,6 +182,12 @@ export interface Computer {
 	engaged_seconds: number
 }
 
+/** personDays returns, for each of a person's computers, its latest report's engaged seconds by date. */
+export async function personDays(env: Env, userID: number): Promise<Record<string, number>[]> {
+	const { results } = await env.DB.prepare('SELECT days FROM computers WHERE user_id = ?').bind(userID).all<{ days: string }>()
+	return results.map((c) => parseDays(c.days))
+}
+
 export async function computers(env: Env, userID: number): Promise<Computer[]> {
 	const { results } = await env.DB.prepare(
 		'SELECT id, synced_at, generated_at, teardrop_version, engaged_seconds FROM computers WHERE user_id = ? ORDER BY synced_at DESC',
@@ -139,9 +197,24 @@ export async function computers(env: Env, userID: number): Promise<Computer[]> {
 	return results
 }
 
-/** removeComputer forgets one of a person's computers and its report. */
+/** removeComputer forgets one of a person's computers and its report, and notes that in their log. */
 export async function removeComputer(env: Env, userID: number, id: string): Promise<boolean> {
 	// Deleting the computer deletes its report pieces with it (ON DELETE CASCADE).
-	const res = await env.DB.prepare('DELETE FROM computers WHERE id = ? AND user_id = ?').bind(id, userID).run()
-	return res.meta.changes > 0
+	const results = await env.DB.batch([...logRemoval(env, userID, id), env.DB.prepare('DELETE FROM computers WHERE id = ? AND user_id = ?').bind(id, userID)])
+	return results.at(-1)!.meta.changes > 0
+}
+
+/**
+ * deleteUser empties a person's account: their computers, reports, name, and
+ * sync key go. The account's row and its log stay, so deleting an account
+ * doesn't hide what it sent from reviewers, and signing in again reopens it.
+ */
+export async function deleteUser(env: Env, userID: number): Promise<void> {
+	await env.DB.batch([
+		...logRemoval(env, userID),
+		// The report pieces go with the computers (ON DELETE CASCADE).
+		env.DB.prepare('DELETE FROM computers WHERE user_id = ?').bind(userID),
+		// The new sync key is one no one has seen, so the old one stops working.
+		env.DB.prepare(`UPDATE users SET name = '', api_key = ?, deleted_at = ? WHERE id = ?`).bind(newKey(), Date.now(), userID),
+	])
 }

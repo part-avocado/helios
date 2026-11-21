@@ -9,6 +9,7 @@
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono&family=Instrument+Serif&display=swap">
 	<link rel="stylesheet" href="style.css">
+	<link rel="stylesheet" href="nav.css">
 </head>
 <body>
 <nav class="nav" aria-label="Main">
@@ -19,7 +20,16 @@
 		<a href="people.html" class="admin-only">People</a>
 		<a href="docs.html" class="docs-link">Docs</a>
 	</div>
-	<form class="account hosted-only" method="post" action="/logout"><span id="account-name"></span><button class="pill">Sign out</button></form>
+	<details class="account hosted-only">
+		<summary aria-label="Account menu"><span class="avatar" id="account-initial" aria-hidden="true"></span><span class="who" id="account-name"></span><svg class="chev" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+		<div class="menu">
+			<div class="who-line">Signed in as<b id="account-name-full"></b></div>
+			<a href="dashboard.html">Dashboard</a>
+			<a href="settings.html">Settings</a>
+			<a href="settings.html#account">Account</a>
+			<form method="post" action="/logout"><button>Sign out</button></form>
+		</div>
+	</details>
 </nav>
 
 <main class="wrap dash">
@@ -28,7 +38,7 @@
 		<nav class="side" aria-label="Settings">
 			<a href="#setup"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2.5 3.5h11v9h-11zM5 6.5l2 1.5-2 1.5M8.5 10H11"/></svg>Setup</a>
 			<a href="#computers"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2.5 3h11v7.5h-11zM6 13.5h4M8 10.5v3"/></svg>Computers</a>
-			<a href="#upload"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M8 10.5V3M5 6l3-3 3 3M3 10.5V13h10v-2.5"/></svg>Upload</a>
+			<a href="#data"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M8 10.5V3M5 6l3-3 3 3M3 10.5V13h10v-2.5"/></svg>Data</a>
 			<a href="#account"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="5.5" r="2.5"/><path d="M3 13.5c.6-2.5 2.6-4 5-4s4.4 1.5 5 4"/></svg>Account</a>
 		</nav>
 
@@ -49,8 +59,10 @@
 			<p class="msg bad" id="computer-msg" role="alert" hidden></p>
 		</section>
 
-		<section class="pane" id="upload" hidden>
-			<h2>Upload a stats file</h2>
+		<section class="pane" id="data" hidden>
+			<h2>Your data</h2>
+			<p class="muted">Bring stats in from a computer that can't sync, or take a copy of everything this site holds about you.</p>
+			<h3 class="first">Upload a stats file</h3>
 			<p class="muted">For a computer that can't reach this site. Everywhere else, <a href="#setup">set up syncing</a> and you never need this.</p>
 			<ol class="steps">
 				<li><div>
@@ -67,16 +79,28 @@
 				</div></li>
 			</ol>
 			<p class="muted fine">The file holds times and counts, never the text of your prompts. A file that was edited after it was made is refused.</p>
+			<h3>Export your data</h3>
+			<p class="muted">Download your name, your Slack ID, and the latest stats from each of your computers as one JSON file. It does not include your sync key.</p>
+			<a class="btn small" href="/api/export" download>Download my data</a>
 		</section>
 
 		<section class="pane" id="account" hidden>
 			<h2>Account</h2>
-			<p class="muted">You sign in with Hack Club Auth, so your name comes from there.</p>
+			<p class="muted">You sign in with Hack Club Auth, so your name and Slack ID come from there. They update each time you sign in.</p>
 			<dl class="facts">
 				<div><dt>Name</dt><dd id="me-name">-</dd></div>
 				<div><dt>Slack ID</dt><dd id="me-slack">-</dd></div>
+				<div><dt>Member since</dt><dd id="me-since">-</dd></div>
+				<div><dt>Role</dt><dd id="me-role">-</dd></div>
 			</dl>
 			<form method="post" action="/logout"><button class="btn small">Sign out</button></form>
+			<h3>Delete your account</h3>
+			<p class="muted">This removes every computer connected to your account and all of your stats from this site, and signs you out. Nothing on your own computers is touched. Reviewers keep your Slack ID and a record of what your computers reported: times and totals, without project names. Signing in again reopens the account, empty.</p>
+			<label class="field">Type <b>delete</b> to confirm
+				<input id="delete-confirm" type="text" autocomplete="off" spellcheck="false">
+			</label>
+			<button class="btn small danger" id="delete-account" type="button" disabled>Delete my account</button>
+			<p class="msg bad" id="delete-msg" role="alert" hidden></p>
 		</section>
 	</div>
 </main>

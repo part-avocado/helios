@@ -15,16 +15,37 @@ const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate())
 // Calendar days, not 24-hour steps, which land on the wrong day across a clock change.
 const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n)
 
+// What the visitor has picked. Clicking a day on the heatmap or a bar picks
+// that day (a week, on the yearly chart) and shows its work blocks below.
+// Clicking a project picks it, and then every number and chart follows it.
+// Clicking either again clears it.
+let heatScrolled = false
+let pick = null // { from: Date, to: Date, label: string }
+let only = null // a project key
+
+const fmtDate = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+const fmtDay = new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+const fmtShort = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' })
+const hm = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' })
+const hourName = (h) => new Date(2000, 0, 1, h % 24).toLocaleTimeString(undefined, { hour: 'numeric' })
+const pct = (v, of) => (of ? Math.round((v / of) * 100) : 0) + '%'
+
+// tipAttrs makes an element show the tooltip: a title, a line under it, and
+// an optional hint about clicking.
+const tipAttrs = (title, body, hint = '') => ` data-tip="${esc(title)}" data-body="${esc(body)}" data-hint="${esc(hint)}"`
+const X = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>'
+
 function render() {
 	if (!report) return
 	const now = new Date()
 	const from = addDays(now, -(days - 1))
-	const blocks = (report.blocks || [])
-		.map((b) => ({ ...b, s: new Date(b.start), e: new Date(b.end), tools: b.tools || [] }))
-		.filter((b) => b.e >= from)
+	const all = (report.blocks || []).map((b) => ({ ...b, s: new Date(b.start), e: new Date(b.end), tools: b.tools || [] }))
+	if (only && !all.some((b) => b.project.key === only)) only = null
+	const scoped = only ? all.filter((b) => b.project.key === only) : all
+	const blocks = scoped.filter((b) => b.e >= from)
 
-	// Per-day, per-hour, per-project, and per-tool totals from the blocks in range.
-	const perDay = new Map(), perHour = new Array(24).fill(0), projects = new Map(), tools = new Map()
+	// Per-day, per-hour, and per-tool totals from the blocks in range.
+	const perDay = new Map(), perHour = new Array(24).fill(0), tools = new Map()
 	let total = 0, prompts = 0, tin = 0, tout = 0
 	for (const b of blocks) {
 		total += b.engaged_seconds
@@ -42,21 +63,26 @@ function render() {
 			if (next <= t) break
 			t = next
 		}
-		const p = projects.get(b.project.key) || { name: b.project.name, engaged: 0, prompts: 0, tin: 0, tout: 0, blocks: 0 }
-		p.engaged += b.engaged_seconds
-		p.prompts += b.prompts
-		p.tin += b.tokens_in
-		p.tout += b.tokens_out
-		p.blocks++
-		projects.set(b.project.key, p)
 		for (const t of b.tools.length ? b.tools : ['unknown']) {
 			tools.set(t, (tools.get(t) || 0) + b.engaged_seconds / Math.max(1, b.tools.length))
 		}
 	}
+	// The table lists every project in range, so another can be picked at any time.
+	const projects = new Map()
+	for (const b of all) {
+		if (b.e < from) continue
+		const p = projects.get(b.project.key) || { key: b.project.key, name: b.project.name, engaged: 0, prompts: 0, tin: 0, tout: 0 }
+		p.engaged += b.engaged_seconds
+		p.prompts += b.prompts
+		p.tin += b.tokens_in
+		p.tout += b.tokens_out
+		projects.set(b.project.key, p)
+	}
 	// Reports from teardrop 0.4 and later carry per-day totals that count time
 	// on two projects at once only once, as the teardrop command does. Summing
-	// blocks, the fallback for older reports, counts that time twice.
-	const totals = dayTotals()
+	// blocks, the fallback for older reports and for one project, counts that
+	// time twice.
+	const totals = only ? null : dayTotals()
 	if (totals) {
 		perDay.clear()
 		total = 0
@@ -66,10 +92,12 @@ function render() {
 			total += v
 		}
 	}
-	const noise = (report.projects || []).reduce((n, p) => n + (p.noise_prompts || 0) + (p.repeat_prompts || 0) + (p.autopilot_prompts || 0), 0)
+	const noise = (report.projects || [])
+		.filter((p) => !only || p.project?.key === only)
+		.reduce((n, p) => n + (p.noise_prompts || 0) + (p.repeat_prompts || 0) + (p.autopilot_prompts || 0), 0)
 
 	// Streak: consecutive days with activity, ending today (or yesterday, if nothing yet today).
-	const allDays = new Set((report.blocks || []).map((b) => dayKey(new Date(b.start))))
+	const allDays = new Set(scoped.map((b) => dayKey(b.s)))
 	let streak = 0
 	let d = startOfDay(now)
 	if (!allDays.has(dayKey(d))) d = addDays(d, -1)
@@ -79,6 +107,7 @@ function render() {
 	}
 
 	const ranked = [...projects.values()].sort((a, b) => b.engaged - a.engaged)
+	const top = only ? projects.get(only) : ranked[0]
 	const today = perDay.get(dayKey(now)) || 0
 	const activeDays = [...perDay.values()].filter((v) => v > 0).length
 	$('s-total').textContent = dur(total)
@@ -86,33 +115,53 @@ function render() {
 	$('s-today').textContent = dur(today)
 	$('s-today-hint').textContent = today ? 'keep going' : 'nothing yet today'
 	$('s-streak').textContent = `${streak} ${streak === 1 ? 'day' : 'days'}`
-	$('s-top').textContent = ranked[0]?.name || '-'
-	$('s-top-hint').textContent = ranked[0] ? dur(ranked[0].engaged) : ''
+	$('s-top').textContent = top?.name || '-'
+	$('s-top-hint').textContent = top ? dur(top.engaged) : ''
 	$('s-prompts').textContent = count(prompts)
 	$('s-prompts-hint').textContent = noise ? `${noise} skipped` : 'none skipped'
 	$('s-tokens').textContent = count(tin + tout)
 	$('s-tokens-hint').textContent = `${count(tin)} read, ${count(tout)} written`
 
-	renderHeatmap(now)
+	renderChips(projects, scoped)
+	renderHeatmap(now, scoped)
 	renderBars(perDay, from)
-	const maxHour = Math.max(1, ...perHour)
-	$('hours').innerHTML = perHour.map((v, h) => `<div style="height:${(v / maxHour) * 100}%" title="${h}:00 · ${dur(v)}"></div>`).join('')
 
+	const maxHour = Math.max(...perHour)
+	$('hours-peak').textContent = maxHour > 0 ? `busiest ${hourName(perHour.indexOf(maxHour))}` : ''
+	$('hours').innerHTML = perHour.map((v, h) =>
+		`<div class="col"${tipAttrs(`${hourName(h)} to ${hourName(h + 1)}`, v ? `${dur(v)}, ${pct(v, perHour.reduce((a, b) => a + b, 0))} of your day's work` : 'No activity')}><i style="height:${maxHour ? (v / maxHour) * 100 : 0}%"></i></div>`).join('')
+
+	const toolTotal = [...tools.values()].reduce((a, b) => a + b, 0)
 	const maxTool = Math.max(1, ...tools.values())
 	$('tools').innerHTML = [...tools].sort((a, b) => b[1] - a[1]).map(([t, v]) =>
-		`<div class="row"><div class="top"><span>${esc(t)}</span><span class="muted">${dur(v)}</span></div><div class="track"><div class="fill" style="width:${(v / maxTool) * 100}%"></div></div></div>`).join('') ||
+		`<div class="row"${tipAttrs(t, `${dur(v)}, ${pct(v, toolTotal)} of the time`)}><div class="top"><span>${esc(t)}</span><span class="muted">${dur(v)}</span></div><div class="track"><div class="fill" style="width:${(v / maxTool) * 100}%"></div></div></div>`).join('') ||
 		'<p class="muted">No activity in this range.</p>'
 
 	$('projects').innerHTML = '<tr><th>Project</th><th>Engaged</th><th>Prompts</th><th>Tokens</th></tr>' +
-		(ranked.map((p) => `<tr><td>${esc(p.name)}</td><td>${dur(p.engaged)}</td><td>${p.prompts}</td><td>${count(p.tin)}/${count(p.tout)}</td></tr>`).join('') ||
+		(ranked.map((p) => `<tr class="pick${only === p.key ? ' sel' : ''}" data-project="${esc(p.key)}"><td><button type="button" class="link" aria-pressed="${only === p.key}" title="${only === p.key ? 'Show all projects' : 'Show only this project'}">${esc(p.name)}</button></td><td>${dur(p.engaged)}</td><td>${p.prompts}</td><td>${count(p.tin)}/${count(p.tout)}</td></tr>`).join('') ||
 			'<tr><td colspan="4" class="muted">No activity in this range.</td></tr>')
 
-	const fmt = new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
-	const hm = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' })
+	// With a day picked, list that day's blocks, even if it is outside the range above.
+	const listed = (pick ? scoped.filter((b) => b.s >= pick.from && b.s < pick.to) : blocks).slice().sort((a, b) => b.s - a.s)
+	$('blocks-title').textContent = pick ? `Work blocks · ${pick.label}` : 'Recent work blocks'
 	$('blocks').innerHTML = '<tr><th>When</th><th>Project</th><th>Engaged</th><th>Span</th><th>Prompts</th><th>Tokens</th><th>Tools</th></tr>' +
-		(blocks.slice().sort((a, b) => b.s - a.s).slice(0, 25).map((b) =>
-			`<tr><td>${fmt.format(b.s)}, ${hm.format(b.s)}–${hm.format(b.e)}</td><td>${esc(b.project.name)}</td><td>${dur(b.engaged_seconds)}</td><td>${dur((b.e - b.s) / 1000)}</td><td>${b.prompts}</td><td>${count(b.tokens_in)}/${count(b.tokens_out)}</td><td>${b.tools.map((t) => `<span class="tag">${esc(t)}</span>`).join('')}</td></tr>`).join('') ||
-			'<tr><td colspan="7" class="muted">No activity in this range.</td></tr>')
+		(listed.slice(0, pick ? 100 : 25).map((b) =>
+			`<tr><td>${fmtDay.format(b.s)}, ${hm.format(b.s)}–${hm.format(b.e)}</td><td>${esc(b.project.name)}</td><td>${dur(b.engaged_seconds)}</td><td>${dur((b.e - b.s) / 1000)}</td><td>${b.prompts}</td><td>${count(b.tokens_in)}/${count(b.tokens_out)}</td><td>${b.tools.map((t) => `<span class="tag">${esc(t)}</span>`).join('')}</td></tr>`).join('') ||
+			`<tr><td colspan="7" class="muted">${pick ? 'No work blocks in this range.' : 'No activity in this range.'}</td></tr>`)
+}
+
+// renderChips shows what is picked, each with a way to clear it.
+function renderChips(projects, scoped) {
+	const chips = []
+	if (only) chips.push(`<button type="button" class="chip" data-clear="project" title="Show all projects">${esc(projects.get(only)?.name || scoped[0]?.project.name || only)}${X}</button>`)
+	if (pick) {
+		const inPick = scoped.filter((b) => b.s >= pick.from && b.s < pick.to)
+		const secs = inPick.reduce((n, b) => n + b.engaged_seconds, 0)
+		chips.push(`<button type="button" class="chip" data-clear="pick" title="Back to the whole range">${esc(pick.label)} · ${dur(secs)}${X}</button>`)
+		chips.push('<a class="link" href="#blocks-panel">See its work blocks</a>')
+	}
+	$('chips').hidden = !chips.length
+	$('chips').innerHTML = chips.length ? '<span class="muted">Showing</span>' + chips.join('') : ''
 }
 
 // dayTotals returns the report's engaged seconds per day, keyed like dayKey,
@@ -122,12 +171,15 @@ function dayTotals() {
 	return new Map(report.days.map((d) => [d.date.split('-').map(Number).join('-'), d.engaged_seconds]))
 }
 
+// picked says whether the days from d for span days overlap the picked ones.
+const picked = (d, span) => pick && pick.from < addDays(d, span) && pick.to > d
+
 // A year of days, one column per week, like a contribution graph.
-function renderHeatmap(now) {
-	const perDay = dayTotals() || new Map()
+function renderHeatmap(now, scoped) {
+	const perDay = (!only && dayTotals()) || new Map()
 	if (!perDay.size) {
-		for (const b of report.blocks || []) {
-			const k = dayKey(new Date(b.start))
+		for (const b of scoped) {
+			const k = dayKey(b.s)
 			perDay.set(k, (perDay.get(k) || 0) + b.engaged_seconds)
 		}
 	}
@@ -137,7 +189,6 @@ function renderHeatmap(now) {
 	const level = (s) => (s <= 0 ? 0 : s < 1800 ? 1 : s < 3600 ? 2 : s < 3 * 3600 ? 3 : 4)
 	const cell = 13, gap = 3
 	let rects = '', months = '', lastMonth = -1, col = 0
-	const fmt = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 	for (let d = new Date(start); d <= end; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
 		const row = d.getDay()
 		if (row === 0 && d > start) col++
@@ -146,11 +197,14 @@ function renderHeatmap(now) {
 			months += `<text x="${30 + col * (cell + gap)}" y="10" fill="#8b8b94" font-size="11">${d.toLocaleString(undefined, { month: 'short' })}</text>`
 		}
 		const s = perDay.get(dayKey(d)) || 0
-		rects += `<rect x="${30 + col * (cell + gap)}" y="${18 + row * (cell + gap)}" width="${cell}" height="${cell}" rx="2" fill="${colors[level(s)]}"><title>${fmt.format(d)}: ${s ? dur(s) : 'no activity'}</title></rect>`
+		const click = s > 0 ? ` class="has${picked(d, 1) ? ' sel' : ''}" data-ts="${d.getTime()}" data-span="1"` : ''
+		rects += `<rect x="${30 + col * (cell + gap)}" y="${18 + row * (cell + gap)}" width="${cell}" height="${cell}" rx="2" fill="${colors[level(s)]}"${click}${tipAttrs(fmtDate.format(d), s ? dur(s) : 'No activity', s ? 'Click to see this day' : '')}/>`
 	}
 	const labels = ['Mon', 'Wed', 'Fri'].map((t, i) => `<text x="0" y="${18 + (i * 2 + 1) * (cell + gap) + 10}" fill="#8b8b94" font-size="11">${t}</text>`).join('')
 	const w = 30 + (col + 1) * (cell + gap)
 	$('heatmap').innerHTML = `<svg width="${w}" height="${18 + 7 * (cell + gap)}" role="img" aria-label="Engaged time per day over the last year">${months}${labels}${rects}</svg>`
+	// The first time, start on the latest weeks, which is what the eye wants on a narrow screen.
+	if (!heatScrolled) $('heatmap').scrollLeft = $('heatmap').scrollWidth, (heatScrolled = true)
 }
 
 // One bar per day, or per week when a year of days wouldn't fit. Weeks are
@@ -166,12 +220,16 @@ function renderBars(perDay, from) {
 		for (let j = 0; j < step; j++) v += perDay.get(dayKey(addDays(d, j))) || 0
 		vals.push([d, v])
 	}
-	const max = Math.max(1, ...vals.map((v) => v[1]))
-	const fmt = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' })
+	const max = Math.max(...vals.map((v) => v[1]))
 	$('bars-title').textContent = step === 7 ? 'Engaged per week' : 'Engaged per day'
+	$('bars-peak').textContent = max > 0 ? `peak ${dur(max)}` : ''
 	$('bars').classList.toggle('dense', vals.length > 40)
-	$('bars').innerHTML = vals.map(([d, v]) => `<div style="height:${(v / max) * 100}%" title="${step === 7 ? 'Week of ' : ''}${fmt.format(d)} · ${dur(v)}"></div>`).join('')
-	$('bar-labels').innerHTML = `<span>${fmt.format(first)}</span><span>${fmt.format(addDays(from, days - 1))}</span>`
+	$('bars').innerHTML = vals.map(([d, v]) => {
+		const label = step === 7 ? `Week of ${fmtShort.format(d)}` : fmtDate.format(d)
+		const click = v > 0 ? ` data-ts="${d.getTime()}" data-span="${step}" data-label="${esc(label)}"` : ''
+		return `<button type="button" class="col${picked(d, step) ? ' sel' : ''}"${click}${v > 0 ? '' : ' tabindex="-1"'}${tipAttrs(label, v ? dur(v) : 'No activity', v ? `Click to see ${step === 7 ? 'this week' : 'this day'}` : '')}><i style="height:${max ? Math.max((v / max) * 100, v ? 1.5 : 0) : 0}%"></i></button>`
+	}).join('')
+	$('bar-labels').innerHTML = `<span>${fmtShort.format(first)}</span><span>${fmtShort.format(addDays(from, days - 1))}</span>`
 }
 
 // verify checks a signed report from `teardrop dashboard` and returns its payload.
@@ -246,7 +304,6 @@ function merge(computers) {
 }
 
 let setupReady = false
-let sampled = false
 
 // showSetup nudges a signed-in visitor with nothing synced to connect a computer.
 async function showSetup() {
@@ -268,7 +325,7 @@ async function loadHosted() {
 		}
 		if (!body.computers.length) {
 			if (viewing) notice('Nothing synced yet', 'This person has signed in, but no computer of theirs has synced. <a href="people.html">Back to people</a>')
-			else if (!sampled) await showSetup()
+			else await showSetup()
 			setTimeout(loadHosted, 10000) // so the stats appear as soon as the first sync lands
 			return
 		}
@@ -278,12 +335,11 @@ async function loadHosted() {
 		setTimeout(loadHosted, 15000)
 		return
 	}
-	sampled = false
 	const last = Math.max(...body.computers.map((c) => c.synced_at))
 	const stale = Date.now() - last > 3 * DAY
 	const from = body.computers.length === 1 ? '1 computer' : `${body.computers.length} computers`
 	show(merge(body.computers), `<span class="dot${stale ? ' old' : ''}"></span>Synced ${esc(ago(last))} from ${from}` +
-		(viewing ? ' · <a href="people.html">all people</a>' : stale ? ' · run <code>teardrop sync</code> to update' : ''))
+		(viewing ? ` · <a href="person.html?id=${encodeURIComponent(viewing)}">review</a> · <a href="people.html">all people</a>` : stale ? ' · run <code>teardrop sync</code> to update' : ''))
 	setTimeout(loadHosted, 5 * 60000)
 }
 
@@ -315,32 +371,6 @@ async function poll() {
 	setTimeout(poll, 30000)
 }
 
-// Plausible fake data so visitors can see the dashboard before installing.
-function sample() {
-	let seed = 7
-	const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
-	const projects = [{ key: 'github.com/rowan/cs2-web', name: 'cs2-web' }, { key: 'github.com/rowan/notes', name: 'notes' }, { key: '/home/rowan/synth', name: 'synth' }]
-	const toolsets = [['claude-code'], ['codex'], ['amp'], ['amp', 'claude-code']]
-	const blocks = []
-	const today = startOfDay(new Date())
-	for (let i = 300; i >= 0; i--) {
-		if (rnd() < 0.35 && i > 2) continue
-		for (let n = 0; n < 1 + Math.floor(rnd() * 3); n++) {
-			const s = new Date(today.getTime() - i * DAY + (9 + rnd() * 12) * 3600000)
-			if (s > new Date()) continue
-			const engaged = 600 + Math.floor(rnd() * 5400)
-			const prompts = 2 + Math.floor(engaged / 300 * rnd())
-			blocks.push({
-				project: projects[Math.floor(rnd() ** 1.6 * 3)], start: s.toISOString(),
-				end: new Date(s.getTime() + engaged * (1.05 + rnd() * 0.4) * 1000).toISOString(),
-				engaged_seconds: engaged, prompts, tokens_in: prompts * 40000, tokens_out: prompts * 1800,
-				tools: toolsets[Math.floor(rnd() * 4)],
-			})
-		}
-	}
-	return { blocks, projects: [{ noise_prompts: 1, repeat_prompts: 4, autopilot_prompts: 6 }], engaged_seconds: 0 }
-}
-
 for (const b of document.querySelectorAll('#range button')) {
 	b.addEventListener('click', () => {
 		days = Number(b.dataset.days)
@@ -348,20 +378,60 @@ for (const b of document.querySelectorAll('#range button')) {
 		render()
 	})
 }
-for (const el of document.querySelectorAll('.sample')) {
-	el.addEventListener('click', (e) => {
-		e.preventDefault()
-		sampled = true
-		show(sample(), 'Sample data · <a href="#" id="unsample">hide it</a>')
-		$('unsample').onclick = (e) => {
-			e.preventDefault()
-			sampled = false
-			report = null
-			if (hosted) showSetup()
-			else poll()
-		}
-	})
+// Clicking a day or week, or a project, narrows the page to it; clicking it
+// again, or its chip, widens it back.
+$('content').addEventListener('click', (e) => {
+	const clear = e.target.closest('[data-clear]')?.dataset.clear
+	if (clear === 'project') only = null
+	else if (clear === 'pick') pick = null
+	else {
+		const day = e.target.closest('[data-ts]')
+		const row = e.target.closest('[data-project]')
+		if (day) {
+			const from = new Date(Number(day.dataset.ts)), to = addDays(from, Number(day.dataset.span))
+			const same = pick && pick.from.getTime() === from.getTime() && pick.to.getTime() === to.getTime()
+			pick = same ? null : { from, to, label: day.dataset.label || fmtDate.format(from) }
+		} else if (row) {
+			only = only === row.dataset.project ? null : row.dataset.project
+		} else return
+	}
+	render()
+})
+
+// Tooltips: one box that follows the pointer, and sits above a focused bar.
+const tipBox = $('tip')
+function showTip(el) {
+	tipBox.querySelector('b').textContent = el.dataset.tip
+	tipBox.querySelector('span').textContent = el.dataset.body
+	tipBox.querySelector('em').textContent = el.dataset.hint
+	tipBox.querySelector('em').hidden = !el.dataset.hint
+	tipBox.hidden = false
 }
+function moveTip(x, y) {
+	const box = tipBox.getBoundingClientRect()
+	let left = x + 14, top = y - box.height - 12
+	if (left + box.width > innerWidth - 8) left = x - box.width - 14
+	if (top < 8) top = y + 20
+	tipBox.style.transform = `translate(${Math.round(Math.max(8, left))}px, ${Math.round(top)}px)`
+}
+const hideTip = () => (tipBox.hidden = true)
+$('content').addEventListener('pointermove', (e) => {
+	const el = e.target.closest('[data-tip]')
+	if (!el) return hideTip()
+	showTip(el)
+	moveTip(e.clientX, e.clientY)
+})
+$('content').addEventListener('pointerleave', hideTip)
+$('content').addEventListener('focusin', (e) => {
+	const el = e.target.closest('[data-tip]')
+	if (!el) return
+	showTip(el)
+	const r = el.getBoundingClientRect()
+	moveTip(r.left + r.width / 2, r.top)
+})
+$('content').addEventListener('focusout', hideTip)
+document.addEventListener('pointerdown', (e) => e.target.closest('#content') || hideTip())
+addEventListener('scroll', hideTip, { passive: true })
 
 if (hosted) loadHosted()
 else poll()

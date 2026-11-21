@@ -9,6 +9,7 @@
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono&family=Instrument+Serif&display=swap">
 	<link rel="stylesheet" href="style.css">
+	<link rel="stylesheet" href="nav.css">
 </head>
 <body>
 <nav class="nav" aria-label="Main">
@@ -18,7 +19,17 @@
 		<a href="docs.html" class="active">Docs</a>
 		<a href="https://github.com/part-avocado/teardrop" class="opt">GitHub</a>
 	</div>
-	<a class="pill" href="dashboard.html">Dashboard</a>
+	<a class="pill local-only" href="dashboard.html">Dashboard</a>
+	<details class="account hosted-only">
+		<summary aria-label="Account menu"><span class="avatar" id="account-initial" aria-hidden="true"></span><span class="who" id="account-name"></span><svg class="chev" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+		<div class="menu">
+			<div class="who-line">Signed in as<b id="account-name-full"></b></div>
+			<a href="dashboard.html">Dashboard</a>
+			<a href="settings.html">Settings</a>
+			<a href="settings.html#account">Account</a>
+			<form method="post" action="/logout"><button>Sign out</button></form>
+		</div>
+	</details>
 </nav>
 
 <div class="wrap docs">
@@ -102,6 +113,7 @@
 
 	<h2 id="dashboard">The dashboard</h2>
 	<p>The dashboard shows an activity heatmap, daily totals, projects, tools, and recent work blocks. There are two ways to open it.</p>
+	<p>The graphs are interactive. Hover a day, bar, or tool for the details. Click a day on the heatmap, or a bar, to list that day's work blocks (a week, on the yearly chart). Click a project in the table to see only that project; every number and chart follows it. Click again, or the chip at the top, to clear it.</p>
 	<h3 id="account">On the website, with an account</h3>
 	<p>The <a href="dashboard.html">dashboard on the website</a> adds up the hours from every computer you code on. Only you and your server's admins can see them.</p>
 	<ol>
@@ -114,10 +126,10 @@
 		<tr><th>Pane</th><th>What it's for</th></tr>
 		<tr><td>Setup</td><td>The commands to connect another computer, and a button to make a new sync key if yours gets out.</td></tr>
 		<tr><td>Computers</td><td>Each computer that syncs to you and when it last did. Remove one to drop its hours.</td></tr>
-		<tr><td>Upload</td><td>For a computer that can't reach the website: make a file with <code>teardrop export -o stats.json</code> and upload it within 7 days.</td></tr>
-		<tr><td>Account</td><td>Your name and Slack ID from Hack Club Auth, and sign out.</td></tr>
-	</table>
-	<p>A computer syncs to one account. To move it to another, remove it under Computers first.</p>
+		<tr><td>Data</td><td>Upload a stats file from a computer that can't reach the website (make it with <code>teardrop export -o stats.json</code>, and upload it within 7 days), or download a copy of everything the site holds about you.</td></tr>
+		<tr><td>Account</td><td>Your name, Slack ID, and member-since date from Hack Club Auth, sign out, and deleting your account. Deleting removes every computer and all of your stats from the site.</td></tr>
+</table>
+	<p>You can sign out from the menu at the top right of any page. A computer syncs to one account. To move it to another, remove it under Computers first.</p>
 	<h3>On your computer, without an account</h3>
 	<p>Run <code>teardrop dashboard</code> to open the same charts with live data from this computer, refreshed every 30 seconds. It runs on <code>localhost</code> only and refuses requests from other sites, so your stats never leave your computer.</p>
 	<h3 id="verification-keys">Verification keys</h3>
@@ -147,6 +159,9 @@
 	<h2 id="amp">Amp</h2>
 	<p>Amp keeps threads on its servers, so setup offers to write a plugin to <code>~/.config/amp/plugins/teardrop.ts</code>. It records when a thread starts, when you send a prompt, and when Amp finishes, in the same journal as the Claude Code hooks. New Amp threads load it automatically; in open ones, run <code>plugins: reload</code>.</p>
 	<div class="callout note"><p class="callout-title"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"/></svg>Note</p><p>Amp threads that run in Amp's cloud orbs are not on your machine, so a local teardrop can't see them.</p></div>
+
+	<h3 id="agent-prompt">Set up with a prompt</h3>
+	<p>The dashboard's setup steps include a prompt to paste into Amp or Claude Code, with your server and sync key already filled in. The agent installs teardrop, runs <code>teardrop setup -yes</code> to add the hooks and the plugin without stopping to ask, connects the computer, and shows you the result. <code>-yes</code> is the part an agent can't do on its own, since setup otherwise asks before changing any settings. Because the prompt holds your sync key, make a new key under Settings, Setup if you'd rather not leave it in that thread.</p>
 
 	<h2 id="other-tools">Other tools</h2>
 	<p>A VS Code extension (for Copilot, Cursor, and hand-written code) and a browser extension (for web chats like ChatGPT) are planned. Follow progress on <a href="https://github.com/part-avocado/teardrop">GitHub</a>.</p>
@@ -193,7 +208,7 @@
 	<pre><code>teardrop sync -server https://your-site -key tdk_…</code></pre>
 	<p>teardrop remembers the server and the key, so later it's just <code>teardrop sync</code>, and hooks sync in the background every 15 minutes. The key can only upload stats. If the server answers that it needs your sync key, run the command from Settings again.</p>
 	<p><code>teardrop submit &lt;project&gt;</code> sends a project's hours for review together with the full chat logs behind them: your prompts, the agent's replies, and its code changes. It asks before uploading; <code>-o file</code> writes the submission so you can read it first. The server refuses a submission whose logs were changed after signing, or that claims a block no log backs, and recomputes the hours from the logs itself. You can submit a project again as it grows; time an earlier submission already covered is credited once. Add your Lapse sessions with <code>-lapse &lt;link&gt;,…</code>; time they also cover is taken off, since Hackatime already counts it.</p>
-	<p>Your stats on the website are visible to you and to admins. Submissions and their chats are visible only to admins, who review them at <code>/admin</code> on the review server. To host either, see <a href="#run-server">Running a server</a>.</p>
+	<p>Your stats on the website are visible to you and to admins. Deleting your account, under Settings, removes them; admins keep your Slack ID and a record of what your computers reported, without project names. Submissions and their chats are visible only to admins, who review them at <code>/admin</code> on the review server. To host either, see <a href="#run-server">Running a server</a>.</p>
 
 	<h2 id="run-server">Running a server</h2>
 	<p>There are two parts, and you can run either without the other:</p>
@@ -224,7 +239,7 @@ npm run dev</code></pre>
 		<tr><th>Setting</th><th>Meaning</th></tr>
 		<tr><td><code>SESSION_SECRET</code></td><td>Signs sign-in cookies. Changing it signs everyone out.</td></tr>
 		<tr><td><code>HCA_CLIENT_ID</code>, <code>HCA_CLIENT_SECRET</code></td><td>Your Hack Club Auth app.</td></tr>
-		<tr><td><code>ADMINS</code></td><td>Slack user IDs of the people who can open People and see everyone's stats, separated by commas.</td></tr>
+		<tr><td><code>ADMINS</code></td><td>Slack user IDs of the people who can open People and see everyone's stats, separated by commas. From People, an admin can look anyone up by Slack ID and read their computers and a log of every report they sent.</td></tr>
 		<tr><td><code>REVIEW_SERVER</code></td><td>Optional, in <code>wrangler.jsonc</code>. The address of your review server. With it set, <code>teardrop submit</code> works against the website's address, and submissions need a sync key.</td></tr>
 	</table>
 	<p>To change a secret later, edit it in the dashboard. For your own domain, add a <a href="https://developers.cloudflare.com/workers/configuration/routing/custom-domains/">custom domain</a> to the Worker and use it in the redirect URI. Cloudflare accepts uploads of up to 100 MB, so a larger submission has to go to the review server directly.</p>

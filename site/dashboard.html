@@ -9,6 +9,7 @@
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono&family=Instrument+Serif&display=swap">
 	<link rel="stylesheet" href="style.css">
+	<link rel="stylesheet" href="nav.css">
 </head>
 <body>
 <nav class="nav" aria-label="Main">
@@ -22,7 +23,16 @@
 		<a href="https://github.com/part-avocado/teardrop" class="opt local-only">GitHub</a>
 	</div>
 	<a class="pill local-only" href="dashboard.html" aria-current="page">Dashboard</a>
-	<form class="account hosted-only" method="post" action="/logout"><span id="account-name"></span><button class="pill">Sign out</button></form>
+	<details class="account hosted-only">
+		<summary aria-label="Account menu"><span class="avatar" id="account-initial" aria-hidden="true"></span><span class="who" id="account-name"></span><svg class="chev" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+		<div class="menu">
+			<div class="who-line">Signed in as<b id="account-name-full"></b></div>
+			<a href="dashboard.html">Dashboard</a>
+			<a href="settings.html">Settings</a>
+			<a href="settings.html#account">Account</a>
+			<form method="post" action="/logout"><button>Sign out</button></form>
+		</div>
+	</details>
 </nav>
 
 <main class="wrap dash">
@@ -42,17 +52,17 @@
 		<p class="muted">Two commands and your stats show up here. No timers to start, nothing to remember.</p>
 		<div id="setup-steps"></div>
 		<p class="waiting" role="status"><span class="dot live"></span>Waiting for your first sync. This page updates on its own.</p>
-		<p class="muted fine">Can't reach this site from that computer? <a href="settings.html#upload">Upload a stats file</a> instead. Or <a href="#" class="sample">see sample data</a> first.</p>
+		<p class="muted fine">Can't reach this site from that computer? <a href="settings.html#data">Upload a stats file</a> instead.</p>
 	</div>
 
 	<!-- Nothing to show, and nothing the visitor can set up from here. -->
 	<div id="notice" class="empty" hidden>
 		<h2 id="notice-title"></h2>
 		<p class="muted" id="notice-text"></p>
-		<p><button class="btn sample" type="button">Show sample data</button></p>
 	</div>
 
 	<div id="content" hidden>
+		<div class="chips" id="chips" hidden></div>
 		<div class="stats">
 			<div class="stat"><div class="label">Engaged</div><div class="value" id="s-total">-</div><div class="hint" id="s-total-hint"></div></div>
 			<div class="stat"><div class="label">Today</div><div class="value" id="s-today">-</div><div class="hint" id="s-today-hint"></div></div>
@@ -64,15 +74,16 @@
 		<div class="panels">
 			<div class="panel wide"><h2>Activity</h2><div class="heatmap" id="heatmap"></div>
 				<div class="legend">Less <i style="background:#efede7"></i><i style="background:#c9e3fb"></i><i style="background:#8cc0f0"></i><i style="background:#4c97e4"></i><i style="background:#1f64c4"></i> More</div></div>
-			<div class="panel"><h2 id="bars-title">Engaged per day</h2><div class="bars" id="bars"></div><div class="bar-labels" id="bar-labels"></div></div>
+			<div class="panel"><h2><span id="bars-title">Engaged per day</span><small id="bars-peak"></small></h2><div class="bars" id="bars"></div><div class="bar-labels" id="bar-labels"></div></div>
 			<div class="panel"><h2>Tools</h2><div class="rows" id="tools"></div></div>
 			<div class="panel"><h2>Projects</h2><div class="table-scroll"><table class="data" id="projects"></table></div></div>
-			<div class="panel"><h2>Time of day</h2><div class="bars" id="hours"></div><div class="bar-labels"><span>0:00</span><span>6:00</span><span>12:00</span><span>18:00</span><span>23:00</span></div></div>
+			<div class="panel"><h2>Time of day<small id="hours-peak"></small></h2><div class="bars" id="hours"></div><div class="bar-labels"><span>0:00</span><span>6:00</span><span>12:00</span><span>18:00</span><span>23:00</span></div></div>
 			<p class="panel wide muted small-left">Time spent testing your build outside the agent chat isn't counted here. Record it with <a href="https://lapse.hackclub.com">Lapse</a>.</p>
-			<div class="panel wide"><h2>Recent work blocks</h2><div class="table-scroll"><table class="data" id="blocks"></table></div></div>
+			<div class="panel wide" id="blocks-panel"><h2 id="blocks-title">Recent work blocks</h2><div class="table-scroll"><table class="data" id="blocks"></table></div></div>
 		</div>
 	</div>
 </main>
+<div class="tip" id="tip" role="tooltip" hidden><b></b><span></span><em></em></div>
 <script src="site.js"></script>
 <script src="account.js"></script>
 <script src="dashboard.js"></script>

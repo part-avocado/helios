@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Review a person · teardrop</title>
+	<link rel="icon" href="favicon.svg">
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono&family=Instrument+Serif&display=swap">
+	<link rel="stylesheet" href="style.css">
+	<link rel="stylesheet" href="nav.css">
+</head>
+<body>
+<nav class="nav" aria-label="Main">
+	<a class="brand" href="index.html"><img src="favicon.svg" alt="">teardrop</a>
+	<div class="links">
+		<a href="dashboard.html">Dashboard</a>
+		<a href="settings.html">Settings</a>
+		<a href="people.html" class="active">People</a>
+		<a href="docs.html" class="docs-link">Docs</a>
+	</div>
+	<details class="account hosted-only">
+		<summary aria-label="Account menu"><span class="avatar" id="account-initial" aria-hidden="true"></span><span class="who" id="account-name"></span><svg class="chev" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+		<div class="menu">
+			<div class="who-line">Signed in as<b id="account-name-full"></b></div>
+			<a href="dashboard.html">Dashboard</a>
+			<a href="settings.html">Settings</a>
+			<a href="settings.html#account">Account</a>
+			<form method="post" action="/logout"><button>Sign out</button></form>
+		</div>
+	</details>
+</nav>
+
+<main class="wrap dash review">
+	<a class="back" href="people.html"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M10 3L5 8l5 5"/></svg>All people</a>
+	<div class="dash-head">
+		<h1 id="title">Review a person</h1>
+		<span class="status" id="status"></span>
+		<form class="lookup" id="lookup" role="search" action="person.html">
+			<input name="slack" id="slack" aria-label="Slack ID" placeholder="Slack ID, such as U0A06EPFV45" autocomplete="off" spellcheck="false" required>
+			<button class="btn">Look up</button>
+		</form>
+	</div>
+
+	<div id="notice" class="empty" hidden>
+		<h2 id="notice-title"></h2>
+		<p class="muted" id="notice-text"></p>
+	</div>
+
+	<div id="content" hidden>
+		<div class="stats">
+			<div class="stat"><div class="label">Engaged, as synced</div><div class="value" id="s-engaged">-</div><div class="hint" id="s-engaged-hint"></div></div>
+			<div class="stat"><div class="label">Not checkable</div><div class="value" id="s-unchecked">-</div><div class="hint">arrived in a computer's first report</div></div>
+			<div class="stat"><div class="label">Flagged reports</div><div class="value" id="s-flagged">-</div><div class="hint" id="s-flagged-hint"></div></div>
+			<div class="stat"><div class="label">Refused reports</div><div class="value" id="s-refused">-</div><div class="hint">of <span id="s-entries"></span> log entries</div></div>
+		</div>
+
+		<div class="panel attention" id="attention" hidden>
+			<h2>Days that don't add up</h2>
+			<ul id="impossible"></ul>
+		</div>
+
+		<div class="panels">
+			<div class="panel">
+				<h2>Account</h2>
+				<dl class="facts" id="facts"></dl>
+				<a class="btn small" id="open-dashboard">Open their dashboard</a>
+			</div>
+			<div class="panel">
+				<h2>Computers</h2>
+				<div class="table-scroll"><table class="data" id="computers"></table></div>
+			</div>
+			<div class="panel wide">
+				<div class="log-head">
+					<h2>Log</h2>
+					<div class="seg" id="show" role="group" aria-label="Which entries">
+						<button data-show="" aria-pressed="true">All</button>
+						<button data-show="flagged">Flagged</button>
+						<button data-show="refused">Refused</button>
+					</div>
+				</div>
+				<ol class="log" id="log"></ol>
+				<button class="btn small" id="more" hidden>Show older entries</button>
+			</div>
+		</div>
+		<p class="muted fine">Synced numbers come from the person's own computer, so they show activity and are not proof of it. Count hours from a reviewed submission, where the server works the time out again from the chats themselves. A flag here means a report can't be squared with the one before it: read it, then ask.</p>
+	</div>
+</main>
+<script src="site.js"></script>
+<script src="account.js"></script>
+<script>
+// One person, for admins: their computers, and every report those sent.
+const query = new URLSearchParams(location.search)
+const who = query.get('id') ? `id=${encodeURIComponent(query.get('id'))}` : query.get('slack') ? `slack=${encodeURIComponent(query.get('slack'))}` : ''
+const when = (ms) => new Date(ms).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'medium' })
+const EVENTS = { sync: 'Sync', upload: 'File upload', remove: 'Computer removed', delete: 'Account deleted' }
+let show = ''
+
+function notice(title, text) {
+	$('content').hidden = true
+	$('notice').hidden = false
+	$('notice-title').textContent = title
+	$('notice-text').textContent = text
+}
+
+// entry draws one log row: what happened, what the server made of it, and
+// the raw values underneath.
+function entry(e) {
+	const gone = e.event === 'remove' || e.event === 'delete'
+	const state = e.refusal ? 'refused' : e.flagged ? 'flagged' : gone ? 'removed' : 'stored'
+	const label = e.event === 'delete' ? 'Deleted' : { refused: 'Refused', flagged: 'Flagged', removed: 'Removed', stored: 'Stored' }[state]
+	const change = !e.refusal && !gone && e.prev_engaged_seconds != null && e.prev_since === e.since
+		? e.engaged_seconds - e.prev_engaged_seconds : null
+	const raw = [
+		['arrived', new Date(e.at).toISOString()],
+		['made', e.generated_at == null ? 'unknown' : new Date(e.generated_at).toISOString()],
+		['window', e.since || 'unknown'],
+		['total', `${e.engaged_seconds}s`],
+		['before', e.prev_engaged_seconds == null ? 'none' : `${e.prev_engaged_seconds}s over ${e.prev_since || 'unknown'}, made ${new Date(e.prev_generated_at).toISOString()}`],
+		['added to past days', e.past_added_seconds == null ? 'not compared' : `${e.past_added_seconds}s`],
+		['teardrop', (e.teardrop_version || 'unknown') + (e.prev_teardrop_version != null && e.prev_teardrop_version !== e.teardrop_version ? `, was ${e.prev_teardrop_version || 'unknown'}` : '')],
+	]
+	return `<li class="${state}${e.refusal && e.flagged ? ' flagged' : ''}">
+		<div class="line">
+			<span class="mark">${label}</span>
+			<b>${EVENTS[e.event] ?? esc(e.event)}</b>
+			${e.computer_id ? `<code>${esc(e.computer_id)}</code>` : ''}
+			<span class="num">${gone || (e.refusal && !e.engaged_seconds) ? '' : dur(e.engaged_seconds)}${change == null ? '' : ` <span class="muted">(${change < 0 ? '−' : '+'}${dur(Math.abs(change))})</span>`}</span>
+			<time datetime="${new Date(e.at).toISOString()}" title="${esc(ago(e.at))}">${esc(when(e.at))}</time>
+		</div>
+		${e.findings.map((f) => `<p class="finding">${esc(f)}</p>`).join('')}
+		${e.refusal ? `<p class="${e.flagged ? 'finding' : 'remark'}">${esc(e.refusal)}</p>` : ''}
+		${e.remarks.map((r) => `<p class="remark">${esc(r)}</p>`).join('')}
+		<details><summary>Details</summary><dl>${raw.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl></details>
+	</li>`
+}
+
+async function load(before) {
+	let body
+	try {
+		body = await api(`/api/admin/person?${who}${show ? `&show=${show}` : ''}${before ? `&before=${before}` : ''}`)
+	} catch (e) {
+		return notice('No one found', e.message)
+	}
+	const { person, computers, counts } = body
+	const name = person.name || (person.deleted_at ? 'Deleted account' : 'No name')
+	document.title = `${name} · teardrop`
+	$('title').textContent = name
+	$('status').innerHTML = person.slack_id ? `<code>${esc(person.slack_id)}</code>` : 'No Slack ID'
+	$('slack').value = person.slack_id
+	$('notice').hidden = true
+	$('content').hidden = false
+
+	const engaged = computers.reduce((sum, c) => sum + c.engaged_seconds, 0)
+	$('s-engaged').textContent = dur(engaged)
+	$('s-engaged-hint').textContent = computers.length === 1 ? 'from 1 computer' : `from ${computers.length} computers`
+	$('s-unchecked').textContent = dur(body.unchecked_seconds)
+	$('s-flagged').textContent = counts.flagged
+	$('s-flagged').classList.toggle('bad', counts.flagged > 0)
+	$('s-flagged-hint').textContent = counts.flagged ? 'read these first' : 'nothing stood out'
+	$('s-refused').textContent = counts.refused
+	$('s-entries').textContent = counts.entries
+	$('attention').hidden = !body.impossible_days.length
+	$('impossible').innerHTML = body.impossible_days.map((d) => `<li>${esc(d)}</li>`).join('')
+
+	$('facts').innerHTML = [
+		['Name', esc(name)],
+		['Slack ID', person.slack_id ? `<code>${esc(person.slack_id)}</code>` : 'None'],
+		['Joined', esc(new Date(person.created_at).toLocaleDateString(undefined, { dateStyle: 'long' }))],
+		['Account', `#${person.id}`],
+		...(person.deleted_at ? [['Deleted', esc(new Date(person.deleted_at).toLocaleDateString(undefined, { dateStyle: 'long' })) + '. Its log is kept.']] : []),
+	].map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')
+	$('open-dashboard').href = `dashboard.html?user=${person.id}`
+	$('open-dashboard').hidden = Boolean(person.deleted_at)
+	$('computers').innerHTML = '<tr><th>Computer</th><th>Engaged</th><th>Version</th><th>Last sync</th></tr>' +
+		(computers.map((c) => `<tr><td><code>${esc(c.id)}</code></td><td>${dur(c.engaged_seconds)}</td>
+			<td>${esc(c.teardrop_version || 'unknown')}</td><td title="${esc(when(c.synced_at))}">${esc(ago(c.synced_at))}</td></tr>`).join('') ||
+		`<tr><td colspan="4" class="muted">${person.deleted_at ? 'None. They deleted their account.' : 'None. They have signed in, but nothing has synced.'}</td></tr>`)
+
+	const rows = body.log.map(entry).join('')
+	if (before) $('log').insertAdjacentHTML('beforeend', rows)
+	else $('log').innerHTML = rows || `<li class="none muted">${show ? `No ${show} entries.` : 'Nothing yet. Entries appear from the first sync after this log was added.'}</li>`
+	$('more').hidden = !body.more
+	$('more').onclick = () => load(body.more)
+}
+
+$('show').addEventListener('click', (e) => {
+	const btn = e.target.closest('button')
+	if (!btn) return
+	show = btn.dataset.show
+	for (const b of $('show').children) b.setAttribute('aria-pressed', String(b === btn))
+	load()
+})
+
+if (!('hosted' in document.documentElement.dataset)) location.replace('dashboard.html')
+else if (who) load()
+else notice('Look someone up', 'Enter a Slack ID above, or choose a person from the list of people.')
+</script>
+</body>
+</html>

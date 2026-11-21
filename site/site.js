@@ -8,7 +8,7 @@ function initTabs(root = document) {
 		}
 		for (const b of buttons) b.addEventListener('click', () => select(b.dataset.tab))
 		const platform = (navigator.userAgentData?.platform || navigator.platform || navigator.userAgent).toLowerCase()
-		select(platform.includes('win') ? 'windows' : platform.includes('mac') ? 'mac' : 'linux')
+		select(box.dataset.default || (platform.includes('win') ? 'windows' : platform.includes('mac') ? 'mac' : 'linux'))
 	}
 }
 initTabs()
@@ -45,4 +45,10 @@ if (links.length) {
 		const el = document.getElementById(id)
 		if (el) observer.observe(el)
 	}
+}
+
+// The account menu closes when the visitor clicks elsewhere or presses Escape.
+for (const menu of document.querySelectorAll('details.account')) {
+	document.addEventListener('click', (e) => menu.open && !menu.contains(e.target) && (menu.open = false))
+	menu.addEventListener('keydown', (e) => e.key === 'Escape' && ((menu.open = false), menu.querySelector('summary').focus()))
 }

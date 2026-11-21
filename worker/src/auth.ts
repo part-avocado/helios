@@ -12,19 +12,21 @@ export interface User {
 	slack_id: string
 	name: string
 	api_key: string
+	/** Unix milliseconds. */
+	created_at: number
 	/** Listed in ADMINS by Slack user ID. */
 	admin: boolean
 }
 
 type UserRow = Omit<User, 'admin'>
-const USER_COLUMNS = 'id, slack_id, name, api_key'
+const USER_COLUMNS = 'id, slack_id, name, api_key, created_at'
 
 function withAdmin(env: Env, row: UserRow): User {
 	const admins = (env.ADMINS ?? '').split(/[\s,]+/).filter(Boolean)
 	return { ...row, admin: row.slack_id !== '' && admins.includes(row.slack_id) }
 }
 
-const newKey = () => 'tdk_' + randomToken(24)
+export const newKey = () => 'tdk_' + randomToken(24)
 
 async function hmacKey(env: Env): Promise<CryptoKey> {
 	return crypto.subtle.importKey('raw', new TextEncoder().encode(env.SESSION_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify'])
@@ -52,11 +54,14 @@ function devLogin(request: Request, env: Env): string {
 	return host === 'localhost' || host === '127.0.0.1' ? env.DEV_LOGIN : ''
 }
 
-/** saveUser creates the person's account on their first sign-in and updates it after. */
+/**
+ * saveUser creates the person's account on their first sign-in and updates it
+ * after. An account they had deleted is theirs again, empty but with its log.
+ */
 async function saveUser(env: Env, hcaID: string, slackID: string, name: string): Promise<User> {
 	const row = await env.DB.prepare(
 		`INSERT INTO users (hca_id, slack_id, name, api_key, created_at) VALUES (?, ?, ?, ?, ?)
-		 ON CONFLICT (hca_id) DO UPDATE SET slack_id = excluded.slack_id, name = excluded.name
+		 ON CONFLICT (hca_id) DO UPDATE SET slack_id = excluded.slack_id, name = excluded.name, deleted_at = NULL
 		 RETURNING ${USER_COLUMNS}`,
 	)
 		.bind(hcaID, slackID, name, newKey(), Date.now())
@@ -71,7 +76,7 @@ export async function sessionUser(request: Request, env: Env): Promise<User | nu
 	const value = await unsign(env, cookie(request, SESSION_COOKIE))
 	const [id, expires] = (value ?? '').split('.').map(Number)
 	if (!id || !expires || Date.now() / 1000 > expires) return null
-	const row = await env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`).bind(id).first<UserRow>()
+	const row = await env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ? AND deleted_at IS NULL`).bind(id).first<UserRow>()
 	return row && withAdmin(env, row)
 }
 
@@ -79,7 +84,7 @@ export async function sessionUser(request: Request, env: Env): Promise<User | nu
 export async function keyUser(request: Request, env: Env): Promise<User | null> {
 	const key = /^Bearer (tdk_[A-Za-z0-9_-]+)$/.exec(request.headers.get('Authorization') ?? '')?.[1]
 	if (!key) return null
-	const row = await env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE api_key = ?`).bind(key).first<UserRow>()
+	const row = await env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE api_key = ? AND deleted_at IS NULL`).bind(key).first<UserRow>()
 	return row && withAdmin(env, row)
 }
 
@@ -156,8 +161,11 @@ async function hcaIdentity(env: Env, code: string, redirectURI: string) {
 	return { ...info, sub: info.sub }
 }
 
+/** clearSession is the cookie that ends the visitor's sign-in. */
+export const clearSession = (request: Request) => setCookie(request, SESSION_COOKIE, '', 0)
+
 export function signOut(request: Request): Response {
-	return redirect('/', [setCookie(request, SESSION_COOKIE, '', 0)])
+	return redirect('/', [clearSession(request)])
 }
 
 /**

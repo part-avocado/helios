@@ -10,6 +10,7 @@
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono&family=Instrument+Serif&display=swap">
 	<link rel="stylesheet" href="home.css">
+	<link rel="stylesheet" href="nav.css">
 </head>
 <body>
 <nav class="nav" aria-label="Main">
@@ -20,7 +21,17 @@
 		<a href="docs.html">Docs</a>
 		<a href="https://github.com/part-avocado/teardrop" class="opt">GitHub</a>
 	</div>
-	<a class="pill dark small" href="dashboard.html">Dashboard</a>
+	<a class="pill dark small local-only" href="dashboard.html">Dashboard</a>
+	<details class="account hosted-only">
+		<summary aria-label="Account menu"><span class="avatar" id="account-initial" aria-hidden="true"></span><span class="who" id="account-name"></span><svg class="chev" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+		<div class="menu">
+			<div class="who-line">Signed in as<b id="account-name-full"></b></div>
+			<a href="dashboard.html">Dashboard</a>
+			<a href="settings.html">Settings</a>
+			<a href="settings.html#account">Account</a>
+			<form method="post" action="/logout"><button>Sign out</button></form>
+		</div>
+	</details>
 </nav>
 
 <main>

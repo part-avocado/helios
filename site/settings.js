@@ -1,5 +1,5 @@
 // Settings for the signed-in visitor. One pane shows at a time, chosen by the
-// address: settings.html#upload.
+// address: settings.html#data.
 const panes = [...document.querySelectorAll('.pane')]
 
 function showPane() {
@@ -38,6 +38,8 @@ async function load() {
 	listComputers(me.computers)
 	$('me-name').textContent = me.name || 'Not set'
 	$('me-slack').textContent = me.slack_id || 'No Slack account linked'
+	$('me-since').textContent = new Intl.DateTimeFormat(undefined, { dateStyle: 'long' }).format(me.created_at)
+	$('me-role').textContent = me.admin ? 'Admin' : 'Member'
 }
 
 $('new-key').addEventListener('click', async () => {
@@ -83,6 +85,16 @@ drop.addEventListener('drop', (e) => {
 	e.preventDefault()
 	drop.classList.remove('over')
 	if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0])
+})
+
+$('delete-confirm').addEventListener('input', () => ($('delete-account').disabled = $('delete-confirm').value.trim().toLowerCase() !== 'delete'))
+$('delete-account').addEventListener('click', async () => {
+	try {
+		await change('/api/account', 'DELETE')
+		location.href = '/'
+	} catch (e) {
+		say($('delete-msg'), e.message, false)
+	}
 })
 
 // Without an account behind this copy of the site, there is nothing to set.
