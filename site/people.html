@@ -3,7 +3,7 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>People - teardrop</title>
+	<title>Review - teardrop</title>
 	<link rel="icon" href="favicon.svg">
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -17,7 +17,7 @@
 	<div class="links">
 		<a href="dashboard.html">Dashboard</a>
 		<a href="settings.html">Settings</a>
-		<a href="people.html" class="active" aria-current="page">People</a>
+		<a href="people.html" class="active" aria-current="page">Review</a>
 		<a href="docs.html" class="docs-link">Docs</a>
 	</div>
 	<details class="account hosted-only">
@@ -27,6 +27,7 @@
 			<a href="dashboard.html">Dashboard</a>
 			<a href="settings.html">Settings</a>
 			<a href="settings.html#account">Account</a>
+			<a href="people.html" class="admin-only">Review</a>
 			<form method="post" action="/logout"><button>Sign out</button></form>
 		</div>
 	</details>
@@ -34,7 +35,7 @@
 
 <main class="wrap dash">
 	<div class="dash-head">
-		<h1>People</h1>
+		<h1>Review</h1>
 		<span class="status" id="status"></span>
 		<form class="lookup" role="search" action="person.html">
 			<input name="slack" aria-label="Slack ID" placeholder="Slack ID, such as U012ABCDEF" autocomplete="off" spellcheck="false" required>
@@ -49,7 +50,7 @@
 <script src="site.js"></script>
 <script src="account.js"></script>
 <script>
-// Everyone with an account, for admins.
+// Where admins review: everyone with an account, and a lookup by Slack ID.
 if (!('hosted' in document.documentElement.dataset)) location.replace('dashboard.html')
 else api('/api/admin/people').then(({ people }) => {
 	$('status').textContent = people.length === 1 ? '1 person' : `${people.length} people`

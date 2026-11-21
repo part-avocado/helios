@@ -264,8 +264,26 @@ table.people a.flag { display: inline-block; min-width: 22px; padding: 0 7px; bo
 .review .facts { margin-bottom: 16px; }
 .attention { margin-bottom: 16px; border-color: #f2c4cc; background: #fdf6f7; }
 .attention ul { margin: 0; padding-left: 20px; font-size: 14px; }
-.log-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.log-head { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 12px; margin-bottom: 14px; }
 .log-head h2 { margin: 0; }
+.log-head .seg { margin-left: 0; }
+.log-head #download { margin-left: auto; }
+.review td.acts { white-space: nowrap; }
+.review td.acts > * { margin-left: 14px; font-size: 13px; color: var(--accent-2); }
+.review td.acts button.link:hover, .log button.link:hover code { text-decoration: underline; }
+.log p.held { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.log h4 { margin: 14px 0 6px; font-size: 13px; font-weight: 600; }
+.log h4 small { margin-left: 6px; font-weight: 400; color: var(--faint); }
+.log .scrollbox { max-height: 300px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
+table.data.mini { font-size: 13px; }
+table.data.mini th, table.data.mini td { padding: 6px 12px; }
+table.data.mini th { position: sticky; top: 0; background: var(--panel); box-shadow: 0 1px 0 var(--line); }
+table.data.mini td.up { color: var(--good); }
+table.data.mini td.down { color: var(--bad); }
+@media (max-width: 640px) {
+	table.data.mini th, table.data.mini td { padding: 6px 8px; }
+	table.data.mini td:first-child { white-space: normal; }
+}
 .log { list-style: none; margin: 0; padding: 0; }
 .log > li { padding: 12px 0 12px 14px; border-top: 1px solid var(--line); border-left: 3px solid transparent; font-size: 14px; }
 .log > li.none { padding-left: 0; }
@@ -293,6 +311,7 @@ table.people a.flag { display: inline-block; min-width: 22px; padding: 0 7px; bo
 	.lookup { margin-left: 0; width: 100%; }
 	.lookup input { flex: 1; min-width: 0; width: auto; }
 	.log p, .log details { margin-left: 0; }
+	.log-head #download { margin-left: 0; }
 	.log time { margin-left: 0; width: 100%; }
 }
 .dash > .fine { margin: 14px 4px 0; }

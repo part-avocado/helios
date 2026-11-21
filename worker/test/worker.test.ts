@@ -279,6 +279,13 @@ test('only admins see other people', async () => {
 	assert.equal((await call('/api/report?user=1', { cookie: member })).status, 403)
 
 	assert.match(await (await call('/people', { cookie: admin })).text(), /<html[^>]* data-admin/)
+	// Only an admin's pages are marked to show the Review links, and the
+	// addresses someone would guess for the page lead to it.
+	for (const page of ['/', '/dashboard', '/settings']) {
+		assert.match(await (await call(page, { cookie: admin })).text(), /<html[^>]* data-admin[\s\S]*class="admin-only">Review</, page)
+		assert.doesNotMatch(await (await call(page, { cookie: member })).text(), /<html[^>]* data-admin/, page)
+	}
+	for (const guess of ['/review', '/admin', '/reviewer.html']) assert.equal((await call(guess, { cookie: admin })).headers.get('Location'), '/people', guess)
 	const { people } = (await (await call('/api/admin/people', { cookie: admin })).json()) as { people: { id: number; slack_id: string; engaged_seconds: number; computers: number }[] }
 	const row = people.find((p) => p.slack_id === 'UMEMBER')!
 	assert.deepEqual([row.engaged_seconds, row.computers], [600, 1])
@@ -422,6 +429,106 @@ test('reviewers look a person up by Slack ID and read their log', async () => {
 	row = (await review()).log[0]!
 	assert.equal(row.flagged, 1)
 	assert.match(row.findings.join(' '), /Added 2h 00m of engaged time/)
+})
+
+type Change = [string, number, number]
+type Detail = { bytes: number; blocks: number; first_block: number | null; last_block: number | null; active_days: number; project_count: number; prompts: number; skipped_prompts: number; tokens_in: number; tokens_out: number; lines_added: number; lines_removed: number; lines_kept: number; tools: string[]; full?: boolean; days?: Change[]; projects?: Change[] }
+
+test('a log entry says what the report held and what changed, and a computer has a history', async () => {
+	const admin = await signIn('admin')
+	const cookie = await signIn('detailed')
+	const { api_key: key } = await me(cookie)
+	const now = Date.now()
+	const review = async (query = '') => {
+		const res = await call(`/api/admin/person?slack=UDETAILED${query}`, { cookie: admin })
+		assert.equal(res.status, 200, await res.clone().text())
+		return (await res.json()) as { counts: { entries: number }; log: (LogRow & { detail: Detail | null })[] }
+	}
+	const project = (name: string, engaged_seconds: number, more = {}) => ({ project: { key: `/home/x/${name}`, name }, engaged_seconds, ...more })
+	const days = (totals: Record<number, number>) => Object.entries(totals).map(([ago, engaged_seconds]) => ({ date: day(now - Number(ago) * DAY), engaged_seconds }))
+	const laptop = computer()
+	const send = async (signed: string) => {
+		const res = await call('/api/v1/reports', { method: 'POST', body: signed, key })
+		assert.equal(res.status, 200, await res.clone().text())
+		return ((await res.json()) as { account: string }).account
+	}
+
+	// A first report: what it held, and every day and project in it.
+	const work = { prompts: 5, tokens_in: 1000, tokens_out: 200, lines_added: 30, lines_removed: 4, lines_kept: 20 }
+	const blocks = [
+		{ ...block(now - 4 * DAY, 'notes'), ...work, tools: ['codex', 'claude-code'] },
+		{ ...block(now - 10 * DAY, 'site'), prompts: 3, tokens_in: 500, tools: ['codex'] },
+	]
+	const first = laptop({ engaged_seconds: 4200, blocks, projects: [project('site', 3600, { noise_prompts: 2, repeat_prompts: 1 }), project('notes', 600)], days: days({ 10: 3600, 4: 600 }) }, now - 5000)
+	const id = await send(first)
+	let detail = (await review()).log[0]!.detail!
+	const { days: listed, projects: named, ...held } = detail
+	assert.deepEqual(held, {
+		bytes: Buffer.byteLength(JSON.parse(first).payload),
+		blocks: 2,
+		first_block: now - 10 * DAY - 600_000,
+		last_block: now - 4 * DAY,
+		active_days: 2,
+		project_count: 2,
+		prompts: 8,
+		skipped_prompts: 3,
+		tokens_in: 1500,
+		tokens_out: 200,
+		lines_added: 30,
+		lines_removed: 4,
+		lines_kept: 20,
+		tools: ['claude-code', 'codex'],
+		full: true,
+	})
+	assert.deepEqual(listed, [[day(now - 4 * DAY), 0, 600], [day(now - 10 * DAY), 0, 3600]])
+	assert.deepEqual(named, [['site', 0, 3600], ['notes', 0, 600]])
+
+	// The next one: only what changed, the largest change first.
+	await send(laptop({ engaged_seconds: 6300, blocks: [], projects: [project('site', 3600), project('notes', 2400), project('cli', 300)], days: days({ 10: 3600, 4: 600, 0: 2100 }) }, now - 4000))
+	detail = (await review()).log[0]!.detail!
+	assert.deepEqual([detail.full, detail.days, detail.projects], [false, [[day(now), 0, 2100]], [['notes', 600, 2400], ['cli', 0, 300]]])
+
+	// A day that left the report's window is not a change. Its project's time going is.
+	await send(laptop({ engaged_seconds: 2700, blocks: [], projects: [project('notes', 2400), project('cli', 300)], days: days({ 4: 600, 0: 2100 }) }, now - 3000))
+	detail = (await review()).log[0]!.detail!
+	assert.deepEqual([detail.days, detail.projects], [[], [['site', 3600, 0]]])
+
+	// A refused report still says what it claimed to hold.
+	const edited = JSON.parse(laptop({ engaged_seconds: 600, blocks: [block(now - DAY)] }, now - 2000))
+	edited.payload = edited.payload.replace('"engaged_seconds":600', '"engaged_seconds":99999')
+	assert.equal((await call('/api/v1/reports', { method: 'POST', body: JSON.stringify(edited), key })).status, 400)
+	const refused = (await review()).log[0]!
+	assert.deepEqual([refused.flagged, refused.detail!.blocks, refused.detail!.days], [1, 1, undefined])
+
+	// One computer's history, apart from another's.
+	const desktop = computer()
+	const latest = desktop({ engaged_seconds: 600, blocks: [block(now - DAY, 'game')], days: days({ 1: 600 }) }, now - 1000)
+	const other = await send(latest)
+	assert.deepEqual((await review()).log.map((r) => r.computer_id), [other, id, id, id, id])
+	assert.deepEqual((await review(`&computer=${id}`)).log.map((r) => r.computer_id), [id, id, id, id])
+	assert.deepEqual((await review(`&computer=${other}&show=flagged`)).log, [])
+	assert.deepEqual((await review('&computer=td-000000000000')).log, [])
+	// Without totals per project, a report's work blocks say which projects it had.
+	assert.deepEqual((await review(`&computer=${other}`)).log[0]!.detail!.projects, [['game', 0, 600]])
+
+	// The latest report of a computer in full, and the whole log, for admins only.
+	const full = await call(`/api/admin/report?computer=${other}`, { cookie: admin })
+	assert.equal(full.status, 200)
+	const stored = (await full.json()) as { id: string; signature: string; report: unknown }
+	assert.deepEqual([stored.id, stored.signature, stored.report], [other, JSON.parse(latest).key, JSON.parse(JSON.parse(latest).payload)])
+	assert.equal((await call('/api/admin/report?computer=td-000000000000', { cookie: admin })).status, 404)
+	const download = await call('/api/admin/log?slack=UDETAILED', { cookie: admin })
+	assert.match(download.headers.get('Content-Disposition')!, /attachment; filename="teardrop-log-\d+\.json"/)
+	const whole = (await download.json()) as { log: (LogRow & { detail: Detail | null })[] }
+	assert.deepEqual([whole.log.length, whole.log.at(-1)!.detail!.projects], [5, [['site', 0, 3600], ['notes', 0, 600]]])
+	for (const path of [`/api/admin/report?computer=${other}`, '/api/admin/log?slack=UDETAILED']) assert.equal((await call(path, { cookie })).status, 403, path)
+
+	// Deleting the account takes the project names out of the log and leaves the rest.
+	assert.equal((await call('/api/account', { method: 'DELETE', cookie, origin: SITE })).status, 200)
+	const kept = (await review()).log.filter((r) => r.event === 'sync')
+	assert.equal(kept.length, 5)
+	for (const row of kept) assert.equal(row.detail!.projects, undefined)
+	assert.deepEqual([kept.at(-1)!.detail!.days, kept.at(-1)!.detail!.blocks], [listed, 2])
 })
 
 test('project submissions go on to the review server', async () => {

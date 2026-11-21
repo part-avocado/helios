@@ -3,7 +3,7 @@
 // it is one signed report made live on this computer.
 const DAY = 86400000
 const hosted = 'hosted' in document.documentElement.dataset
-// Set when an admin opens someone else's stats from the People page.
+// Set when an admin opens someone else's stats from the Review page.
 const viewing = hosted ? new URLSearchParams(location.search).get('user') : null
 let report = null
 let days = 30

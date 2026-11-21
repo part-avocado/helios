@@ -12,6 +12,10 @@ const LOG_ROWS = 5000
 const SLACK = 300
 /** The most days kept from one report. A year's report has 366 at most. */
 const MAX_DAYS = 400
+/** The most projects kept from one report, the largest first. */
+const MAX_PROJECTS = 300
+/** The most changed projects listed on one log row. */
+const MAX_PROJECT_CHANGES = 100
 
 export type LogEvent = 'sync' | 'upload' | 'remove' | 'delete'
 
@@ -31,6 +35,57 @@ export interface Entry {
 	prev_engaged_seconds: number | null
 	prev_teardrop_version: string | null
 	past_added_seconds: number | null
+	/** A Detail as JSON, or null when nothing of the report could be read. */
+	detail: string | null
+}
+
+/** A day or project whose total differs between two reports: its date or name, and its seconds before and now. */
+export type Change = [name: string, before: number, now: number]
+
+/** Detail is what a report held, and how it differed from the one before, for reviewers to read. */
+export interface Detail {
+	/** The size of the signed report. */
+	bytes: number
+	blocks: number
+	/** When its first work block started and its last one ended, in Unix milliseconds. */
+	first_block: number | null
+	last_block: number | null
+	active_days: number
+	project_count: number
+	prompts: number
+	/** Prompts teardrop left out of the time. */
+	skipped_prompts: number
+	tokens_in: number
+	tokens_out: number
+	lines_added: number
+	lines_removed: number
+	lines_kept: number
+	tools: string[]
+	/**
+	 * Whether the lists below are everything the report held, because there
+	 * was no earlier report to compare it with. Otherwise they are what changed.
+	 */
+	full?: boolean
+	/** Newest first. */
+	days?: Change[]
+	/** Largest change first. Removed when the person deletes their account. */
+	projects?: Change[]
+	/** How many more projects changed than are listed. */
+	more_projects?: number
+}
+
+/** The parts of a report that are read here. Everything in it comes from the person's computer, so nothing is trusted to be there. */
+export interface ReportBody {
+	engaged_seconds?: unknown
+	blocks?: unknown
+	projects?: unknown
+	days?: unknown
+}
+
+/** count reads a number that should be a whole, positive one. */
+const count = (value: unknown) => {
+	const n = Number(value)
+	return Number.isFinite(n) && n > 0 ? Math.round(n) : 0
 }
 
 export const dur = (seconds: number) => {
@@ -38,17 +93,107 @@ export const dur = (seconds: number) => {
 	return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`
 }
 
-/** dayTotals reads a report's engaged seconds per date, ignoring anything malformed. */
-export function dayTotals(days: unknown): Record<string, number> {
-	const out: Record<string, number> = {}
-	if (!Array.isArray(days)) return out
-	for (const d of days.slice(-MAX_DAYS) as { date?: unknown; engaged_seconds?: unknown }[]) {
-		const seconds = Number(d?.engaged_seconds)
-		if (typeof d?.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d.date) && seconds > 0 && Number.isFinite(seconds)) {
-			out[d.date] = (out[d.date] ?? 0) + Math.round(seconds)
+/**
+ * dayTotals reads a report's engaged seconds per date, ignoring anything
+ * malformed. A report from before teardrop 0.4 has no such totals, so its
+ * work blocks are added up instead, by the UTC date each started on.
+ */
+export function dayTotals(report: ReportBody | undefined): Record<string, number> {
+	const all: Record<string, number> = {}
+	const add = (date: unknown, engaged: unknown) => {
+		const seconds = count(engaged)
+		if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) && seconds) all[date] = (all[date] ?? 0) + seconds
+	}
+	if (Array.isArray(report?.days)) {
+		for (const d of report.days) add(d?.date, d?.engaged_seconds)
+	} else if (Array.isArray(report?.blocks)) {
+		for (const b of report.blocks) {
+			const start = Date.parse(typeof b?.start === 'string' ? b.start : '')
+			if (Number.isFinite(start)) add(new Date(start).toISOString().slice(0, 10), b?.engaged_seconds)
 		}
 	}
+	const latest = Object.keys(all).sort().slice(-MAX_DAYS)
+	return Object.fromEntries(latest.map((date) => [date, all[date]!]))
+}
+
+/** projectTotals reads each project's engaged seconds from a report: {key: [name, seconds]}, for its largest projects. */
+export function projectTotals(report: ReportBody | undefined): Record<string, [string, number]> {
+	const all = new Map<string, [string, number]>()
+	const add = (project: unknown, engaged: unknown) => {
+		const p = (project ?? {}) as { key?: unknown; name?: unknown }
+		const key = String(p.key ?? p.name ?? '').slice(0, 200)
+		const seconds = count(engaged)
+		if (!key || !seconds) return
+		all.set(key, [String(p.name ?? '').slice(0, 80) || key.slice(0, 80), (all.get(key)?.[1] ?? 0) + seconds])
+	}
+	if (Array.isArray(report?.projects)) for (const p of report.projects) add(p?.project, p?.engaged_seconds)
+	// Without totals per project, add up the work blocks, which counts time on two projects at once for both.
+	if (!all.size && Array.isArray(report?.blocks)) for (const b of report.blocks) add(b?.project, b?.engaged_seconds)
+	return Object.fromEntries([...all].sort((a, b) => b[1][1] - a[1][1]).slice(0, MAX_PROJECTS))
+}
+
+/** summarize counts what a report holds. */
+export function summarize(report: ReportBody | undefined, bytes: number): Detail {
+	const d: Detail = { bytes, blocks: 0, first_block: null, last_block: null, active_days: 0, project_count: 0, prompts: 0, skipped_prompts: 0, tokens_in: 0, tokens_out: 0, lines_added: 0, lines_removed: 0, lines_kept: 0, tools: [] }
+	const tools = new Set<string>()
+	for (const b of Array.isArray(report?.blocks) ? report.blocks : []) {
+		d.blocks++
+		const start = Date.parse(typeof b?.start === 'string' ? b.start : '')
+		const end = Date.parse(typeof b?.end === 'string' ? b.end : '')
+		if (Number.isFinite(start)) d.first_block = Math.min(d.first_block ?? start, start)
+		if (Number.isFinite(end)) d.last_block = Math.max(d.last_block ?? end, end)
+		d.prompts += count(b?.prompts)
+		d.tokens_in += count(b?.tokens_in)
+		d.tokens_out += count(b?.tokens_out)
+		d.lines_added += count(b?.lines_added)
+		d.lines_removed += count(b?.lines_removed)
+		d.lines_kept += count(b?.lines_kept)
+		for (const tool of Array.isArray(b?.tools) ? b.tools : []) if (tools.size < 20) tools.add(String(tool).slice(0, 40))
+	}
+	for (const p of Array.isArray(report?.projects) ? report.projects : []) {
+		d.skipped_prompts += count(p?.noise_prompts) + count(p?.repeat_prompts) + count(p?.autopilot_prompts)
+	}
+	d.tools = [...tools].sort()
+	d.active_days = Object.keys(dayTotals(report)).length
+	d.project_count = Object.keys(projectTotals(report)).length
+	return d
+}
+
+/**
+ * dayChanges lists the days whose totals differ between two reports, newest
+ * first. With no report before, it lists every day of the new one. Days from
+ * before the new report's first have left its window and are not listed.
+ */
+export function dayChanges(before: Record<string, number> | null, now: Record<string, number>): Change[] {
+	const first = Object.keys(now).sort()[0] ?? ''
+	const dates = new Set([...Object.keys(before ?? {}), ...Object.keys(now)])
+	return [...dates]
+		.filter((date) => date >= first)
+		.map((date): Change => [date, before?.[date] ?? 0, now[date] ?? 0])
+		.filter(([, was, is]) => was !== is)
+		.sort((a, b) => (a[0] < b[0] ? 1 : -1))
+}
+
+/** projectChanges lists the projects whose totals differ between two reports, the largest change first, and says how many it left out. */
+export function projectChanges(before: Record<string, [string, number]> | null, now: Record<string, [string, number]>): { projects: Change[]; more_projects?: number } {
+	const was = new Map(Object.entries(before ?? {}))
+	const is = new Map(Object.entries(now))
+	const all = [...new Set([...was.keys(), ...is.keys()])]
+		.map((key): Change => [is.get(key)?.[0] ?? was.get(key)?.[0] ?? key, was.get(key)?.[1] ?? 0, is.get(key)?.[1] ?? 0])
+		.filter(([, a, b]) => a !== b)
+		.sort((a, b) => Math.abs(b[2] - b[1]) - Math.abs(a[2] - a[1]))
+	const out: { projects: Change[]; more_projects?: number } = { projects: all.slice(0, MAX_PROJECT_CHANGES) }
+	if (all.length > MAX_PROJECT_CHANGES) out.more_projects = all.length - MAX_PROJECT_CHANGES
 	return out
+}
+
+/** parseStored reads JSON this server stored, such as a Detail or project totals. */
+export function parseStored<T>(stored: string | null): T | null {
+	try {
+		return stored ? (JSON.parse(stored) as T) : null
+	} catch {
+		return null
+	}
 }
 
 /** parseDays reads day totals stored by dayTotals. */
@@ -128,7 +273,7 @@ export function remarks(e: Entry): string[] {
 }
 
 const COLUMNS =
-	'user_id, at, event, computer_id, refusal, flagged, generated_at, teardrop_version, since, engaged_seconds, prev_generated_at, prev_since, prev_engaged_seconds, prev_teardrop_version, past_added_seconds'
+	'user_id, at, event, computer_id, refusal, flagged, generated_at, teardrop_version, since, engaged_seconds, prev_generated_at, prev_since, prev_engaged_seconds, prev_teardrop_version, past_added_seconds, detail'
 
 /**
  * trim drops a person's oldest log rows once they have more than LOG_ROWS.
@@ -146,7 +291,7 @@ const trim = (env: Env, userID: number, flagged: number) =>
  * a condition with ? for each of its values, the row is only added if it holds.
  */
 export function logEntry(env: Env, userID: number, e: Entry, when = '1', ...values: unknown[]): D1PreparedStatement[] {
-	const row = [userID, e.at, e.event, e.computer_id, e.refusal, e.flagged, e.generated_at, e.teardrop_version, e.since, e.engaged_seconds, e.prev_generated_at, e.prev_since, e.prev_engaged_seconds, e.prev_teardrop_version, e.past_added_seconds]
+	const row = [userID, e.at, e.event, e.computer_id, e.refusal, e.flagged, e.generated_at, e.teardrop_version, e.since, e.engaged_seconds, e.prev_generated_at, e.prev_since, e.prev_engaged_seconds, e.prev_teardrop_version, e.past_added_seconds, e.detail]
 	return [env.DB.prepare(`INSERT INTO account_log (${COLUMNS}) SELECT ${row.map(() => '?').join(', ')} WHERE ${when}`).bind(...row, ...values), trim(env, userID, e.flagged)]
 }
 

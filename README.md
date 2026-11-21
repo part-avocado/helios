@@ -173,9 +173,13 @@ Secrets: `SESSION_SECRET` (any long random text), `HCA_CLIENT_ID`,
 they are set, the site says it is not set up yet. To deploy from your own
 computer instead, run `npx wrangler login`, then `npm run deploy`, in `worker/`.
 
-Admins get a People page that lists everyone. From it they look a person up
+Admins get a Review page, linked from the top bar and the account menu, that
+lists everyone. From it they look a person up
 by Slack ID to see their dashboard, their computers, and a log of every
-report they sent. The log stays when a person deletes their account.
+report they sent. Each entry opens to show what the report held and which
+days and projects changed; the page also has each computer's history, its
+latest report in full, and the whole log as a JSON download. The log stays
+when a person deletes their account.
 Set `REVIEW_SERVER` in `wrangler.jsonc` to the address of the review server
 below and `teardrop submit` goes through the website, which then asks for a
 sync key. `npm test` runs the Worker's tests in the Workers runtime.

@@ -3,8 +3,8 @@
 // person's synced reports in D1, and the API the pages and the CLI use.
 import { clearSession, finishSignIn, keyUser, rotateKey, sameOrigin, sessionUser, signOut, startSignIn, type User } from './auth.ts'
 import { json, jsonText, readText, redirect, Refusal } from './http.ts'
-import { computers, deleteUser, MAX_REPORT_BYTES, removeComputer, reportsJSON, storeReport } from './reports.ts'
-import { people, person } from './review.ts'
+import { computerReportJSON, computers, deleteUser, MAX_REPORT_BYTES, removeComputer, reportsJSON, storeReport } from './reports.ts'
+import { fullLog, people, person } from './review.ts'
 
 export default {
 	async fetch(request, env): Promise<Response> {
@@ -33,6 +33,9 @@ function guard(res: Response): Response {
 
 /** Pages that need an account. The value is whether they are for admins only. */
 const PAGES: Record<string, boolean> = { dashboard: false, settings: false, people: true, person: true }
+
+/** Addresses an admin might try for the Review page, which is people.html. */
+const REVIEW_ALIASES = new Set(['review', 'reviews', 'reviewer', 'admin'])
 
 /** Pages anyone can read. A signed-in visitor sees them with their account menu. */
 const PUBLIC = new Set(['', 'index', 'docs'])
@@ -79,6 +82,9 @@ async function route(request: Request, env: Env): Promise<Response> {
 		sameOrigin(request)
 		return signOut(request)
 	}
+
+	// The Review page decides who may open it, as for anyone who asks for it by name.
+	if (request.method === 'GET' && REVIEW_ALIASES.has(page)) return redirect('/people')
 
 	const user = await sessionUser(request, env)
 	if (request.method === 'GET' && page === 'login') {
@@ -132,6 +138,18 @@ async function route(request: Request, env: Env): Promise<Response> {
 		if (!user.admin) throw new Refusal(403, 'Admins only.')
 		if (call === 'GET /api/admin/people') return json({ people: await people(env) })
 		if (call === 'GET /api/admin/person') return json(await person(env, url.searchParams))
+		if (call === 'GET /api/admin/report') {
+			// One computer's latest report in full, as it was signed.
+			const report = await computerReportJSON(env, url.searchParams.get('computer') ?? '')
+			if (!report) throw new Refusal(404, 'No such computer.')
+			return jsonText(report)
+		}
+		if (call === 'GET /api/admin/log') {
+			const log = await fullLog(env, url.searchParams)
+			const res = json(log)
+			res.headers.set('Content-Disposition', `attachment; filename="teardrop-log-${log.person.id}.json"`)
+			return res
+		}
 	}
 	throw new Refusal(404, 'Not found')
 }

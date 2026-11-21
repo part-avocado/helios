@@ -27,6 +27,7 @@
 			<a href="dashboard.html">Dashboard</a>
 			<a href="settings.html">Settings</a>
 			<a href="settings.html#account">Account</a>
+			<a href="people.html" class="admin-only">Review</a>
 			<form method="post" action="/logout"><button>Sign out</button></form>
 		</div>
 	</details>
@@ -96,8 +97,8 @@
 		<li><strong>Add Claude Code hooks</strong> for real-time capture. See <a href="#claude-code">Claude Code</a>.</li>
 		<li><strong>Add the Amp plugin.</strong> See <a href="#amp">Amp</a>.</li>
 	</ul>
-	<div class="callout note"><p class="callout-title"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"/></svg>Note</p><p>Setup never changes anything without a yes. It keeps your own hooks and settings, saves a backup the first time it edits a file, and is safe to run again. Pass <code>-yes</code> to accept everything without prompts.</p></div>
 	<p>To set up one tool only, name it: <code>teardrop setup amp</code>, <code>teardrop setup claude</code>, or <code>teardrop setup codex</code>. <code>teardrop setup amp</code> adds the plugin even on a computer where Amp isn't installed yet.</p>
+	<div class="callout note"><p class="callout-title"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"/></svg>Note</p><p>Setup never changes anything without a yes. It keeps your own hooks and settings, saves a backup the first time it edits a file, and is safe to run again. Pass <code>-yes</code> to accept everything without prompts.</p></div>
 
 	<h2 id="report">The report</h2>
 	<p>Run <code>teardrop</code> to see the last 7 days, or <code>teardrop -since 30d</code> for longer. The first table lists work blocks; the second totals each project. Add <code>-l</code> (or <code>--live</code>) to keep it on screen and update it as you work; press Ctrl-C to quit.</p>
@@ -175,8 +176,8 @@
 		<tr><th>Command</th><th>What it does</th></tr>
 		<tr><td><code>teardrop</code></td><td>Print your timeline and project totals.</td></tr>
 		<tr><td><code>teardrop setup</code></td><td>Check tools, keep history, install hooks and the Amp plugin.</td></tr>
-		<tr><td><code>teardrop dashboard</code></td><td>Open the live dashboard on localhost.</td></tr>
 		<tr><td><code>teardrop setup amp</code></td><td>The same for one tool: <code>claude</code>, <code>codex</code>, or <code>amp</code>.</td></tr>
+		<tr><td><code>teardrop dashboard</code></td><td>Open the live dashboard on localhost.</td></tr>
 		<tr><td><code>teardrop export</code></td><td>Write a signed report to upload under Settings on the website (<code>-o file</code>, <code>-since</code>, default 365d).</td></tr>
 		<tr><td><code>teardrop sync</code></td><td>Upload your signed counts to your account (<code>-server URL -key KEY</code> once; both are remembered).</td></tr>
 		<tr><td><code>teardrop submit &lt;project&gt;</code></td><td>Submit a project's hours with the chat logs behind them (<code>-o file</code> to write instead, <code>-lapse</code> for Lapse sessions, <code>-yes</code>).</td></tr>
@@ -241,7 +242,7 @@ npm run dev</code></pre>
 		<tr><th>Setting</th><th>Meaning</th></tr>
 		<tr><td><code>SESSION_SECRET</code></td><td>Signs sign-in cookies. Changing it signs everyone out.</td></tr>
 		<tr><td><code>HCA_CLIENT_ID</code>, <code>HCA_CLIENT_SECRET</code></td><td>Your Hack Club Auth app.</td></tr>
-		<tr><td><code>ADMINS</code></td><td>Slack user IDs of the people who can open People and see everyone's stats, separated by commas. From People, an admin can look anyone up by Slack ID and read their computers and a log of every report they sent.</td></tr>
+		<tr><td><code>ADMINS</code></td><td>Slack user IDs of the people who can review, separated by commas. They get a Review link in the top bar and the account menu, which lists everyone. From there an admin can look anyone up by Slack ID and read their computers and a log of every report they sent. Each log entry opens to show what the report held and which days and projects changed. A computer's history, its latest report in full, and the whole log as a JSON download are on the same page.</td></tr>
 		<tr><td><code>REVIEW_SERVER</code></td><td>Optional, in <code>wrangler.jsonc</code>. The address of your review server. With it set, <code>teardrop submit</code> works against the website's address, and submissions need a sync key.</td></tr>
 	</table>
 	<p>To change a secret later, edit it in the dashboard. For your own domain, add a <a href="https://developers.cloudflare.com/workers/configuration/routing/custom-domains/">custom domain</a> to the Worker and use it in the redirect URI. Cloudflare accepts uploads of up to 100 MB, so a larger submission has to go to the review server directly.</p>
