@@ -280,7 +280,7 @@ teardrop server -addr :8080 -data /var/lib/teardrop -public-url https://your-ser
 		<li>Create the disk: <code>fly volumes create teardrop_data --region iad --size 1</code>.</li>
 		<li>Add <code>https://&lt;app&gt;.fly.dev/auth/callback</code> as a redirect URI in your Hack Club Auth app.</li>
 		<li>Set the secrets: <code>fly secrets set TEARDROP_ADMINS=... TEARDROP_HCA_CLIENT_ID=... TEARDROP_HCA_CLIENT_SECRET=...</code>.</li>
-		<li>Deploy: <code>fly deploy --build-arg VERSION=v0.4.1 --ha=false</code>. <code>--ha=false</code> keeps Fly from starting a second machine.</li>
+		<li>Deploy: <code>fly deploy --build-arg VERSION=v0.5.0 --ha=false</code>. <code>--ha=false</code> keeps Fly from starting a second machine.</li>
 	</ol>
 	<p>Check it with <code>fly logs</code>. For your own domain, run <code>fly certs add &lt;domain&gt;</code>, then change <code>TEARDROP_PUBLIC_URL</code> and the redirect URI to match.</p>
 	<h3>Point people at it</h3>

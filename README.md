@@ -249,7 +249,7 @@ installed and signed in, from a clone of this repository:
 4. Deploy:
 
    ```sh
-   fly deploy --build-arg VERSION=v0.4.1 --ha=false
+   fly deploy --build-arg VERSION=v0.5.0 --ha=false
    ```
 
 Run exactly one machine: the server keeps its data in files on the volume
