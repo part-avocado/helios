@@ -26,8 +26,7 @@
 	},
 	"d1_databases": [
 		{
-			// Make the database once with `npx wrangler d1 create teardrop`, and
-			// add the ID it prints here as "database_id".
+			// The first deploy creates this database.
 			"binding": "DB",
 			"database_name": "teardrop",
 			"migrations_dir": "migrations"
@@ -42,12 +41,10 @@
 		// it in .dev.vars. It is ignored on any address but localhost.
 		"DEV_LOGIN": ""
 	},
-	// The first deploy takes them from a file (see the docs, "Running a
-	// server"); change one later with `npx wrangler secret put <NAME>`. For
-	// local runs they come from .dev.vars.
-	"secrets": {
-		"required": ["SESSION_SECRET", "HCA_CLIENT_ID", "HCA_CLIENT_SECRET", "ADMINS"]
-	},
+	// Secrets (SESSION_SECRET, HCA_CLIENT_ID, HCA_CLIENT_SECRET, ADMINS) are not
+	// listed here, so a first deploy works before they exist. Set them in the
+	// dashboard, under the Worker's Settings, Variables and Secrets. For local
+	// runs they come from .dev.vars.
 	"observability": {
 		"enabled": true,
 		"traces": { "enabled": true }

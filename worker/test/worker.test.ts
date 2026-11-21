@@ -126,6 +126,20 @@ test('pages and data need an account', async () => {
 	assert.equal((await call('/login')).status, 200)
 })
 
+test('a server without its secrets says so', async () => {
+	const bare = createTestHarness({
+		workers: [{ configPath: new URL('../wrangler.jsonc', import.meta.url), vars: { DEV_LOGIN: '' }, secrets: { SESSION_SECRET: 'x' } }],
+	})
+	try {
+		await bare.listen()
+		const res = await bare.fetch(SITE + '/login')
+		assert.equal(res.status, 503)
+		assert.match(await res.text(), /HCA_CLIENT_ID, HCA_CLIENT_SECRET, ADMINS/)
+	} finally {
+		await bare.close()
+	}
+})
+
 test('DEV_LOGIN signs visitors in on localhost only', async () => {
 	const local = (await (await server.fetch('/api/me')).json()) as { slack_id: string }
 	assert.equal(local.slack_id, 'UDEV')

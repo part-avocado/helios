@@ -155,18 +155,19 @@ cp .dev.vars.example .dev.vars   # signs you in as DEV_LOGIN, on localhost only
 npm run dev
 ```
 
-To deploy it:
+To put it online without installing anything, connect this repository in the
+Cloudflare dashboard (Workers & Pages, Create, Import a repository). Name the
+Worker `teardrop`, set the root directory to `worker`, the build command to
+`npm ci`, and the deploy command to `npm run deploy`. The first deploy creates
+the D1 database and its tables.
 
-1. `npx wrangler login`
-2. `npx wrangler d1 create teardrop`, then add the ID it prints to
-   `wrangler.jsonc` as `"database_id"`.
-3. Create a Hack Club Auth app with the `openid`, `profile`, and `slack_id`
-   scopes and `https://your-site/auth/callback` as its redirect URI.
-4. Write `SESSION_SECRET` (any long random text), `HCA_CLIENT_ID`,
-   `HCA_CLIENT_SECRET`, and `ADMINS` (Slack user IDs, comma-separated) to
-   `worker/.secrets`, one `NAME=value` per line.
-5. `npm run deploy -- --secrets-file .secrets`. Later deploys are
-   `npm run deploy`.
+Then create a Hack Club Auth app with the `openid`, `profile`, and `slack_id`
+scopes and `https://<your-worker>.workers.dev/auth/callback` as its redirect
+URI, and add these as secrets under the Worker's Settings, Variables and
+Secrets: `SESSION_SECRET` (any long random text), `HCA_CLIENT_ID`,
+`HCA_CLIENT_SECRET`, and `ADMINS` (Slack user IDs, comma-separated). Until
+they are set, the site says it is not set up yet. To deploy from your own
+computer instead, run `npx wrangler login`, then `npm run deploy`, in `worker/`.
 
 Admins get a People page that lists everyone and opens anyone's dashboard.
 Set `REVIEW_SERVER` in `wrangler.jsonc` to the address of the review server
@@ -235,7 +236,7 @@ installed and signed in, from a clone of this repository:
 4. Deploy:
 
    ```sh
-   fly deploy --build-arg VERSION=v0.4.0 --ha=false
+   fly deploy --build-arg VERSION=v0.4.1 --ha=false
    ```
 
 Run exactly one machine: the server keeps its data in files on the volume

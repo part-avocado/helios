@@ -25,6 +25,12 @@ async function route(request: Request, env: Env): Promise<Response> {
 	const path = url.pathname
 	const call = `${request.method} ${path}`
 
+	// Until the secrets are set, say so plainly instead of failing in some other place.
+	const missing = ['SESSION_SECRET', 'HCA_CLIENT_ID', 'HCA_CLIENT_SECRET', 'ADMINS'].filter((name) => !env[name as keyof Env])
+	if (missing.length && !env.DEV_LOGIN) {
+		throw new Refusal(503, `This server is not set up yet. Add ${missing.join(', ')} under the Worker's Settings, Variables and Secrets, in the Cloudflare dashboard.`)
+	}
+
 	// The CLI, which sends a sync key.
 	if (call === 'POST /api/v1/reports') {
 		const user = await needKey(request, env, url)

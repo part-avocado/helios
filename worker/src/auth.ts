@@ -20,7 +20,7 @@ type UserRow = Omit<User, 'admin'>
 const USER_COLUMNS = 'id, slack_id, name, api_key'
 
 function withAdmin(env: Env, row: UserRow): User {
-	const admins = env.ADMINS.split(/[\s,]+/).filter(Boolean)
+	const admins = (env.ADMINS ?? '').split(/[\s,]+/).filter(Boolean)
 	return { ...row, admin: row.slack_id !== '' && admins.includes(row.slack_id) }
 }
 

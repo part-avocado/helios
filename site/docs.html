@@ -211,18 +211,15 @@ npm install
 cp .dev.vars.example .dev.vars
 npm run dev</code></pre>
 	<p><code>.dev.vars</code> signs every visitor in as the Slack user ID in <code>DEV_LOGIN</code>, which only works on localhost. Open the address it prints and follow the setup steps on the dashboard.</p>
-	<p>To put it online:</p>
+	<p>To put it online, connect the repository to Cloudflare. Nothing needs to be installed or signed in on your computer.</p>
 	<ol>
-		<li>Sign in: <code>npx wrangler login</code>.</li>
-		<li>Make the database: <code>npx wrangler d1 create teardrop</code>. Add the ID it prints to <code>wrangler.jsonc</code>, as <code>"database_id"</code> next to <code>"database_name"</code>.</li>
-		<li>Create a Hack Club Auth app as in <a href="#hca-app">Set up sign-in</a> below, with the <code>openid</code>, <code>profile</code>, and <code>slack_id</code> scopes and <code>https://your-site/auth/callback</code> as its redirect URI.</li>
-		<li>Write the secrets to a file named <code>.secrets</code>, which git ignores:
-<pre><code>SESSION_SECRET=a-long-random-string
-HCA_CLIENT_ID=...
-HCA_CLIENT_SECRET=...
-ADMINS=U012ABCDEF,U034GHIJKL</code></pre></li>
-		<li>Deploy: <code>npm run deploy -- --secrets-file .secrets</code>. This creates the tables, then uploads the Worker. Later deploys are <code>npm run deploy</code>.</li>
+		<li>In the Cloudflare dashboard, open Workers &amp; Pages, then Create, then Import a repository. Choose your fork of the <a href="https://github.com/part-avocado/teardrop">repository</a>.</li>
+		<li>Name the Worker <code>teardrop</code>, set the root directory to <code>worker</code>, the build command to <code>npm ci</code>, and the deploy command to <code>npm run deploy</code>. Save and deploy. The first deploy creates the D1 database and its tables. It runs without the secrets, and the site says it is not set up yet.</li>
+		<li>Create a Hack Club Auth app as in <a href="#hca-app">Set up sign-in</a> below, with the <code>openid</code>, <code>profile</code>, and <code>slack_id</code> scopes and <code>https://&lt;worker&gt;.&lt;your-subdomain&gt;.workers.dev/auth/callback</code> as its redirect URI. Cloudflare shows the address under the Worker's Settings, Domains &amp; Routes.</li>
+		<li>Under the Worker's Settings, Variables and Secrets, add these as secrets: <code>SESSION_SECRET</code> (any long random text), <code>HCA_CLIENT_ID</code>, <code>HCA_CLIENT_SECRET</code>, and <code>ADMINS</code>. Deploying again, which a push to the branch does, keeps them.</li>
 	</ol>
+	<p>If the build fails on permissions for D1, open the Worker's Settings, Builds, and give its API token D1 Edit access.</p>
+	<p>To deploy from your computer instead, run <code>npx wrangler login</code> in <code>worker</code>, then <code>npm run deploy</code>, and add the secrets in the dashboard or with <code>npx wrangler secret put &lt;NAME&gt;</code>.</p>
 	<table>
 		<tr><th>Setting</th><th>Meaning</th></tr>
 		<tr><td><code>SESSION_SECRET</code></td><td>Signs sign-in cookies. Changing it signs everyone out.</td></tr>
@@ -230,7 +227,7 @@ ADMINS=U012ABCDEF,U034GHIJKL</code></pre></li>
 		<tr><td><code>ADMINS</code></td><td>Slack user IDs of the people who can open People and see everyone's stats, separated by commas.</td></tr>
 		<tr><td><code>REVIEW_SERVER</code></td><td>Optional, in <code>wrangler.jsonc</code>. The address of your review server. With it set, <code>teardrop submit</code> works against the website's address, and submissions need a sync key.</td></tr>
 	</table>
-	<p>To change a secret later, run <code>npx wrangler secret put ADMINS</code>. For your own domain, add a <a href="https://developers.cloudflare.com/workers/configuration/routing/custom-domains/">custom domain</a> to the Worker and use it in the redirect URI. Cloudflare accepts uploads of up to 100 MB, so a larger submission has to go to the review server directly.</p>
+	<p>To change a secret later, edit it in the dashboard. For your own domain, add a <a href="https://developers.cloudflare.com/workers/configuration/routing/custom-domains/">custom domain</a> to the Worker and use it in the redirect URI. Cloudflare accepts uploads of up to 100 MB, so a larger submission has to go to the review server directly.</p>
 
 	<h3 id="review-server">The review server</h3>
 	<p>The review server is the same <code>teardrop</code> binary. It keeps everything as files in one folder, so it needs a machine that stays on and a disk that lasts; Cloudflare Workers can't host it.</p>
@@ -265,7 +262,7 @@ teardrop server -addr :8080 -data /var/lib/teardrop -public-url https://your-ser
 		<li>Create the disk: <code>fly volumes create teardrop_data --region iad --size 1</code>.</li>
 		<li>Add <code>https://&lt;app&gt;.fly.dev/auth/callback</code> as a redirect URI in your Hack Club Auth app.</li>
 		<li>Set the secrets: <code>fly secrets set TEARDROP_ADMINS=... TEARDROP_HCA_CLIENT_ID=... TEARDROP_HCA_CLIENT_SECRET=...</code>.</li>
-		<li>Deploy: <code>fly deploy --build-arg VERSION=v0.4.0 --ha=false</code>. <code>--ha=false</code> keeps Fly from starting a second machine.</li>
+		<li>Deploy: <code>fly deploy --build-arg VERSION=v0.4.1 --ha=false</code>. <code>--ha=false</code> keeps Fly from starting a second machine.</li>
 	</ol>
 	<p>Check it with <code>fly logs</code>. For your own domain, run <code>fly certs add &lt;domain&gt;</code>, then change <code>TEARDROP_PUBLIC_URL</code> and the redirect URI to match.</p>
 	<h3>Point people at it</h3>
