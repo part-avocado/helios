@@ -80,7 +80,7 @@ function renderSetup(el, key) {
 				</div>
 				<div class="tab-panel" data-tab="claude"><p>Setup adds hooks to Claude Code's settings, so each prompt is recorded as you send it. Your past sessions are read from its logs, so they count too. Nothing else to do.</p></div>
 				<div class="tab-panel" data-tab="codex"><p>teardrop reads Codex's session logs, so there is nothing to install. Use Codex as usual; your sessions show up after the next sync.</p></div>
-				<div class="tab-panel" data-tab="amp"><p>Amp keeps threads on its own servers, so setup writes a small plugin to <code>~/.config/amp/plugins/teardrop.ts</code>. It records when you send a prompt and when Amp finishes, never the prompt text.</p>${cmd('teardrop setup')}<p>New Amp threads load the plugin on their own. In a thread that is already open, run <b>plugins: reload</b> from the command palette.</p></div>
+				<div class="tab-panel" data-tab="amp"><p>Amp keeps threads on its own servers, so setup writes a small plugin to <code>~/.config/amp/plugins/teardrop.ts</code>. It records when you send a prompt and when Amp finishes, never the prompt text. To add only the plugin:</p>${cmd('teardrop setup amp')}<p>New Amp threads load the plugin on their own. In a thread that is already open, run <b>plugins: reload</b> from the command palette.</p></div>
 			</div>
 		</div></li>
 		<li><div>

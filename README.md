@@ -25,6 +25,8 @@ update. No admin rights are needed. It installs to `~/.local/bin`, or
 
 `setup` lists the tools it found and offers to stop Claude Code from deleting
 transcripts after 30 days. It changes nothing without asking and is safe to rerun.
+To set up one tool only, name it: `teardrop setup amp`, `teardrop setup claude`,
+or `teardrop setup codex`.
 
 With Go 1.25 or later you can also run
 `go install github.com/part-avocado/teardrop/cmd/teardrop@latest`.
@@ -95,13 +97,15 @@ other hooks are kept. Rerunning `setup` after moving teardrop updates the
 path.
 
 For Amp, which keeps threads on its servers rather than in local files,
-`setup` offers to write a plugin to `~/.config/amp/plugins/teardrop.ts`. It
+`setup` (or `teardrop setup amp` for Amp alone, even before Amp is installed)
+offers to write a plugin to `~/.config/amp/plugins/teardrop.ts`. It
 calls `teardrop hook amp` when a thread starts, when you send a prompt, and
 when Amp finishes, and records the same kind of line in the same journal.
 Threads that run in Amp's cloud orbs are not on your machine, so they are
 not tracked.
 
-Run `teardrop setup -remove-hooks` before uninstalling to remove both.
+Run `teardrop setup -remove-hooks` before uninstalling to remove both, or
+`teardrop setup -remove-hooks amp` to remove only the plugin.
 
 ## Lines of code
 

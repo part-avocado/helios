@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
+	"io"
 	"strings"
 	"testing"
 )
@@ -85,5 +87,28 @@ func TestRenderAmpPlugin(t *testing.T) {
 	}
 	if !strings.HasPrefix(got, ampPluginMarker) {
 		t.Error("rendered plugin lacks the marker that setup uses to recognize it")
+	}
+}
+
+func TestParseSetupArgs(t *testing.T) {
+	parse := func(args ...string) (map[string]bool, bool, string, error) {
+		fs := flag.NewFlagSet("setup", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		yes := fs.Bool("yes", false, "")
+		dir := fs.String("claude-dir", "", "")
+		only, err := parseSetupArgs(fs, args)
+		return only, *yes, *dir, err
+	}
+	// A flag after the tool name still counts, and a flag's value is not
+	// mistaken for a tool.
+	only, yes, dir, err := parse("amp", "-yes", "-claude-dir", "codex", "Claude")
+	if err != nil || !yes || dir != "codex" || len(only) != 2 || !only["Amp"] || !only["Claude Code"] {
+		t.Errorf("got tools %v, yes %v, dir %q, err %v", only, yes, dir, err)
+	}
+	if only, _, _, err := parse("-yes"); err != nil || len(only) != 0 {
+		t.Errorf("no tool named should mean every tool, got %v, %v", only, err)
+	}
+	if _, _, _, err := parse("cursor"); err == nil {
+		t.Error("an unknown tool was accepted instead of refused")
 	}
 }

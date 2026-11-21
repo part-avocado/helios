@@ -1,8 +1,10 @@
 // Command teardrop prints how much time you spent engaged with AI coding
-// sessions, per project, from Claude Code and Codex logs on this machine.
+// sessions, per project, from Claude Code and Codex logs on this machine and
+// from the journal that its Claude Code hooks and Amp plugin write.
 //
 //	teardrop          show your timeline for the last 7 days
 //	teardrop setup    check which tools are found, install hooks, fix settings that lose history
+//	teardrop setup amp   set up one tool only: claude, codex, or amp
 //	teardrop hook claude-code   record one Claude Code hook event (run by Claude Code)
 package main
 
@@ -76,6 +78,7 @@ func main() {
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage: teardrop [flags]   show your AI coding timeline (-l keeps it updating live)")
 		fmt.Fprintln(os.Stderr, "       teardrop setup      check which tools are found, install hooks, fix settings that lose history")
+		fmt.Fprintln(os.Stderr, "       teardrop setup amp  set up one tool only: claude, codex, or amp")
 		fmt.Fprintln(os.Stderr, "       teardrop dashboard  open a live dashboard of your stats in the browser")
 		fmt.Fprintln(os.Stderr, "       teardrop export     write a signed report to upload on the website, under Settings")
 		fmt.Fprintln(os.Stderr, "       teardrop sync       upload your signed counts (time, prompts, tokens, lines; no text) to your account on the website")
@@ -123,7 +126,7 @@ func main() {
 }
 
 func printEmpty(out io.Writer, since string, anyLogs bool) {
-	fmt.Fprintf(out, "No Claude Code or Codex sessions found in the last %s.\n", since)
+	fmt.Fprintf(out, "No Claude Code, Codex, or Amp sessions found in the last %s.\n", since)
 	if !anyLogs {
 		fmt.Fprintln(out, "Run `teardrop setup` to see where teardrop looks for them.")
 	} else {
