@@ -114,10 +114,15 @@ func syncKey(set, server string) (string, error) {
 
 // post sends body to the server, with the sync key if there is one.
 func post(server, key, path string, body []byte) ([]byte, error) {
-	req, err := http.NewRequest("POST", server+path, bytes.NewReader(body))
+	bar := newBar("Uploading", int64(len(body)), "bytes")
+	defer bar.done()
+	req, err := http.NewRequest("POST", server+path, &progressReader{r: bytes.NewReader(body), b: bar})
 	if err != nil {
 		return nil, err
 	}
+	// A custom reader hides the size and the way to resend the body after a redirect.
+	req.ContentLength = int64(len(body))
+	req.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(body)), nil }
 	req.Header.Set("Content-Type", "application/json")
 	if key != "" {
 		req.Header.Set("Authorization", "Bearer "+key)

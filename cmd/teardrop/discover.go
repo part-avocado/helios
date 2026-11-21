@@ -76,27 +76,47 @@ func pick(flag, env string, defaults ...string) []string {
 
 // load parses every location. A file reached through two locations, such as
 // a symlinked config dir, is read once. Files last written before since are
-// skipped; the zero time reads every file.
+// skipped; the zero time reads every file. When this is a terminal, a
+// progress bar shows how far along the reading is.
 func load(locs []location, since time.Time) (raws []sources.Raw, stats []found, warnings []string) {
+	type file struct {
+		loc  int
+		path string
+	}
+	var files []file
 	seen := map[string]bool{}
-	for _, loc := range locs {
-		f := found{location: loc}
+	for i, loc := range locs {
 		for _, root := range loc.Logs {
-			rs, w := sources.Walk(root, loc.Parser, since)
+			paths, w := sources.List(root, since)
 			warnings = append(warnings, w...)
-			for _, r := range rs {
-				if seen[r.Path] {
-					continue
-				}
-				seen[r.Path] = true
-				raws = append(raws, r)
-				f.Sessions++
-				if last := r.Events[len(r.Events)-1].Time; last.After(f.Newest) {
-					f.Newest = last
+			for _, p := range paths {
+				if !seen[p] {
+					seen[p] = true
+					files = append(files, file{i, p})
 				}
 			}
 		}
-		stats = append(stats, f)
+	}
+	stats = make([]found, len(locs))
+	for i, loc := range locs {
+		stats[i].location = loc
+	}
+	bar := newBar("Reading logs", int64(len(files)), "files")
+	defer bar.done()
+	for n, f := range files {
+		r, w := sources.ParseFile(f.path, locs[f.loc].Parser)
+		if w != "" {
+			warnings = append(warnings, w)
+		}
+		if len(r.Events) > 0 {
+			raws = append(raws, r)
+			st := &stats[f.loc]
+			st.Sessions++
+			if last := r.Events[len(r.Events)-1].Time; last.After(st.Newest) {
+				st.Newest = last
+			}
+		}
+		bar.set(int64(n + 1))
 	}
 	return raws, stats, warnings
 }

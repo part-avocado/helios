@@ -27,6 +27,7 @@ const (
 // runLive redraws the timeline about every interval until interrupted.
 func runLive(claudeDir, codexDir, since string, window time.Duration, rules timeline.Rules, every time.Duration) {
 	every = max(every, time.Second)
+	quietProgress = true // the bar would be drawn over the live screen
 	_, _, tty := console(os.Stdout)
 	if tty {
 		// Draw on the alternate screen, like top does, so the scrollback is

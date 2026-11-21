@@ -61,11 +61,11 @@ func (r *Raw) addPrompt(ev timeline.Event, text string) {
 // Parser reads one log file. id is the file name without its extensions.
 type Parser func(r io.Reader, id string) (Raw, error)
 
-// Walk parses every .jsonl and .jsonl.zst file under root. A missing root
-// yields nothing. A file that cannot be read or parsed is reported in
-// warnings and skipped, so one bad file never stops a run. Files last
-// written before since are not read; the zero time reads every file.
-func Walk(root string, parse Parser, since time.Time) (out []Raw, warnings []string) {
+// List returns the paths of the .jsonl and .jsonl.zst files under root, in
+// the order Walk reads them. Files last written before since are left out;
+// the zero time lists every file. A missing root yields nothing. Directories
+// that cannot be read are reported in warnings.
+func List(root string, since time.Time) (paths []string, warnings []string) {
 	filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			if !os.IsNotExist(err) {
@@ -86,15 +86,37 @@ func Walk(root string, parse Parser, since time.Time) (out []Raw, warnings []str
 				return nil
 			}
 		}
-		r, err := parseFile(path, parse)
-		if err != nil {
-			warnings = append(warnings, fmt.Sprintf("skipped %s: %v", path, err))
+		paths = append(paths, path)
+		return nil
+	})
+	return paths, warnings
+}
+
+// ParseFile parses one log file with parse. A file that cannot be read or
+// parsed is reported in the warning, and what could be parsed is returned.
+func ParseFile(path string, parse Parser) (r Raw, warning string) {
+	r, err := parseFile(path, parse)
+	if err != nil {
+		warning = fmt.Sprintf("skipped %s: %v", path, err)
+	}
+	return r, warning
+}
+
+// Walk parses every .jsonl and .jsonl.zst file under root. A missing root
+// yields nothing. A file that cannot be read or parsed is reported in
+// warnings and skipped, so one bad file never stops a run. Files last
+// written before since are not read; the zero time reads every file.
+func Walk(root string, parse Parser, since time.Time) (out []Raw, warnings []string) {
+	paths, warnings := List(root, since)
+	for _, path := range paths {
+		r, w := ParseFile(path, parse)
+		if w != "" {
+			warnings = append(warnings, w)
 		}
 		if len(r.Events) > 0 {
 			out = append(out, r)
 		}
-		return nil
-	})
+	}
 	return out, warnings
 }
 

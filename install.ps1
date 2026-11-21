@@ -10,9 +10,46 @@
 # and a download cut off midway runs nothing.
 & {
 	$ErrorActionPreference = 'Stop'
-	$ProgressPreference = 'SilentlyContinue' # the progress bar makes downloads far slower in 5.1
+	$ProgressPreference = 'SilentlyContinue' # Invoke-WebRequest's own bar makes downloads far slower in 5.1; Get-File draws its own
 	# Windows PowerShell 5.1 may default to TLS 1.0, which GitHub refuses.
 	[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+
+	# Get-File downloads $uri to $out with a progress bar, and falls back to a
+	# plain download if the bar's way of downloading fails for any reason.
+	function Get-File($uri, $out, $label) {
+		$ProgressPreference = 'Continue'
+		try {
+			$req = [Net.HttpWebRequest]::Create($uri)
+			$req.UserAgent = 'teardrop-installer'
+			$res = $req.GetResponse()
+			try {
+				$total = $res.ContentLength
+				$in = $res.GetResponseStream()
+				$fs = [IO.File]::Create($out)
+				try {
+					$buf = New-Object byte[] 81920
+					$done = 0
+					$last = [DateTime]::MinValue
+					while (($n = $in.Read($buf, 0, $buf.Length)) -gt 0) {
+						$fs.Write($buf, 0, $n)
+						$done += $n
+						if ($total -gt 0 -and ([DateTime]::Now - $last).TotalMilliseconds -gt 100) {
+							$last = [DateTime]::Now
+							Write-Progress -Activity $label -Status ('{0:N1} of {1:N1} MB' -f ($done / 1MB), ($total / 1MB)) -PercentComplete ([int](100 * $done / $total))
+						}
+					}
+				}
+				finally { $fs.Dispose(); $in.Dispose() }
+			}
+			finally { $res.Dispose() }
+			Write-Progress -Activity $label -Completed
+		}
+		catch {
+			Write-Progress -Activity $label -Completed
+			$ProgressPreference = 'SilentlyContinue'
+			Invoke-WebRequest -UseBasicParsing -Uri $uri -OutFile $out
+		}
+	}
 
 	$repo = 'part-avocado/teardrop'
 	$version = if ($env:TEARDROP_VERSION) { $env:TEARDROP_VERSION } else { 'latest' }
@@ -37,7 +74,7 @@
 	try {
 		Write-Host "Downloading teardrop (windows/$arch)..."
 		$file = Join-Path $tmp $asset
-		Invoke-WebRequest -UseBasicParsing -Uri "$base/$asset" -OutFile $file
+		Get-File "$base/$asset" $file 'Downloading teardrop'
 		Invoke-WebRequest -UseBasicParsing -Uri "$base/checksums.txt" -OutFile (Join-Path $tmp 'checksums.txt')
 
 		$want = $null

@@ -180,7 +180,10 @@ func buildSessions(raws []sources.Raw, cutoff time.Time, look *lookups) ([]timel
 	repos := map[string]*commitLines{} // this report's copies, which edits claim lines from
 	committed := map[string]int{}
 	var sessions []timeline.Session
-	for _, r := range raws {
+	bar := newBar("Analyzing sessions", int64(len(raws)), "sessions")
+	defer bar.done()
+	for i, r := range raws {
+		bar.set(int64(i))
 		var p struct {
 			project timeline.Project
 			root    string

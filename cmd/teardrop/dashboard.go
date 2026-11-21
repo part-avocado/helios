@@ -24,6 +24,7 @@ func runDashboard(args []string) {
 	claudeDir := fs.String("claude-dir", "", "Claude Code config directories, comma-separated")
 	codexDir := fs.String("codex-dir", "", "Codex home directories, comma-separated")
 	fs.Parse(args)
+	quietProgress = true // each refresh would draw one over the server's messages
 
 	host, port, err := net.SplitHostPort(*addr)
 	check(err)

@@ -20,11 +20,22 @@ fail() {
 	exit 1
 }
 
+# fetch downloads $1 to $2. With a third argument "progress" it shows a
+# progress bar, when there is a terminal to show it on.
 fetch() {
 	if command -v curl >/dev/null 2>&1; then
-		curl -fsSL --retry 3 -o "$2" "$1"
+		if [ "${3:-}" = progress ] && [ -t 2 ]; then
+			curl -fL --retry 3 -# -o "$2" "$1"
+		else
+			curl -fsSL --retry 3 -o "$2" "$1"
+		fi
 	elif command -v wget >/dev/null 2>&1; then
-		wget -q -O "$2" "$1"
+		if [ "${3:-}" = progress ] && [ -t 2 ]; then
+			# Older wget has no --show-progress; fall back to a quiet download.
+			wget -q --show-progress -O "$2" "$1" || wget -q -O "$2" "$1"
+		else
+			wget -q -O "$2" "$1"
+		fi
 	else
 		fail "curl or wget is needed to download teardrop"
 	fi
@@ -77,7 +88,7 @@ main() {
 	trap 'rm -rf "$tmp"' EXIT INT TERM
 
 	say "Downloading teardrop ($os/$arch)..."
-	fetch "$base/$asset" "$tmp/$asset" || fail "could not download $base/$asset"
+	fetch "$base/$asset" "$tmp/$asset" progress || fail "could not download $base/$asset"
 	fetch "$base/checksums.txt" "$tmp/checksums.txt" || fail "could not download $base/checksums.txt"
 
 	want=$(awk -v a="$asset" '{ n = $2; sub(/^\*/, "", n) } n == a { print $1 }' "$tmp/checksums.txt")
