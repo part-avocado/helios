@@ -37,6 +37,8 @@ export interface Entry {
 	past_added_seconds: number | null
 	/** A Detail as JSON, or null when nothing of the report could be read. */
 	detail: string | null
+	/** Where the report is kept in full, or null when it isn't. */
+	report_key: string | null
 }
 
 /** A day or project whose total differs between two reports: its date or name, and its seconds before and now. */
@@ -273,17 +275,19 @@ export function remarks(e: Entry): string[] {
 }
 
 const COLUMNS =
-	'user_id, at, event, computer_id, refusal, flagged, generated_at, teardrop_version, since, engaged_seconds, prev_generated_at, prev_since, prev_engaged_seconds, prev_teardrop_version, past_added_seconds, detail'
+	'user_id, at, event, computer_id, refusal, flagged, generated_at, teardrop_version, since, engaged_seconds, prev_generated_at, prev_since, prev_engaged_seconds, prev_teardrop_version, past_added_seconds, detail, report_key'
 
 /**
  * trim drops a person's oldest log rows once they have more than LOG_ROWS.
  * Flagged rows are counted apart from the rest, so a flood of other rows
- * can't push them out.
+ * can't push them out. It returns the dropped rows' report_key, so whoever
+ * runs it can delete the reports kept for them.
  */
 const trim = (env: Env, userID: number, flagged: number) =>
 	env.DB.prepare(
 		`DELETE FROM account_log WHERE user_id = ?1 AND flagged = ?2
-			AND id <= (SELECT id FROM account_log WHERE user_id = ?1 AND flagged = ?2 ORDER BY id DESC LIMIT 1 OFFSET ${LOG_ROWS})`,
+			AND id <= (SELECT id FROM account_log WHERE user_id = ?1 AND flagged = ?2 ORDER BY id DESC LIMIT 1 OFFSET ${LOG_ROWS})
+		 RETURNING report_key`,
 	).bind(userID, flagged)
 
 /**
@@ -291,7 +295,7 @@ const trim = (env: Env, userID: number, flagged: number) =>
  * a condition with ? for each of its values, the row is only added if it holds.
  */
 export function logEntry(env: Env, userID: number, e: Entry, when = '1', ...values: unknown[]): D1PreparedStatement[] {
-	const row = [userID, e.at, e.event, e.computer_id, e.refusal, e.flagged, e.generated_at, e.teardrop_version, e.since, e.engaged_seconds, e.prev_generated_at, e.prev_since, e.prev_engaged_seconds, e.prev_teardrop_version, e.past_added_seconds, e.detail]
+	const row = [userID, e.at, e.event, e.computer_id, e.refusal, e.flagged, e.generated_at, e.teardrop_version, e.since, e.engaged_seconds, e.prev_generated_at, e.prev_since, e.prev_engaged_seconds, e.prev_teardrop_version, e.past_added_seconds, e.detail, e.report_key]
 	return [env.DB.prepare(`INSERT INTO account_log (${COLUMNS}) SELECT ${row.map(() => '?').join(', ')} WHERE ${when}`).bind(...row, ...values), trim(env, userID, e.flagged)]
 }
 

@@ -47,8 +47,14 @@ async function lookup(env: Env, params: URLSearchParams): Promise<Person> {
 
 type Row = Entry & { id: number }
 
-/** explain turns a log row into what a reviewer reads: the row, what the server made of it, and what the report held. */
-const explain = (e: Row) => ({ ...e, detail: parseStored<Detail>(e.detail), findings: e.refusal ? [] : findings(e), remarks: remarks(e) })
+/**
+ * explain turns a log row into what a reviewer reads: the row, what the
+ * server made of it, what the report held, and whether the report itself is kept.
+ */
+function explain(e: Row) {
+	const { report_key, ...row } = e
+	return { ...row, detail: parseStored<Detail>(e.detail), has_report: report_key != null, findings: e.refusal ? [] : findings(e), remarks: remarks(e) }
+}
 
 /**
  * fullLog returns everything in one person's log, newest first, for a

@@ -1,5 +1,6 @@
 // Signed reports from `teardrop sync` and `teardrop export`: checking them,
-// storing the latest one of each computer, and reading them back.
+// storing the latest one of each computer, and reading them back. Every report
+// is also kept as it arrived, in the REPORTS bucket, for reviewers.
 import { newKey, type User } from './auth.ts'
 import { fromBase64Url, Refusal } from './http.ts'
 import { dayChanges, dayTotals, type Detail, type Entry, findings, logEntry, type LogEvent, logRemoval, parseDays, parseStored, pastAdded, projectChanges, projectTotals, removedReport, type ReportBody, summarize } from './log.ts'
@@ -54,13 +55,14 @@ export async function storeReport(env: Env, user: User, body: string, event: Log
 		prev_teardrop_version: null,
 		past_added_seconds: null,
 		detail: null,
+		report_key: null,
 	}
 	try {
 		return await store(env, user, body, entry)
 	} catch (e) {
 		if (!(e instanceof Refusal)) throw e
 		const refused: Entry = { ...entry, refusal: e.message, flagged: Number(e instanceof FlaggedRefusal), prev_generated_at: null, prev_since: null, prev_engaged_seconds: null, prev_teardrop_version: null, past_added_seconds: null }
-		await env.DB.batch(logEntry(env, user.id, refused))
+		await forgetDropped(env, await env.DB.batch(logEntry(env, user.id, refused)))
 		throw e
 	}
 }
@@ -94,6 +96,9 @@ async function store(env: Env, user: User, body: string, entry: Entry): Promise<
 	// A refused report's contents are logged too, so a reviewer sees what it claimed.
 	const held = summarize(p.report, bytes.length)
 	Object.assign(entry, { computer_id: id, generated_at: Number.isFinite(generated) ? generated : null, teardrop_version: version, since, engaged_seconds: engaged, detail: JSON.stringify(held) })
+	// Refused or not, it is kept as it arrived. A failure further down leaves
+	// a file that no log row names, which costs a little space and nothing else.
+	entry.report_key = await keep(env, user.id, id, now, body)
 	if (!valid || !publicKey) throw new FlaggedRefusal(400, 'Report refused: its key does not match its contents, so it was changed after it was made.')
 
 	const expires = Date.parse(p.expires_at ?? '')
@@ -162,8 +167,54 @@ async function store(env: Env, user: User, body: string, entry: Entry): Promise<
 		),
 		...logEntry(env, user.id, entry, 'EXISTS (SELECT 1 FROM computers WHERE id = ? AND signature = ?)', id, signed.key),
 	])
+	await forgetDropped(env, results)
 	if (!results[0]?.meta.changes) throw stale
 	return id
+}
+
+/**
+ * keep stores a report in the bucket exactly as it arrived, compressed, and
+ * returns its name there: the person, the computer, and when it arrived.
+ */
+async function keep(env: Env, userID: number, computerID: string, at: number, body: string): Promise<string> {
+	const key = `${userID}/${computerID || 'unknown'}/${new Date(at).toISOString()}-${crypto.randomUUID().slice(0, 8)}.json.gz`
+	const gzip = new Blob([body]).stream().pipeThrough(new CompressionStream('gzip'))
+	await env.REPORTS.put(key, await new Response(gzip).arrayBuffer())
+	return key
+}
+
+/** forget deletes kept reports. */
+async function forget(env: Env, keys: string[]): Promise<void> {
+	// The bucket deletes at most 1000 at a time.
+	for (let at = 0; at < keys.length; at += 1000) await env.REPORTS.delete(keys.slice(at, at + 1000))
+}
+
+/**
+ * forgetDropped deletes the kept reports of the log rows that a batch dropped
+ * for being the oldest. The batch has already taken effect, and a file left
+ * behind is out of reach, so a failure here is noted and not passed on.
+ */
+async function forgetDropped(env: Env, results: D1Result[]): Promise<void> {
+	const keys = results.flatMap((r) => (r.results as { report_key?: string | null }[]).flatMap((row) => row.report_key ?? []))
+	await forget(env, keys).catch((e) => console.error('could not delete the reports of dropped log rows', e))
+}
+
+/**
+ * keptReportJSON returns, as JSON text, the report behind one log row exactly
+ * as it was signed, with every work block, or null when none is kept for it.
+ * It is for admins.
+ */
+export async function keptReportJSON(env: Env, entryID: string): Promise<string | null> {
+	if (!/^\d{1,15}$/.test(entryID)) return null
+	const row = await env.DB.prepare('SELECT user_id, computer_id, at, refusal, report_key FROM account_log WHERE id = ?')
+		.bind(Number(entryID))
+		.first<{ user_id: number; computer_id: string; at: number; refusal: string; report_key: string | null }>()
+	const kept = row?.report_key ? await env.REPORTS.get(row.report_key) : null
+	if (!row || !kept) return null
+	// Only a body that parsed as a signed report is ever kept.
+	const signed = JSON.parse(await new Response(kept.body.pipeThrough(new DecompressionStream('gzip'))).text()) as { payload: string; key: string }
+	const about = JSON.stringify({ entry: Number(entryID), id: row.computer_id, user_id: row.user_id, synced_at: row.at, refusal: row.refusal, signature: signed.key })
+	return `${about.slice(0, -1)},"report":${signed.payload}}`
 }
 
 /**
@@ -229,26 +280,38 @@ export async function computers(env: Env, userID: number): Promise<Computer[]> {
 	return results
 }
 
-/** removeComputer forgets one of a person's computers and its report, and notes that in their log. */
+/**
+ * removeComputer forgets one of a person's computers and its latest report,
+ * and notes that in their log. The reports kept for reviewers stay.
+ */
 export async function removeComputer(env: Env, userID: number, id: string): Promise<boolean> {
 	// Deleting the computer deletes its report pieces with it (ON DELETE CASCADE).
 	const results = await env.DB.batch([...logRemoval(env, userID, id), env.DB.prepare('DELETE FROM computers WHERE id = ? AND user_id = ?').bind(id, userID)])
+	await forgetDropped(env, results)
 	return results.at(-1)!.meta.changes > 0
 }
 
 /**
  * deleteUser empties a person's account: their computers, reports, name, and
- * sync key go. The account's row and its log stay, so deleting an account
- * doesn't hide what it sent from reviewers, and signing in again reopens it.
+ * sync key go, and so do the reports kept in full. The account's row and its
+ * log stay, so deleting an account doesn't hide what it sent from reviewers,
+ * and signing in again reopens it.
  */
 export async function deleteUser(env: Env, userID: number): Promise<void> {
 	await env.DB.batch([
 		...logRemoval(env, userID),
-		// The log stays, without the names of their projects.
-		env.DB.prepare(`UPDATE account_log SET detail = json_remove(detail, '$.projects', '$.more_projects') WHERE user_id = ? AND detail IS NOT NULL`).bind(userID),
+		// The log stays, without the names of their projects or the reports themselves.
+		env.DB.prepare(`UPDATE account_log SET report_key = NULL, detail = json_remove(detail, '$.projects', '$.more_projects') WHERE user_id = ?`).bind(userID),
 		// The report pieces go with the computers (ON DELETE CASCADE).
 		env.DB.prepare('DELETE FROM computers WHERE user_id = ?').bind(userID),
 		// The new sync key is one no one has seen, so the old one stops working.
 		env.DB.prepare(`UPDATE users SET name = '', api_key = ?, deleted_at = ? WHERE id = ?`).bind(newKey(), Date.now(), userID),
 	])
+	// Everything kept for this person, including what no log row names any more.
+	let cursor: string | undefined
+	do {
+		const page = await env.REPORTS.list({ prefix: `${userID}/`, cursor })
+		await forget(env, page.objects.map((o) => o.key))
+		cursor = page.truncated ? page.cursor : undefined
+	} while (cursor)
 }

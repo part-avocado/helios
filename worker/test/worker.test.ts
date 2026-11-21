@@ -531,6 +531,65 @@ test('a log entry says what the report held and what changed, and a computer has
 	assert.deepEqual([kept.at(-1)!.detail!.days, kept.at(-1)!.detail!.blocks], [listed, 2])
 })
 
+test('every report is kept in full, refused ones too, until the account is deleted', async () => {
+	const admin = await signIn('admin')
+	const cookie = await signIn('keeper')
+	const { api_key: key } = await me(cookie)
+	const now = Date.now()
+	const post = (body: string) => call('/api/v1/reports', { method: 'POST', body, key })
+	const review = async () => {
+		const res = await call('/api/admin/person?slack=UKEEPER', { cookie: admin })
+		return (await res.json()) as { person: { id: number }; log: (LogRow & { id: number; has_report: boolean })[] }
+	}
+	const kept = async (entry: number) => {
+		const res = await call(`/api/admin/report?entry=${entry}`, { cookie: admin })
+		return res.status === 200 ? ((await res.json()) as { entry: number; id: string; refusal: string; signature: string; report: unknown }) : res.status
+	}
+	const bucket = (await server.getWorker<{ REPORTS: { list(options: { prefix: string }): Promise<{ objects: { key: string }[] }> } }>().getEnv()).REPORTS
+	const files = async (prefix: string) => (await bucket.list({ prefix })).objects.map((o) => o.key)
+
+	// Someone else's reports, which nothing below may touch.
+	const { api_key: otherKey } = await me(await signIn('bystander'))
+	assert.equal((await call('/api/v1/reports', { method: 'POST', body: computer()({ engaged_seconds: 600, blocks: [block(now - 1000)] }), key: otherKey })).status, 200)
+	const others = (await files('')).length
+
+	const signed = computer()
+	const first = signed({ engaged_seconds: 600, blocks: [block(now - 9000, '🙂 café')] }, now - 3000)
+	const second = signed({ engaged_seconds: 1200, blocks: [block(now - 9000, '🙂 café'), block(now - 4000, 'site')] }, now - 2000)
+	// A report changed after it was signed is refused, and kept as it arrived.
+	const forged = JSON.parse(signed({ engaged_seconds: 1800, blocks: [block(now - 1500, 'forged')] }, now - 1000))
+	forged.payload = forged.payload.replace('"engaged_seconds":1800', '"engaged_seconds":180000')
+	assert.deepEqual([(await post(first)).status, (await post(second)).status, (await post(JSON.stringify(forged))).status], [200, 200, 400])
+	// A file that is not a teardrop report is refused and not kept.
+	assert.equal((await post('{"private":"notes"}')).status, 400)
+
+	const { person, log } = await review()
+	assert.deepEqual(log.map((r) => r.has_report), [false, true, true, true])
+	const [stray, refused, newer, older] = log.map((r) => r.id) as [number, number, number, number]
+	const id = log[1]!.computer_id
+	// Each entry opens its own report, not the computer's latest.
+	for (const [entry, sent, refusal] of [[older, first, ''], [newer, second, ''], [refused, JSON.stringify(forged), log[1]!.refusal]] as const) {
+		const got = await kept(entry)
+		assert.notEqual(typeof got, 'number', `entry ${entry}`)
+		if (typeof got === 'number') continue
+		assert.deepEqual([got.entry, got.id, got.refusal, got.signature, got.report], [entry, id, refusal, JSON.parse(sent).key, JSON.parse(JSON.parse(sent).payload)])
+	}
+	assert.match(log[1]!.refusal, /changed after it was made/)
+	assert.deepEqual([await kept(stray), await kept(999999), (await call('/api/admin/report?entry=1e3', { cookie: admin })).status], [404, 404, 404])
+	assert.equal((await call(`/api/admin/report?entry=${older}`, { cookie })).status, 403, 'not even their own')
+	assert.equal((await files(`${person.id}/${id}/`)).length, 3)
+
+	// Removing the computer leaves its reports with reviewers.
+	assert.equal((await call(`/api/computers/${id}`, { method: 'DELETE', cookie, origin: SITE })).status, 200)
+	assert.equal(typeof (await kept(older)), 'object')
+
+	// Deleting the account deletes them, and no one else's.
+	assert.equal((await call('/api/account', { method: 'DELETE', cookie, origin: SITE })).status, 200)
+	assert.deepEqual([await kept(older), await kept(newer), await kept(refused)], [404, 404, 404])
+	assert.ok((await review()).log.every((r) => !r.has_report))
+	assert.deepEqual([await files(`${person.id}/`), (await files('')).length], [[], others])
+})
+
 test('project submissions go on to the review server', async () => {
 	const { api_key: key } = await me(await signIn('submitter'))
 	const body = JSON.stringify({ signed: { v: 1 }, logs: ['x'.repeat(200_000)] })

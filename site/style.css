@@ -272,6 +272,7 @@ table.people a.flag { display: inline-block; min-width: 22px; padding: 0 7px; bo
 .review td.acts > * { margin-left: 14px; font-size: 13px; color: var(--accent-2); }
 .review td.acts button.link:hover, .log button.link:hover code { text-decoration: underline; }
 .log p.held { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.log p.held a { color: var(--accent-2); white-space: nowrap; }
 .log h4 { margin: 14px 0 6px; font-size: 13px; font-weight: 600; }
 .log h4 small { margin-left: 6px; font-weight: 400; color: var(--faint); }
 .log .scrollbox { max-height: 300px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; }

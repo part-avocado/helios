@@ -3,7 +3,7 @@
 // person's synced reports in D1, and the API the pages and the CLI use.
 import { clearSession, finishSignIn, keyUser, rotateKey, sameOrigin, sessionUser, signOut, startSignIn, type User } from './auth.ts'
 import { json, jsonText, readText, redirect, Refusal } from './http.ts'
-import { computerReportJSON, computers, deleteUser, MAX_REPORT_BYTES, removeComputer, reportsJSON, storeReport } from './reports.ts'
+import { computerReportJSON, computers, deleteUser, keptReportJSON, MAX_REPORT_BYTES, removeComputer, reportsJSON, storeReport } from './reports.ts'
 import { fullLog, people, person } from './review.ts'
 
 export default {
@@ -139,9 +139,10 @@ async function route(request: Request, env: Env): Promise<Response> {
 		if (call === 'GET /api/admin/people') return json({ people: await people(env) })
 		if (call === 'GET /api/admin/person') return json(await person(env, url.searchParams))
 		if (call === 'GET /api/admin/report') {
-			// One computer's latest report in full, as it was signed.
-			const report = await computerReportJSON(env, url.searchParams.get('computer') ?? '')
-			if (!report) throw new Refusal(404, 'No such computer.')
+			// A report in full, as it was signed: the one behind a log entry, or a computer's latest.
+			const entry = url.searchParams.get('entry')
+			const report = entry === null ? await computerReportJSON(env, url.searchParams.get('computer') ?? '') : await keptReportJSON(env, entry)
+			if (!report) throw new Refusal(404, entry === null ? 'No such computer.' : 'No report is kept for this entry.')
 			return jsonText(report)
 		}
 		if (call === 'GET /api/admin/log') {

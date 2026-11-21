@@ -232,17 +232,17 @@ npm run dev</code></pre>
 	<p>To put it online, connect the repository to Cloudflare. Nothing needs to be installed or signed in on your computer.</p>
 	<ol>
 		<li>In the Cloudflare dashboard, open Workers &amp; Pages, then Create, then Import a repository. Choose your fork of the <a href="https://github.com/part-avocado/teardrop">repository</a>.</li>
-		<li>Name the Worker <code>teardrop</code>, set the root directory to <code>worker</code>, the build command to <code>npm ci</code>, and the deploy command to <code>npm run deploy</code>. Save and deploy. The first deploy creates the D1 database and its tables. It runs without the secrets, and the site says it is not set up yet.</li>
+		<li>Name the Worker <code>teardrop</code>, set the root directory to <code>worker</code>, the build command to <code>npm ci</code>, and the deploy command to <code>npm run deploy</code>. Save and deploy. The first deploy creates the D1 database, its tables, and an R2 bucket that keeps every report for reviewers. It runs without the secrets, and the site says it is not set up yet.</li>
 		<li>Create a Hack Club Auth app as in <a href="#hca-app">Set up sign-in</a> below, with the <code>openid</code>, <code>profile</code>, and <code>slack_id</code> scopes and <code>https://&lt;worker&gt;.&lt;your-subdomain&gt;.workers.dev/auth/callback</code> as its redirect URI. Cloudflare shows the address under the Worker's Settings, Domains &amp; Routes.</li>
 		<li>Under the Worker's Settings, Variables and Secrets, add these as secrets: <code>SESSION_SECRET</code> (any long random text), <code>HCA_CLIENT_ID</code>, <code>HCA_CLIENT_SECRET</code>, and <code>ADMINS</code>. Deploying again, which a push to the branch does, keeps them.</li>
 	</ol>
-	<p>If the build fails on permissions for D1, open the Worker's Settings, Builds, and give its API token D1 Edit access.</p>
+	<p>The bucket needs R2 turned on for your Cloudflare account, which you do once under R2 in the dashboard. If the build fails on permissions for D1 or R2, open the Worker's Settings, Builds, and give its API token D1 Edit and Workers R2 Storage Edit access.</p>
 	<p>To deploy from your computer instead, run <code>npx wrangler login</code> in <code>worker</code>, then <code>npm run deploy</code>, and add the secrets in the dashboard or with <code>npx wrangler secret put &lt;NAME&gt;</code>.</p>
 	<table>
 		<tr><th>Setting</th><th>Meaning</th></tr>
 		<tr><td><code>SESSION_SECRET</code></td><td>Signs sign-in cookies. Changing it signs everyone out.</td></tr>
 		<tr><td><code>HCA_CLIENT_ID</code>, <code>HCA_CLIENT_SECRET</code></td><td>Your Hack Club Auth app.</td></tr>
-		<tr><td><code>ADMINS</code></td><td>Slack user IDs of the people who can review, separated by commas. They get a Review link in the top bar and the account menu, which lists everyone. From there an admin can look anyone up by Slack ID and read their computers and a log of every report they sent. Each log entry opens to show what the report held and which days and projects changed. A computer's history, its latest report in full, and the whole log as a JSON download are on the same page.</td></tr>
+		<tr><td><code>ADMINS</code></td><td>Slack user IDs of the people who can review, separated by commas. They get a Review link in the top bar and the account menu, which lists everyone. From there an admin can look anyone up by Slack ID and read their computers and a log of every report they sent. Each log entry opens to show what the report held and which days and projects changed. Every report is kept as it arrived, so each entry also links to the report itself, with every work block. A computer's history and the whole log as a JSON download are on the same page.</td></tr>
 		<tr><td><code>REVIEW_SERVER</code></td><td>Optional, in <code>wrangler.jsonc</code>. The address of your review server. With it set, <code>teardrop submit</code> works against the website's address, and submissions need a sync key.</td></tr>
 	</table>
 	<p>To change a secret later, edit it in the dashboard. For your own domain, add a <a href="https://developers.cloudflare.com/workers/configuration/routing/custom-domains/">custom domain</a> to the Worker and use it in the redirect URI. Cloudflare accepts uploads of up to 100 MB, so a larger submission has to go to the review server directly.</p>
@@ -290,7 +290,7 @@ teardrop server -addr :8080 -data /var/lib/teardrop -public-url https://your-ser
 	<p><code>/admin</code> lists submissions. Each one shows the hours the account claimed, the hours the server recomputed from the logs, and every chat with the time between messages. Paste the project's Lapse or Lookout sessions there and the time they overlap is taken off. Time an earlier submission of the same project covered is taken off as well. <code>/admin/accounts</code> lists every account that has synced.</p>
 
 	<h2 id="privacy">Privacy</h2>
-	<p>teardrop reads timestamps, token counts, line counts, and working folders from your logs. Prompt text is only scored in memory to count recognized words; it is never stored or printed, and <code>sync</code> never uploads it. Your chat logs leave your computer only when you run <code>teardrop submit</code> and confirm.</p>
+	<p>teardrop reads timestamps, token counts, line counts, and working folders from your logs. Prompt text is only scored in memory to count recognized words; it is never stored or printed, and <code>sync</code> never uploads it. The website keeps each report your computers send, which holds those counts and times, so reviewers can read it; deleting your account deletes them. Your chat logs leave your computer only when you run <code>teardrop submit</code> and confirm.</p>
 
 	<h2 id="troubleshooting">Troubleshooting</h2>
 	<h3>“No Claude Code or Codex sessions found”</h3>

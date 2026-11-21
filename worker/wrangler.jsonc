@@ -1,5 +1,5 @@
 // The teardrop website on Cloudflare Workers: the pages in ../site, sign-in,
-// and each person's synced stats in D1.
+// each person's synced stats in D1, and every report they sent in R2.
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "teardrop",
@@ -40,6 +40,14 @@
 			"binding": "DB",
 			"database_name": "teardrop",
 			"migrations_dir": "migrations"
+		}
+	],
+	"r2_buckets": [
+		{
+			// Every report people's computers send, kept in full for reviewers.
+			// The first deploy creates this bucket, once R2 is turned on for the
+			// account.
+			"binding": "REPORTS"
 		}
 	],
 	"vars": {

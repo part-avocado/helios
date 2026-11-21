@@ -35,7 +35,8 @@ With Go 1.25 or later you can also run
 
 `site/` is the website: a landing page, docs, the dashboard, and settings.
 `worker/` serves it on Cloudflare Workers and adds accounts: people sign in
-with Hack Club Auth, and their synced stats are kept in a D1 database. See
+with Hack Club Auth, their synced stats are kept in a D1 database, and every
+report their computers send is kept in an R2 bucket for reviewers. See
 [The website, on Cloudflare](#the-website-on-cloudflare).
 
 The same files are built into the binary, so `teardrop dashboard` serves the
@@ -163,7 +164,8 @@ To put it online without installing anything, connect this repository in the
 Cloudflare dashboard (Workers & Pages, Create, Import a repository). Name the
 Worker `teardrop`, set the root directory to `worker`, the build command to
 `npm ci`, and the deploy command to `npm run deploy`. The first deploy creates
-the D1 database and its tables.
+the D1 database, its tables, and the R2 bucket. R2 has to be turned on for
+your Cloudflare account first, which you do once under R2 in the dashboard.
 
 Then create a Hack Club Auth app with the `openid`, `profile`, and `slack_id`
 scopes and `https://<your-worker>.workers.dev/auth/callback` as its redirect
@@ -177,9 +179,10 @@ Admins get a Review page, linked from the top bar and the account menu, that
 lists everyone. From it they look a person up
 by Slack ID to see their dashboard, their computers, and a log of every
 report they sent. Each entry opens to show what the report held and which
-days and projects changed; the page also has each computer's history, its
-latest report in full, and the whole log as a JSON download. The log stays
-when a person deletes their account.
+days and projects changed, and links to the report itself: every report is
+kept as it arrived, in an R2 bucket. The page also has each computer's
+history and the whole log as a JSON download. The log stays when a person
+deletes their account; the reports kept in full go.
 Set `REVIEW_SERVER` in `wrangler.jsonc` to the address of the review server
 below and `teardrop submit` goes through the website, which then asks for a
 sync key. `npm test` runs the Worker's tests in the Workers runtime.
