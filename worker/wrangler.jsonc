@@ -5,6 +5,9 @@
 	"name": "teardrop",
 	"main": "src/index.ts",
 	"compatibility_date": "2026-11-21",
+	// Keep variables added in the Cloudflare dashboard, such as ADMINS added as
+	// text instead of as a secret. Without this, every deploy removes them.
+	"keep_vars": true,
 	"assets": {
 		"directory": "../site",
 		"binding": "ASSETS",

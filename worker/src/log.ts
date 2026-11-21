@@ -108,7 +108,8 @@ export function remarks(e: Entry): string[] {
 	if (e.event === 'delete') return [`The person deleted their account in Settings. Its computers had ${dur(e.engaged_seconds)} between them.`]
 	const out: string[] = []
 	if (e.prev_generated_at == null) {
-		out.push(`First report from this computer. Its ${dur(e.engaged_seconds)} of history arrived at once, so the server could not check it.`)
+		// A computer's first sync brings its earlier history with it, which nothing can be compared with.
+		if (e.engaged_seconds > 0) out.push(`First sync: ${dur(e.engaged_seconds)} of earlier history, unchecked.`)
 	} else if (!comparable(e)) {
 		out.push(
 			e.prev_since

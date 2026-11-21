@@ -9,14 +9,27 @@ import { people, person } from './review.ts'
 export default {
 	async fetch(request, env): Promise<Response> {
 		try {
-			return await route(request, env)
+			return guard(await route(request, env))
 		} catch (e) {
-			if (e instanceof Refusal) return new Response(e.message + '\n', { status: e.status, headers: { 'Cache-Control': 'no-store' } })
+			if (e instanceof Refusal) return guard(new Response(e.message + '\n', { status: e.status, headers: { 'Cache-Control': 'no-store' } }))
 			console.error(JSON.stringify({ message: 'request failed', path: new URL(request.url).pathname, error: String(e), stack: (e as Error)?.stack }))
-			return new Response('Something went wrong on the server. Try again in a moment.\n', { status: 500 })
+			return guard(new Response('Something went wrong on the server. Try again in a moment.\n', { status: 500 }))
 		}
 	},
 } satisfies ExportedHandler<Env>
+
+/**
+ * guard adds the headers that stop another site from showing these pages in
+ * a frame, a browser from guessing a response's type, and a link out of the
+ * site from carrying the address the visitor was on.
+ */
+function guard(res: Response): Response {
+	const out = new Response(res.body, res) // a copy, since a fetched response's headers can't be changed
+	out.headers.set('X-Frame-Options', 'DENY')
+	out.headers.set('X-Content-Type-Options', 'nosniff')
+	out.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
+	return out
+}
 
 /** Pages that need an account. The value is whether they are for admins only. */
 const PAGES: Record<string, boolean> = { dashboard: false, settings: false, people: true, person: true }

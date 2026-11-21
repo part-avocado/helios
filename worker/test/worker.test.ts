@@ -117,6 +117,14 @@ const block = (end: number, name = 'site') => ({
 	engaged_seconds: 600,
 })
 
+test('every answer says it may not be framed or have its type guessed', async () => {
+	const cookie = await signIn('framed')
+	for (const [path, as] of [['/', ''], ['/login', ''], ['/dashboard', cookie], ['/api/me', cookie], ['/api/me', ''], ['/nowhere', cookie]] as const) {
+		const res = await call(path, { cookie: as })
+		assert.deepEqual([res.headers.get('X-Frame-Options'), res.headers.get('X-Content-Type-Options')], ['DENY', 'nosniff'], `${path} ${res.status}`)
+	}
+})
+
 test('pages and data need an account', async () => {
 	for (const page of ['/dashboard', '/settings.html', '/people']) {
 		const res = await call(page)
@@ -319,7 +327,7 @@ test('reviewers look a person up by Slack ID and read their log', async () => {
 	// A first report has nothing to be compared with: noted, not flagged.
 	let row = await sync({ engaged_seconds: 4200, blocks: [], days: days({ 10: 3600, 4: 600 }) }, now - 3 * DAY)
 	assert.deepEqual([row.event, row.flagged, row.findings.length, row.engaged_seconds], ['sync', 0, 0, 4200])
-	assert.match(row.remarks.join(' '), /First report/)
+	assert.equal(row.remarks[0], 'First sync: 1h 10m of earlier history, unchecked.')
 	assert.equal((await review()).unchecked_seconds, 4200)
 
 	// Three days later: today's work, and half an hour that moved to the day
