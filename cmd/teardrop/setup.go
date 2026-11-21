@@ -96,8 +96,6 @@ func runSetup(args []string) {
 	}
 	if want("Amp") {
 		fmt.Fprintf(w, "  Amp\t%s\t%s\n", ampDir(), ampStatus(journal))
-		// Asking for Amp by name adds the plugin even where Amp isn't found yet.
-		found["Amp"] = ampInstalled() || only["Amp"]
 	}
 	w.Flush()
 	if len(warnings) > 0 {
@@ -124,7 +122,12 @@ func runSetup(args []string) {
 		fmt.Println("\n  Codex needs no setup: teardrop reads its logs as they are.")
 	}
 	if want("Amp") {
-		checkAmpPlugin(*yes, *removeHooks, only["Amp"])
+		if !*removeHooks {
+			ampAppOnly()
+		}
+		// The plugin counts as Amp being set up, even before Amp is installed.
+		plugin := checkAmpPlugin(*yes, *removeHooks)
+		found["Amp"] = plugin || ampInstalled() || only["Amp"]
 	}
 	if _, err := exec.LookPath("git"); err != nil {
 		fmt.Println("\n  Note: git is not installed, so projects are grouped by folder instead of by repository.")

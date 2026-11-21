@@ -102,12 +102,14 @@ other hooks are kept. Rerunning `setup` after moving teardrop updates the
 path.
 
 For Amp, which keeps threads on its servers rather than in local files,
-`setup` (or `teardrop setup amp` for Amp alone, even before Amp is installed)
-offers to write a plugin to `~/.config/amp/plugins/teardrop.ts`. It
+`setup` (or `teardrop setup amp` for Amp alone) offers to write a plugin to `~/.config/amp/plugins/teardrop.ts`. It
 calls `teardrop hook amp` when a thread starts, when you send a prompt, and
 when Amp finishes, and records the same kind of line in the same journal.
-Threads that run in Amp's cloud orbs are not on your machine, so they are
-not tracked.
+Setup offers the plugin even before Amp is installed, so it is in place when
+Amp is. Threads that run in Amp's cloud orbs are not on your machine, so they
+are not tracked. That includes threads started in the Amp Mac app, unless they
+run on your Mac: turn on the runner in the app's App Settings, Runner, and
+pick "This Mac" when you start a thread.
 
 Run `teardrop setup -remove-hooks` before uninstalling to remove both, or
 `teardrop setup -remove-hooks amp` to remove only the plugin.

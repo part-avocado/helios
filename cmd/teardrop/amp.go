@@ -35,10 +35,49 @@ func renderAmpPlugin(exe string) []byte {
 // ampDir is Amp's config directory.
 func ampDir() string { return filepath.Dir(filepath.Dir(ampPluginPath())) }
 
-// ampInstalled reports whether Amp looks set up on this machine.
-func ampInstalled() bool {
-	_, err := exec.LookPath("amp")
-	return err == nil || exists(ampDir())
+// ampCLI reports whether the Amp CLI is on this machine. It is what runs
+// threads here and loads the plugin.
+func ampCLI() bool {
+	if _, err := exec.LookPath("amp"); err == nil {
+		return true
+	}
+	home, _ := os.UserHomeDir()
+	for _, name := range []string{"amp", "amp.exe"} { // where Amp's installer puts it
+		if _, err := os.Stat(filepath.Join(home, ".amp", "bin", name)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// ampApp returns where the Amp Mac app is installed, or "". The app is a
+// window onto Amp: its threads run in Amp's cloud unless the Mac is one of
+// the person's runners, which takes the CLI.
+func ampApp() string {
+	home, _ := os.UserHomeDir()
+	for _, dir := range []string{"/Applications", filepath.Join(home, "Applications")} {
+		if app := filepath.Join(dir, "Amp.app"); exists(app) {
+			return app
+		}
+	}
+	return ""
+}
+
+// ampInstalled reports whether Amp can run threads on this machine.
+func ampInstalled() bool { return ampCLI() || exists(ampDir()) }
+
+// ampAppOnly explains, when the Amp app is here without the CLI, why its
+// threads are not counted and how to change that.
+func ampAppOnly() {
+	app := ampApp()
+	if app == "" || ampCLI() {
+		return
+	}
+	fmt.Printf("\n  The Amp app is installed (%s), but no thread runs on this computer yet.\n", app)
+	fmt.Println("  The app's threads run in Amp's cloud, which teardrop can't see from here.")
+	fmt.Println("  To count your Amp time, run your threads on this Mac: in the app, open")
+	fmt.Println("  App Settings, Runner, and turn it on. That installs the Amp CLI, which")
+	fmt.Println("  loads teardrop's plugin. Then pick \"This Mac\" when you start a thread.")
 }
 
 // ampStatus describes Amp for setup's table. Amp keeps no local logs, so its
@@ -63,18 +102,24 @@ func ampStatus(journal []sources.Raw) string {
 		return "plugin added, no sessions yet"
 	case ampInstalled():
 		return "installed, plugin not added"
+	case ampApp() != "":
+		return "app only, threads run in the cloud"
 	}
 	return "not installed here"
 }
 
-// checkAmpPlugin installs, updates, or removes teardrop's Amp plugin. Unless
-// force is set, it does nothing on a machine without Amp.
-func checkAmpPlugin(yes, remove, force bool) {
+// checkAmpPlugin installs, updates, or removes teardrop's Amp plugin. It
+// offers the plugin on a machine without Amp too, so that it is in place when
+// Amp arrives. It reports whether the plugin is there afterwards.
+func checkAmpPlugin(yes, remove bool) bool {
+	changePlugin(yes, remove)
+	_, err := os.Stat(ampPluginPath())
+	return err == nil
+}
+
+func changePlugin(yes, remove bool) {
 	path := ampPluginPath()
 	found := ampInstalled()
-	if !found && !force {
-		return
-	}
 	old, err := os.ReadFile(path)
 	exists := err == nil
 	if exists && !bytes.HasPrefix(old, []byte(ampPluginMarker)) {
@@ -102,7 +147,7 @@ func checkAmpPlugin(yes, remove, force bool) {
 		return
 	}
 	if !exists {
-		if !found {
+		if !found && ampApp() == "" {
 			fmt.Println("\n  Amp was not found on this machine. The plugin can be added anyway, and")
 			fmt.Println("  Amp loads it once installed.")
 		}
@@ -145,7 +190,7 @@ func teardropPath() (string, error) {
 		exe = real
 	}
 	if strings.Contains(exe, "go-build") {
-		return "", errors.New("teardrop is running from `go run`; install it first so hooks point at a lasting path")
+		return "", errors.New("teardrop is running from `go run`; install it first")
 	}
 	return exe, nil
 }
