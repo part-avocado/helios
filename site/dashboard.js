@@ -76,7 +76,7 @@ function render() {
 	$('s-top').textContent = ranked[0]?.name || '-'
 	$('s-top-hint').textContent = ranked[0] ? dur(ranked[0].engaged) : ''
 	$('s-prompts').textContent = count(prompts)
-	$('s-prompts-hint').textContent = noise ? `${noise} skipped: gibberish, repeats, or autopilot` : 'none skipped'
+	$('s-prompts-hint').textContent = noise ? `${noise} skipped` : 'none skipped'
 	$('s-tokens').textContent = count(tin + tout)
 	$('s-tokens-hint').textContent = `${count(tin)} read, ${count(tout)} written`
 
