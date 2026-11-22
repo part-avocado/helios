@@ -2,6 +2,7 @@
 // ../site. This Worker adds accounts: sign-in with Hack Club Auth, each
 // person's synced reports in D1, and the API the pages and the CLI use.
 import { clearSession, finishSignIn, keyUser, rotateKey, sameOrigin, sessionUser, signOut, startSignIn, type User } from './auth.ts'
+import { holdEvents, MAX_EVENTS_BYTES, takeEvents } from './events.ts'
 import { json, jsonText, readText, redirect, Refusal } from './http.ts'
 import { computerReportJSON, computers, deleteUser, keptReportJSON, MAX_REPORT_BYTES, removeComputer, reportsJSON, storeReport } from './reports.ts'
 import { fullLog, people, person } from './review.ts'
@@ -64,6 +65,13 @@ async function route(request: Request, env: Env): Promise<Response> {
 		const id = await storeReport(env, user, await readText(request, MAX_REPORT_BYTES), 'sync')
 		return json({ account: id, url: `${url.origin}/dashboard` })
 	}
+	// Amp's cloud plugin sends events, and one of the person's computers takes them.
+	if (call === 'POST /api/v1/events') {
+		const user = await needKey(request, env, url)
+		const body = await readText(request, MAX_EVENTS_BYTES)
+		return json({ stored: await holdEvents(env, user, body) })
+	}
+	if (call === 'GET /api/v1/events') return json(await takeEvents(env, await needKey(request, env, url), url.searchParams))
 	if (call === 'POST /api/v1/submissions') {
 		await needKey(request, env, url)
 		if (!env.REVIEW_SERVER) throw new Refusal(501, 'This server does not take project submissions.')

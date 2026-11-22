@@ -590,6 +590,53 @@ test('every report is kept in full, refused ones too, until the account is delet
 	assert.deepEqual([await files(`${person.id}/`), (await files('')).length], [[], others])
 })
 
+test('events from Amp\'s cloud wait for one of the person\'s computers, which takes each once', async () => {
+	const { api_key: key } = await me(await signIn('cloudy'))
+	const { api_key: otherKey } = await me(await signIn('stranger'))
+	const now = Date.now()
+	// sim is larger than a JavaScript number holds exactly, and must come back as sent.
+	const line = (ago: number, event: string, more = '') => `{"t":"${new Date(now - ago).toISOString()}","tool":"amp","event":"${event}","session":"T-1"${more}}`
+	const prompt = line(60_000, 'agent.start', ',"human":true,"git":"github.com/kid/site","judged":6,"real":6,"sim":18446744073709551615')
+	const done = line(30_000, 'agent.end')
+	const send = async (body: string, as = key) => {
+		const res = await call('/api/v1/events', { method: 'POST', body, key: as })
+		return res.status === 200 ? ((await res.json()) as { stored: number }).stored : res.status
+	}
+	const take = async (computer: string, after = 0, as = key) => {
+		const res = await call(`/api/v1/events?computer=${computer}&after=${after}`, { key: as })
+		assert.equal(res.status, 200, await res.clone().text())
+		return (await res.json()) as { last: number; lines: string[] }
+	}
+	const laptop = 'td-aaaaaaaaaaaa'
+	const desktop = 'td-bbbbbbbbbbbb'
+
+	assert.equal(await send(prompt, ''), 401, 'no sync key')
+	const junk = ['not json', '{"tool":"claude-code","session":"T-1","t":"2026-01-01T00:00:00Z","event":"Stop"}', line(-3600_000, 'agent.end'), line(40 * DAY, 'agent.end'), ''].join('\n')
+	assert.deepEqual([await send([prompt, junk, done].join('\n')), await send(prompt + '\n')], [2, 0], 'only Amp events from a sensible time, each once')
+	assert.equal(await send(line(1000, 'agent.end', `,"cwd":"${'x'.repeat(600_000)}"`)), 413)
+
+	// No one else gets them, and the first of their computers to ask does.
+	assert.deepEqual((await take(laptop, 0, otherKey)).lines, [])
+	const first = await take(laptop)
+	assert.deepEqual(first.lines, [prompt, done])
+	// Asking again without saying they arrived hands them over again; the other computer gets none.
+	assert.deepEqual([(await take(laptop)).lines.length, (await take(desktop)).lines.length], [2, 0])
+	// Saying they arrived lets the server forget them, and later events follow.
+	assert.deepEqual(await take(laptop, first.last), { last: first.last, lines: [] })
+	const later = line(1000, 'agent.start', ',"human":true')
+	assert.equal(await send(later), 1)
+	assert.deepEqual((await take(desktop)).lines, [])
+	const next = await take(laptop, first.last)
+	assert.deepEqual([next.lines, next.last > first.last], [[later], true])
+	assert.equal((await call('/api/v1/events?computer=nonsense', { key })).status, 400)
+
+	// A computer that stopped asking a week ago gives way to another.
+	const env = await server.getWorker<{ DB: { prepare(sql: string): { run(): Promise<unknown> } } }>().getEnv()
+	await env.DB.prepare(`UPDATE users SET relay_pulled_at = ${now - 8 * DAY} WHERE relay_computer = '${laptop}'`).run()
+	assert.deepEqual((await take(desktop)).lines, [later])
+	assert.deepEqual((await take(laptop, next.last)).lines, [], 'and no longer gets them itself')
+})
+
 test('project submissions go on to the review server', async () => {
 	const { api_key: key } = await me(await signIn('submitter'))
 	const body = JSON.stringify({ signed: { v: 1 }, logs: ['x'.repeat(200_000)] })

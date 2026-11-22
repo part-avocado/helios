@@ -7,6 +7,7 @@
 //	teardrop setup amp   set up one tool only: claude, codex, or amp
 //	teardrop update   replace this teardrop with the latest release
 //	teardrop hook claude-code   record one Claude Code hook event (run by Claude Code)
+//	teardrop relay    send events recorded in Amp's cloud to your teardrop site (run by the Amp cloud plugin)
 package main
 
 import (
@@ -53,6 +54,9 @@ func main() {
 			return
 		case "update":
 			runUpdate(os.Args[2:])
+			return
+		case "relay":
+			runRelay(os.Args[2:])
 			return
 		case "submit":
 			runSubmit(os.Args[2:])

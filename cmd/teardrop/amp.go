@@ -75,9 +75,12 @@ func ampAppOnly() {
 	}
 	fmt.Printf("\n  The Amp app is installed (%s), but no thread runs on this computer yet.\n", app)
 	fmt.Println("  The app's threads run in Amp's cloud, which teardrop can't see from here.")
-	fmt.Println("  To count your Amp time, run your threads on this Mac: in the app, open")
-	fmt.Println("  App Settings, Runner, and turn it on. That installs the Amp CLI, which")
-	fmt.Println("  loads teardrop's plugin. Then pick \"This Mac\" when you start a thread.")
+	fmt.Println("  To count them, add teardrop's cloud plugin to Amp: your teardrop site has")
+	fmt.Println("  the steps under Settings, Setup, Amp. This computer then fetches that")
+	fmt.Println("  time each time it syncs.")
+	fmt.Println("  Or run your threads on this Mac: in the app, open App Settings, Runner,")
+	fmt.Println("  and turn it on. That installs the Amp CLI, which loads teardrop's plugin.")
+	fmt.Println("  Then pick \"This Mac\" when you start a thread.")
 }
 
 // ampStatus describes Amp for setup's table. Amp keeps no local logs, so its

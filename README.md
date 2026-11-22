@@ -83,6 +83,7 @@ Prompts that don't reflect real work aren't counted; they're listed as
 | Claude Code | `$CLAUDE_CONFIG_DIR` (comma-separated), `~/.claude`, `~/.config/claude` |
 | Codex CLI and IDE extension | `$CODEX_HOME`, `~/.codex` (`sessions` and `archived_sessions`, including `.jsonl.zst`) |
 | Amp CLI and editor extensions | the journal, written by the teardrop Amp plugin (below) |
+| Amp cloud threads (the Amp app, ampcode.com) | your teardrop site, sent by the teardrop cloud plugin (below) |
 
 Override them with `-claude-dir` and `-codex-dir`.
 
@@ -106,10 +107,22 @@ For Amp, which keeps threads on its servers rather than in local files,
 calls `teardrop hook amp` when a thread starts, when you send a prompt, and
 when Amp finishes, and records the same kind of line in the same journal.
 Setup offers the plugin even before Amp is installed, so it is in place when
-Amp is. Threads that run in Amp's cloud orbs are not on your machine, so they
-are not tracked. That includes threads started in the Amp Mac app, unless they
-run on your Mac: turn on the runner in the app's App Settings, Runner, and
-pick "This Mac" when you start a thread.
+Amp is.
+
+Threads you start in the Amp app or on ampcode.com run in Amp's cloud, not on
+your machine, so that plugin can't see them. A second plugin,
+[`amp/teardrop-cloud.ts`](amp/teardrop-cloud.ts), counts them. Your teardrop
+site has a prompt for it under Settings, Setup, Amp: paste it into any Amp
+thread, and Amp adds the plugin to your personal plugins and sets two values
+in its Secrets & Env Vars settings, `TEARDROP_SERVER` (your site) and
+`TEARDROP_KEY` (your sync key, which Amp asks you for privately). In a cloud
+thread the plugin downloads teardrop, checks its checksum, and runs
+`teardrop hook amp -relay`, which sends your site the same line the journal
+holds, without the prompt text. The site only holds these lines. One of your
+computers takes them into its journal at its next `teardrop sync` and counts
+them with everything else, so that computer needs teardrop v0.5.2 or later.
+The Mac app's threads can instead run on your Mac: turn on the runner in the
+app's App Settings, Runner, and pick "This Mac" when you start a thread.
 
 Run `teardrop setup -remove-hooks` before uninstalling to remove both, or
 `teardrop setup -remove-hooks amp` to remove only the plugin.
@@ -274,7 +287,9 @@ prints, and change `TEARDROP_PUBLIC_URL` and the redirect URI to match.
 
 teardrop reads timestamps, token counts, line counts, and working
 directories. Prompt text is scored in memory and dropped; it is never stored
-or printed, and `sync` never uploads it. Your chat logs leave your machine
+or printed, and `sync` never uploads it. In Amp's cloud, the cloud plugin
+sends your site each prompt's time, thread, folder, repository, and word
+counts, without its text. Your chat logs leave your machine
 only when you run `teardrop submit` and confirm.
 
 ## License

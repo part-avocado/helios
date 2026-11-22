@@ -48,6 +48,17 @@ function renderSetup(el, key) {
 		'',
 		'Do not repeat the sync key in your replies. If you are Amp, tell me to run "plugins: reload" in my open threads.',
 	].join('\n')
+	// What to paste into Amp so its cloud threads count. The sync key is left
+	// out: Amp asks for a secret's value in a private dialog.
+	const cloudPrompt = [
+		'Count my Amp cloud threads with teardrop.',
+		'',
+		'1. Save https://raw.githubusercontent.com/part-avocado/teardrop/main/amp/teardrop-cloud.ts as teardrop-cloud.ts in my personal Amp plugins, and push it.',
+		`2. Add a personal environment variable named TEARDROP_SERVER with the value ${location.origin}`,
+		'3. Add a personal secret named TEARDROP_KEY. Ask me for its value; I will paste it myself.',
+		'',
+		'Tell me when it is done.',
+	].join('\n')
 	el.innerHTML = `<ol class="steps">
 		<li><div>
 			<h3>Install teardrop</h3>
@@ -80,7 +91,12 @@ function renderSetup(el, key) {
 				</div>
 				<div class="tab-panel" data-tab="claude"><p>Setup adds hooks to Claude Code's settings, so each prompt is recorded as you send it. Your past sessions are read from its logs, so they count too. Nothing else to do.</p></div>
 				<div class="tab-panel" data-tab="codex"><p>teardrop reads Codex's session logs, so there is nothing to install. Use Codex as usual; your sessions show up after the next sync.</p></div>
-				<div class="tab-panel" data-tab="amp"><p>Amp keeps threads on its own servers, so setup writes a small plugin to <code>~/.config/amp/plugins/teardrop.ts</code>. It records when you send a prompt and when Amp finishes, never the prompt text. To add only the plugin:</p>${cmd('teardrop setup amp')}<p>New Amp threads load the plugin on their own. In a thread that is already open, run <b>plugins: reload</b> from the command palette.</p></div>
+				<div class="tab-panel" data-tab="amp"><p>Amp keeps threads on its own servers, so setup writes a small plugin to <code>~/.config/amp/plugins/teardrop.ts</code>. It records when you send a prompt and when Amp finishes, never the prompt text. To add only the plugin:</p>${cmd('teardrop setup amp')}<p>New Amp threads load the plugin on their own. In a thread that is already open, run <b>plugins: reload</b> from the command palette.</p>
+					<h4>Threads in Amp's cloud</h4>
+					<p>Threads you start in the Amp app or on ampcode.com run on Amp's machines, where that plugin can't reach. To count them too, paste this into any Amp thread:</p>
+					<div class="prompt"><code>${esc(cloudPrompt)}</code><button class="copy" type="button">Copy</button></div>
+					<p>When Amp asks for the secret, paste your sync key:</p>${cmd(key, 'plain')}
+					<p>Cloud time reaches your dashboard when this computer next syncs, so keep teardrop installed here.</p></div>
 			</div>
 		</div></li>
 		<li><div>

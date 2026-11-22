@@ -286,7 +286,12 @@ export async function computers(env: Env, userID: number): Promise<Computer[]> {
  */
 export async function removeComputer(env: Env, userID: number, id: string): Promise<boolean> {
 	// Deleting the computer deletes its report pieces with it (ON DELETE CASCADE).
-	const results = await env.DB.batch([...logRemoval(env, userID, id), env.DB.prepare('DELETE FROM computers WHERE id = ? AND user_id = ?').bind(id, userID)])
+	const results = await env.DB.batch([
+		...logRemoval(env, userID, id),
+		// Their cloud events go to whichever computer asks next.
+		env.DB.prepare(`UPDATE users SET relay_computer = '' WHERE id = ? AND relay_computer = ?`).bind(userID, id),
+		env.DB.prepare('DELETE FROM computers WHERE id = ? AND user_id = ?').bind(id, userID),
+	])
 	await forgetDropped(env, results)
 	return results.at(-1)!.meta.changes > 0
 }
@@ -304,8 +309,10 @@ export async function deleteUser(env: Env, userID: number): Promise<void> {
 		env.DB.prepare(`UPDATE account_log SET report_key = NULL, detail = json_remove(detail, '$.projects', '$.more_projects') WHERE user_id = ?`).bind(userID),
 		// The report pieces go with the computers (ON DELETE CASCADE).
 		env.DB.prepare('DELETE FROM computers WHERE user_id = ?').bind(userID),
+		// Cloud events that no computer took yet go too.
+		env.DB.prepare('DELETE FROM relayed_events WHERE user_id = ?').bind(userID),
 		// The new sync key is one no one has seen, so the old one stops working.
-		env.DB.prepare(`UPDATE users SET name = '', api_key = ?, deleted_at = ? WHERE id = ?`).bind(newKey(), Date.now(), userID),
+		env.DB.prepare(`UPDATE users SET name = '', relay_computer = '', api_key = ?, deleted_at = ? WHERE id = ?`).bind(newKey(), Date.now(), userID),
 	])
 	// Everything kept for this person, including what no log row names any more.
 	let cursor: string | undefined

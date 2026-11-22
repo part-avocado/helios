@@ -21,6 +21,7 @@ type JournalEvent struct {
 	Human   bool      `json:"human,omitempty"` // a prompt the person submitted
 	Session string    `json:"session"`
 	Cwd     string    `json:"cwd,omitempty"`
+	Git     string    `json:"git,omitempty"`    // the folder's repository, when the event was recorded on another machine
 	Judged  int       `json:"judged,omitempty"` // text score of a human prompt
 	Real    int       `json:"real,omitempty"`
 	Sim     uint64    `json:"sim,omitempty"` // prompt fingerprint, for finding repeats
@@ -100,6 +101,7 @@ func JournalLines(dir, tool, session string) []byte {
 type journal struct {
 	byKey map[string]*Raw
 	order []string
+	seen  map[string]bool // events read so far, since one taken from the site twice is written twice
 }
 
 func (j *journal) read(f io.Reader, path string) error {
@@ -109,6 +111,14 @@ func (j *journal) read(f io.Reader, path string) error {
 			return
 		}
 		key := ev.Tool + "\x00" + ev.Session
+		once := key + "\x00" + ev.Event + "\x00" + ev.Time.UTC().Format(time.RFC3339Nano)
+		if j.seen[once] {
+			return
+		}
+		if j.seen == nil {
+			j.seen = map[string]bool{}
+		}
+		j.seen[once] = true
 		r := j.byKey[key]
 		if r == nil {
 			r = &Raw{Tool: ev.Tool, ID: ev.Session, Path: path + "#" + ev.Session}
@@ -117,6 +127,9 @@ func (j *journal) read(f io.Reader, path string) error {
 		}
 		if r.Cwd == "" {
 			r.Cwd = ev.Cwd
+		}
+		if r.GitURL == "" {
+			r.GitURL = ev.Git
 		}
 		e := timeline.Event{Time: ev.Time, Kind: timeline.Agent}
 		if !ev.Human {

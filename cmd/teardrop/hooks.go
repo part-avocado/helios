@@ -33,17 +33,22 @@ var humanEvents = map[string]string{
 // runHook records one hook event from stdin. It must never get in the tool's
 // way: it prints nothing to stdout (on Claude Code's UserPromptSubmit that
 // would reach the model), always exits 0, and keeps no prompt text.
+//
+// With -relay after the tool, the event goes to the person's teardrop site
+// instead of this machine's journal. Amp's cloud plugin uses it.
 func runHook(args []string) {
 	defer func() { recover() }()
 	if len(args) == 0 || humanEvents[args[0]] == "" {
 		return
 	}
 	tool := args[0]
+	relay := len(args) > 1 && args[1] == "-relay"
 	var in struct {
 		SessionID string `json:"session_id"`
 		Cwd       string `json:"cwd"`
 		Event     string `json:"hook_event_name"`
 		Prompt    string `json:"prompt"`
+		Time      string `json:"time"` // when it happened, if the plugin hands it over late
 	}
 	b, _ := io.ReadAll(io.LimitReader(os.Stdin, 32<<20))
 	if json.Unmarshal(b, &in) != nil || in.SessionID == "" || in.Event == "" {
@@ -56,6 +61,19 @@ func runHook(args []string) {
 	if ev.Human {
 		s := textscore.Analyze(in.Prompt)
 		ev.Judged, ev.Real, ev.Sim, ev.Low = s.Judged, s.Real, uint64(s.Sim), s.Low
+	}
+	if relay {
+		ev.Time = happenedAt(ev.Time, in.Time)
+		// The computer that counts this event can't look the folder up, so
+		// the repository goes with it, without any sign-in the remote holds.
+		if remote := gitOut(in.Cwd, "config", "--get", "remote.origin.url"); remote != "" {
+			ev.Git = normalizeRemote(remote)
+		}
+		if err := queueRelay(ev); err != nil {
+			fmt.Fprintln(os.Stderr, "teardrop hook:", err)
+		}
+		relaySoon()
+		return
 	}
 	if err := sources.AppendJournal(dataDir(), ev); err != nil {
 		fmt.Fprintln(os.Stderr, "teardrop hook:", err)

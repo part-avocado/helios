@@ -62,7 +62,8 @@ export function randomToken(bytes: number): string {
  * one without holding all of it in memory.
  */
 export async function readText(request: Request, max: number): Promise<string> {
-	const tooLarge = new Refusal(413, `That is larger than the ${max >> 20} MB this server accepts.`)
+	const limit = max >= 1 << 20 ? `${max >> 20} MB` : `${max >> 10} KB`
+	const tooLarge = new Refusal(413, `That is larger than the ${limit} this server accepts.`)
 	if (Number(request.headers.get('Content-Length') ?? 0) > max) throw tooLarge
 	if (!request.body) return ''
 	const decoder = new TextDecoder()

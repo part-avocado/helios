@@ -202,6 +202,7 @@ p.panel.small-left { padding: 14px 20px; }
 .cmd code { flex: 1; min-width: 0; white-space: nowrap; overflow-x: auto; scrollbar-width: none; font-size: 13px; background: none; border: 0; padding: 0; }
 .cmd code::before { content: "$ "; color: var(--faint); }
 .cmd.ps code::before { content: "PS> "; }
+.cmd.plain code::before { content: none; }
 .copy { flex: none; height: 30px; padding: 0 13px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); font: 500 13px var(--sans); color: var(--text); cursor: pointer; }
 .copy:hover { border-color: #cfccc4; }
 .tools .tab-panel { padding: 14px 18px 16px; font-size: 14px; color: var(--muted); }
@@ -209,6 +210,9 @@ p.panel.small-left { padding: 14px 20px; }
 .tools .tab-panel p:last-child { margin: 12px 0 0; }
 .tools .tab-panel .cmd { padding: 8px 8px 8px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
 .tools .tab-panel .cmd + p { margin-top: 12px; }
+.tools .tab-panel h4 { margin: 20px 0 8px; padding-top: 16px; border-top: 1px solid var(--line); font: 600 14px var(--sans); color: var(--text); }
+.tools .tab-panel .prompt { margin: 0 0 12px; }
+.tools .tab-panel .prompt code { max-height: 300px; }
 .prompt { position: relative; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); padding: 14px 16px; }
 .prompt code { display: block; max-height: 220px; overflow: auto; padding: 0; border: 0; background: none; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12.5px; line-height: 1.6; color: var(--text); padding-right: 74px; }
 .prompt .copy { position: absolute; top: 10px; right: 10px; }
