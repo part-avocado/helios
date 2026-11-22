@@ -5,7 +5,7 @@
 import type { User } from './auth.ts'
 
 /** The computer a batch comes from, as the client names it in a header; '' for one that doesn't. */
-const computerOf = (request: Request) => /^td-[0-9a-f]{12}$|^cloud$/.exec(request.headers.get('X-Teardrop-Computer') ?? '')?.[0] ?? ''
+const computerOf = (request: Request) => /^td-[0-9a-f]{12}$|^cloud$/.exec(request.headers.get('X-Teardrop-Computer') ?? '')?.[0] ?? 'cloud'
 
 /**
  * relayRecords hands a batch of records to the account's hub and returns how

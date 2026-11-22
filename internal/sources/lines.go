@@ -27,6 +27,12 @@ func LineHash(line string) (uint64, bool) {
 	return h.Sum64(), true
 }
 
+// CountLines counts the lines an edit from old to new adds and removes.
+func CountLines(old, new string) (added, removed int) {
+	e := diffLines(old, new)
+	return e.Added, e.Removed
+}
+
 // diffLines counts the lines of new that old lacks and of old that new lacks,
 // each line matched once. Blank lines are not counted.
 func diffLines(old, new string) Edit {

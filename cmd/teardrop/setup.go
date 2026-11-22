@@ -20,13 +20,6 @@ import (
 // Code deletes them after 30 days by default, which would erase history.
 const keepDays = 3650
 
-// setupNames maps the names `teardrop setup` accepts to the tool they mean.
-var setupNames = map[string]string{
-	"claude": "Claude Code", "claude-code": "Claude Code", "claudecode": "Claude Code",
-	"codex": "Codex",
-	"amp":   "Amp", "ampcode": "Amp",
-}
-
 // parseSetupArgs parses flags and tool names in any order, so both
 // `setup -yes amp` and `setup amp -yes` work. It returns the tools named;
 // none means every tool.
@@ -41,7 +34,7 @@ func parseSetupArgs(fs *flag.FlagSet, args []string) (map[string]bool, error) {
 		}
 		tool, ok := setupNames[strings.ToLower(fs.Arg(0))]
 		if !ok {
-			return nil, fmt.Errorf("unknown tool %q; use claude, codex, or amp", fs.Arg(0))
+			return nil, fmt.Errorf("unknown tool %q; use claude, codex, amp, copilot, or cursor", fs.Arg(0))
 		}
 		only[tool] = true
 		args = fs.Args()[1:]
@@ -58,7 +51,7 @@ func runSetup(args []string) {
 	claudeDir := fs.String("claude-dir", "", "Claude Code config directories, comma-separated")
 	codexDir := fs.String("codex-dir", "", "Codex home directories, comma-separated")
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "Usage: teardrop setup [flags] [claude] [codex] [amp]")
+		fmt.Fprintln(os.Stderr, "Usage: teardrop setup [flags] [claude] [codex] [amp] [copilot] [cursor]")
 		fmt.Fprintln(os.Stderr, "       Sets up every tool it finds, or only the ones you name.")
 		fmt.Fprintln(os.Stderr)
 		fs.PrintDefaults()
@@ -118,9 +111,10 @@ func runSetup(args []string) {
 			checkHooks(f.Dir, *yes, *removeHooks)
 		}
 	}
-	if only["Codex"] && found["Codex"] && !*removeHooks {
-		fmt.Println("\n  Codex needs no setup: teardrop reads its logs as they are.")
+	if want("Codex") {
+		checkCodex(*yes, *removeHooks)
 	}
+	checkFileHooks(want, *yes, *removeHooks)
 	if want("Amp") {
 		if !*removeHooks {
 			ampAppOnly()

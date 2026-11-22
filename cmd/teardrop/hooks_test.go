@@ -111,7 +111,7 @@ func TestParseSetupArgs(t *testing.T) {
 	if only, _, _, err := parse("-yes"); err != nil || len(only) != 0 {
 		t.Errorf("no tool named should mean every tool, got %v, %v", only, err)
 	}
-	if _, _, _, err := parse("cursor"); err == nil {
+	if _, _, _, err := parse("notepad"); err == nil {
 		t.Error("an unknown tool was accepted instead of refused")
 	}
 }

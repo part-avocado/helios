@@ -61,7 +61,8 @@
 	<a href="#codex">Codex</a>
 	<a href="#amp">Amp</a>
 	<a href="#amp-cloud">Amp cloud threads</a>
-	<a href="#other-tools">Other tools</a>
+	<a href="#copilot-cursor">Copilot and Cursor</a>
+	<a href="#own-harness">Add your own harness</a>
 	<div class="group">Reference</div>
 	<a href="#commands">Commands and flags</a>
 	<a href="#files">Files and folders</a>
@@ -173,7 +174,8 @@
 	<p>With hooks installed, Claude Code runs <code>teardrop hook claude-code</code> when a session starts or ends, when you send a prompt, and when Claude finishes. Each run appends one line to a local journal: the time, session, folder, and the prompt's word counts and fingerprint, never its text. If Claude Code deletes a transcript, the journal still has that session.</p>
 
 	<h2 id="codex">Codex</h2>
-	<p>teardrop reads rollouts from <code>$CODEX_HOME</code> or <code>~/.codex</code>, in both <code>sessions</code> and <code>archived_sessions</code>, including compressed <code>.jsonl.zst</code> files. It handles both the older and the current (0.147 and later) log formats. Subagent and reviewer sessions never count as your prompts. No hooks are needed.</p>
+	<p>teardrop reads rollouts from <code>$CODEX_HOME</code> or <code>~/.codex</code>, in both <code>sessions</code> and <code>archived_sessions</code>, including compressed <code>.jsonl.zst</code> files. It handles both the older and the current (0.147 and later) log formats. Subagent and reviewer sessions never count as your prompts.</p>
+	<p><code>teardrop setup</code> also adds hooks to <code>~/.codex/hooks.json</code>, so each prompt and turn end reaches your site as it happens, and a <code>notify</code> line to <code>~/.codex/config.toml</code>, which syncs when a turn ends. Codex skips new hooks until you trust them: open Codex, run <code>/hooks</code>, and trust teardrop's. The <code>notify</code> line needs no trust step, so Codex syncs on its own either way. If your <code>config.toml</code> already has a <code>notify</code> program, teardrop leaves it alone.</p>
 
 	<h2 id="amp">Amp</h2>
 	<p>Amp keeps threads on its servers, so <code>teardrop setup</code> (or <code>teardrop setup amp</code> for Amp alone) offers to write a plugin to <code>~/.config/amp/plugins/teardrop.ts</code>. It records when a thread starts, when you send a prompt, and when Amp finishes, in the same journal as the Claude Code hooks. New Amp threads load it automatically; in open ones, run <code>plugins: reload</code>.</p>
@@ -190,8 +192,22 @@
 	<h3 id="agent-prompt">Set up with a prompt</h3>
 	<p>The dashboard's setup steps include a prompt to paste into Amp or Claude Code, with your server and sync key already filled in. The agent installs teardrop, runs <code>teardrop setup -yes</code> to add the hooks and the plugin without stopping to ask, connects the computer, and shows you the result. <code>-yes</code> is the part an agent can't do on its own, since setup otherwise asks before changing any settings. Because the prompt holds your sync key, make a new key under Settings, Setup if you'd rather not leave it in that thread.</p>
 
-	<h2 id="other-tools">Other tools</h2>
-	<p>A VS Code extension (for Copilot, Cursor, and hand-written code) is planned. Follow progress on <a href="https://github.com/part-avocado/teardrop">GitHub</a>.</p>
+	<h2 id="copilot-cursor">Copilot and Cursor</h2>
+	<p><code>teardrop setup</code> writes <code>~/.copilot/hooks/teardrop.json</code> for GitHub Copilot CLI and VS Code's Copilot agent, and adds teardrop's hooks to <code>~/.cursor/hooks.json</code> for Cursor, keeping any hooks of your own. Restart Cursor to load them. Neither keeps transcripts teardrop can read, so their time comes from the hooks alone, and only reaches your site when one is set up with <code>teardrop sync</code>.</p>
+
+	<h2 id="own-harness">Add your own harness</h2>
+	<p>Any tool can report to teardrop. Run <code>teardrop hook &lt;tool&gt;</code>, where the tool name is lowercase letters, digits, and dashes, with one JSON object on stdin:</p>
+	<pre><code>{"session_id": "abc123", "cwd": "/home/me/project", "hook_event_name": "prompt", "prompt": "add a login page"}</code></pre>
+	<table>
+		<tr><th>Field</th><th>Meaning</th></tr>
+		<tr><td><code>session_id</code></td><td>Required. One conversation or thread.</td></tr>
+		<tr><td><code>hook_event_name</code></td><td>Required, or pass <code>-event</code>: <code>prompt</code>, <code>turn_end</code>, <code>session_start</code>, <code>session_end</code>, or <code>edit</code>.</td></tr>
+		<tr><td><code>cwd</code></td><td>The folder, which names the project by its git remote. Only the project key leaves the computer.</td></tr>
+		<tr><td><code>prompt</code></td><td>For <code>prompt</code>: scored for effort and repeats on the computer, then thrown away. Its text is never stored or sent.</td></tr>
+		<tr><td><code>tokens_in</code>, <code>tokens_out</code>, <code>lines_added</code>, <code>lines_removed</code></td><td>Optional, on <code>turn_end</code> or <code>edit</code>.</td></tr>
+	</table>
+	<p>teardrop always exits 0 and prints nothing, so it never gets in the tool's way. It writes the event to the local journal, and, once the computer is connected, sends it to your site as it happens. Your site credits only time whose records reached it within 5 minutes of when they happened. <code>teardrop hook -check &lt;tool&gt;</code> prints the record a payload would make and writes nothing, for testing an adapter.</p>
+	<p>For a tool with a hooks file in Claude Code's shape, point its prompt and stop hooks at <code>teardrop hook mytool</code>. For a tool with plugins, run the same command from the plugin, as teardrop's own Amp plugin does with <code>teardrop hook amp</code>.</p>
 
 	<h2 id="lines">Lines of code</h2>
 	<p>For each project the report shows the lines agents changed (<strong>AGENT LINES</strong>), how many of the added lines later turned up in your commits (<strong>KEPT</strong>), and the lines your own commits added (<strong>COMMITTED</strong>). The code itself is not kept.</p>
@@ -235,7 +251,7 @@
 	<h2 id="server">Sync and submit</h2>
 	<p><code>teardrop sync</code> uploads your signed counts to your account: time blocks, prompt and skipped-prompt counts, tokens, and line counts. It never uploads text. The first time, copy the command from <a href="settings.html">Settings</a> on the website. It looks like this:</p>
 	<pre><code>teardrop sync -server https://your-site -key tdk_…</code></pre>
-	<p>teardrop remembers the server and the key, so later it's just <code>teardrop sync</code>, and hooks sync in the background when a reply finishes or you stop one. Amp reports a stopped reply at once; Claude Code runs no hook then, so that sync happens at your next prompt or when the session closes. Codex has no hook, so its time goes up with the next of those syncs. The key can only upload stats. If the server answers that it needs your sync key, run the command from Settings again.</p>
+	<p>teardrop remembers the server and the key, so later it's just <code>teardrop sync</code>, and hooks sync in the background when a reply finishes or you stop one. Amp reports a stopped reply at once; Claude Code runs no hook then, so that sync happens at your next prompt or when the session closes. Codex syncs through its <code>notify</code> program when a turn ends. The key can only upload stats. If the server answers that it needs your sync key, run the command from Settings again.</p>
 	<p><code>teardrop submit &lt;project&gt;</code> sends a project's hours for review together with the full chat logs behind them: your prompts, the agent's replies, and its code changes. It asks before uploading; <code>-o file</code> writes the submission so you can read it first. The server refuses a submission whose logs were changed after signing, or that claims a block no log backs, and recomputes the hours from the logs itself. You can submit a project again as it grows; time an earlier submission already covered is credited once.</p>
 	<p>Your stats on the website are visible to you and to reviewers, apart from what your <a href="#profile">public profile</a> shows: a reviewer sees, for each project, your total and a timeline of your work blocks (when each started and ended, with its prompts, tokens, and lines changed), and neoadmins and superadmins see everything you synced. Deleting your account, under Settings, removes them; admins keep your Slack ID and a record of what your computers reported, without project names. Submissions and their chats are visible only to admins, who review them at <code>/admin</code> on the review server. To host either, see <a href="#run-server">Running a server</a>.</p>
 

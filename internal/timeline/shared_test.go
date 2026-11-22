@@ -15,9 +15,9 @@ func TestSharedCases(t *testing.T) {
 		t.Fatal(err)
 	}
 	var cases []struct {
-		Name    string           `json:"name"`
+		Name    string   `json:"name"`
 		Events  [][2]any `json:"events"`
-		Engaged int64            `json:"engaged"`
+		Engaged int64    `json:"engaged"`
 	}
 	if err := json.Unmarshal(b, &cases); err != nil {
 		t.Fatal(err)

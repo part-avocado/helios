@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -22,8 +23,10 @@ import (
 // and a thread that finishes a turn counts them all (cloud.go).
 
 const (
-	// relayOutbox holds events that are waiting to go to the site.
+	// relayOutbox holds cloud events that are waiting to go to the site.
 	relayOutbox = "relay-outbox.jsonl"
+	// localOutbox holds this computer's hook records that are waiting to go to the site.
+	localOutbox = "local-outbox.jsonl"
 	// The outbox stops growing here, such as in an orb without a sync key.
 	maxOutboxBytes = 4 << 20
 	// One upload holds at most this much, which the site accepts.
@@ -41,12 +44,12 @@ func happenedAt(now time.Time, given string) time.Time {
 	return now
 }
 
-// queueRelay adds ev to the outbox with one append, so parallel hooks don't interleave.
-func queueRelay(ev sources.JournalEvent) error {
+// queueRelay adds ev to an outbox with one append, so parallel hooks don't interleave.
+func queueRelay(outbox string, ev sources.JournalEvent) error {
 	if err := os.MkdirAll(dataDir(), 0o700); err != nil {
 		return err
 	}
-	path := filepath.Join(dataDir(), relayOutbox)
+	path := filepath.Join(dataDir(), outbox)
 	if st, err := os.Stat(path); err == nil && st.Size() > maxOutboxBytes {
 		return nil
 	}
@@ -104,8 +107,25 @@ func runRelay(args []string) {
 			return false, fmt.Errorf("no sync key set; put yours in $TEARDROP_KEY")
 		}
 		client := &http.Client{Timeout: time.Minute}
-		err = sendOutbox(dataDir(), func(lines []byte) (int, error) {
-			return relayRequest(client, "POST", server+"/api/v1/events", key, lines, nil)
+		// Records from this computer's hooks say which computer they come
+		// from, and its clock's UTC offset, which decides their days.
+		_, offset := time.Now().Zone()
+		header := http.Header{"X-Teardrop-Utc-Offset": {fmt.Sprint(offset / 60)}}
+		if hasFile(localOutbox) {
+			priv, err := accountKey()
+			if err != nil {
+				return false, err
+			}
+			header.Set("X-Teardrop-Computer", accountID(priv.Public().(ed25519.PublicKey)))
+			if err := sendOutbox(dataDir(), localOutbox, func(lines []byte) (int, error) {
+				return relayRequestWith(client, "POST", server+"/api/v1/events", key, lines, nil, header)
+			}); err != nil {
+				return false, err
+			}
+		}
+		header.Set("X-Teardrop-Computer", "cloud")
+		err = sendOutbox(dataDir(), relayOutbox, func(lines []byte) (int, error) {
+			return relayRequestWith(client, "POST", server+"/api/v1/events", key, lines, nil, header)
 		})
 		if err != nil || !*count {
 			return false, err
@@ -121,13 +141,20 @@ func runRelay(args []string) {
 	}
 }
 
-// sendOutbox uploads the events waiting in dir, in batches, through send,
-// which returns the site's HTTP status. Events it could not upload stay for
-// the next run; the site drops any it is sent twice.
-func sendOutbox(dir string, send func(lines []byte) (int, error)) error {
+// hasFile reports whether dataDir holds an outbox, or one being sent.
+func hasFile(outbox string) bool {
+	files, _ := filepath.Glob(filepath.Join(dataDir(), strings.TrimSuffix(outbox, "-outbox.jsonl")+"-*.jsonl"))
+	return len(files) > 0
+}
+
+// sendOutbox uploads the events waiting in one outbox in dir, in batches,
+// through send, which returns the site's HTTP status. Events it could not
+// upload stay for the next run; the site drops any it is sent twice.
+func sendOutbox(dir, outbox string, send func(lines []byte) (int, error)) error {
 	// Take what is waiting, so events that arrive meanwhile start a new file.
-	os.Rename(filepath.Join(dir, relayOutbox), filepath.Join(dir, fmt.Sprintf("relay-sending-%d.jsonl", time.Now().UnixNano())))
-	files, _ := filepath.Glob(filepath.Join(dir, "relay-sending-*.jsonl"))
+	sending := strings.TrimSuffix(outbox, "-outbox.jsonl") + "-sending-"
+	os.Rename(filepath.Join(dir, outbox), filepath.Join(dir, fmt.Sprintf("%s%d.jsonl", sending, time.Now().UnixNano())))
+	files, _ := filepath.Glob(filepath.Join(dir, sending+"*.jsonl"))
 	for _, path := range files {
 		b, err := os.ReadFile(path)
 		if err != nil {
@@ -156,9 +183,17 @@ func sendOutbox(dir string, send func(lines []byte) (int, error)) error {
 // relayRequest calls the site's events API with the sync key. It decodes a
 // JSON answer into out, when given one, and returns the HTTP status.
 func relayRequest(client *http.Client, method, address, key string, body []byte, out any) (int, error) {
+	return relayRequestWith(client, method, address, key, body, out, nil)
+}
+
+// relayRequestWith is relayRequest with more request headers.
+func relayRequestWith(client *http.Client, method, address, key string, body []byte, out any, header http.Header) (int, error) {
 	req, err := http.NewRequest(method, address, bytes.NewReader(body))
 	if err != nil {
 		return 0, err
+	}
+	for k, v := range header {
+		req.Header[k] = v
 	}
 	req.Header.Set("Authorization", "Bearer "+key)
 	res, err := client.Do(req)

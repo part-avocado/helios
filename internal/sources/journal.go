@@ -25,10 +25,12 @@ type JournalEvent struct {
 	Git     string    `json:"git,omitempty"`    // the folder's repository, when the event was recorded on another machine
 	Judged  int       `json:"judged,omitempty"` // text score of a human prompt
 	Real    int       `json:"real,omitempty"`
-	Sim     uint64    `json:"sim,omitempty"` // prompt fingerprint, for finding repeats
-	Low     bool      `json:"low,omitempty"` // prompt only steers ("continue", "fix it")
-	In      int64     `json:"in,omitempty"`  // tokens the model read in the turn this event ends, cached ones included
-	Out     int64     `json:"out,omitempty"` // tokens the model wrote in it
+	Sim     uint64    `json:"sim,omitempty"`     // prompt fingerprint, for finding repeats
+	Low     bool      `json:"low,omitempty"`     // prompt only steers ("continue", "fix it")
+	In      int64     `json:"in,omitempty"`      // tokens the model read in the turn this event ends, cached ones included
+	Out     int64     `json:"out,omitempty"`     // tokens the model wrote in it
+	Added   int       `json:"added,omitempty"`   // lines the agent added, from harnesses that report them
+	Removed int       `json:"removed,omitempty"` // and removed
 }
 
 // AppendJournal adds ev to the month's journal file in dir. Each event is

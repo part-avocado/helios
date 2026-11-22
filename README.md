@@ -84,6 +84,9 @@ Prompts that don't reflect real work aren't counted; they're listed as
 | Codex CLI and IDE extension | `$CODEX_HOME`, `~/.codex` (`sessions` and `archived_sessions`, including `.jsonl.zst`) |
 | Amp CLI and editor extensions | the journal, written by the teardrop Amp plugin (below) |
 | Amp cloud threads (the Amp app, ampcode.com) | your teardrop site, sent by the teardrop cloud plugin (below) |
+| GitHub Copilot CLI and VS Code agent | the journal, written by hooks in `~/.copilot/hooks/teardrop.json` |
+| Cursor | the journal, written by hooks in `~/.cursor/hooks.json` |
+| Any other harness | the journal, written by `teardrop hook <tool>` (see "Add your own harness" in the docs) |
 
 Override them with `-claude-dir` and `-codex-dir`.
 

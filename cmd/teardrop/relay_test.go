@@ -18,7 +18,7 @@ func TestSendOutbox(t *testing.T) {
 		t.Helper()
 		for i := 0; i < n; i++ {
 			ev := sources.JournalEvent{Time: at.Add(time.Duration(i) * time.Second), Tool: "amp", Event: "agent.start", Human: true, Session: "T-1", Cwd: strings.Repeat("d", 300)}
-			if err := queueRelay(ev); err != nil {
+			if err := queueRelay(relayOutbox, ev); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -34,12 +34,12 @@ func TestSendOutbox(t *testing.T) {
 
 	// What a site that is down didn't take goes out again on the next run.
 	queue(2)
-	if err := sendOutbox(dir, answer(503, down)); err == nil {
+	if err := sendOutbox(dir, relayOutbox, answer(503, down)); err == nil {
 		t.Fatal("a failed upload was reported as sent")
 	}
 	queue(1)
 	sent = nil
-	if err := sendOutbox(dir, answer(200, nil)); err != nil {
+	if err := sendOutbox(dir, relayOutbox, answer(200, nil)); err != nil {
 		t.Fatal(err)
 	}
 	if n := bytes.Count(bytes.Join(sent, nil), []byte("\n")); n != 3 {
@@ -49,7 +49,7 @@ func TestSendOutbox(t *testing.T) {
 	// A large outbox goes in several uploads, each of whole lines.
 	queue(1000)
 	sent = nil
-	if err := sendOutbox(dir, answer(200, nil)); err != nil {
+	if err := sendOutbox(dir, relayOutbox, answer(200, nil)); err != nil {
 		t.Fatal(err)
 	}
 	if len(sent) < 2 {
@@ -66,11 +66,11 @@ func TestSendOutbox(t *testing.T) {
 
 	// Events the site refuses for good are dropped, so they don't block later ones.
 	queue(1)
-	if err := sendOutbox(dir, answer(400, errors.New("server said 400"))); err != nil {
+	if err := sendOutbox(dir, relayOutbox, answer(400, errors.New("server said 400"))); err != nil {
 		t.Errorf("a refused upload stopped the outbox: %v", err)
 	}
 	sent = nil
-	sendOutbox(dir, answer(200, nil))
+	sendOutbox(dir, relayOutbox, answer(200, nil))
 	if len(sent) != 0 {
 		t.Errorf("a refused upload was sent again: %q", sent)
 	}
