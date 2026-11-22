@@ -1,5 +1,14 @@
 // Shared by the pages that need an account: the dashboard and settings.
 const $ = (id) => document.getElementById(id)
+
+// showBan puts a ban on this account at the top of the page. A banned person
+// is told until when, and not why: the reason is for reviewers.
+function showBan(ban) {
+	$('ban-banner').hidden = !ban
+	if (!ban) return
+	const until = ban.until ? `until ${new Date(ban.until).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}` : 'until a reviewer lifts the ban'
+	$('ban-text').textContent = `It is banned ${until}. Nothing new is taken from it: no syncs, uploads, cloud events, or submissions. What was synced before stays here for you to see.`
+}
 const esc = (s) => String(s).replace(/[&<>\"']/g, (c) => `&#${c.charCodeAt(0)};`)
 const dur = (sec) => {
 	const m = Math.round(sec / 60)

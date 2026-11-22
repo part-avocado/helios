@@ -138,10 +138,13 @@ const BAN_COLUMNS = `b.id, b.slack_id, b.reason, b.by_slack_id, b.by_level, b.at
 /** inForce says whether a ban still holds at now. */
 const inForce = (b: BanRow, now: number) => b.lifted_at == null && (b.until == null || b.until > now)
 
-/** The words a banned person is told, by the site and by `teardrop sync`. */
-export function banMessage(ban: { reason: string; until: number | null }): string {
+/**
+ * The words a banned person is told, by the site and by `teardrop sync`. The
+ * reason is for reviewers only, so it is left out.
+ */
+export function banMessage(ban: { until: number | null }): string {
 	const until = ban.until == null ? 'until a reviewer lifts the ban' : `until ${new Date(ban.until).toISOString().slice(0, 16).replace('T', ' ')} UTC`
-	return `This account is banned ${until}, so nothing new is taken from it. The reason given: ${ban.reason}`
+	return `This account is banned ${until}. Nothing new is taken from it: no syncs, uploads, cloud events, or submissions.`
 }
 
 /** bans lists bans, newest first, each marked with whether it is in force: everyone's, or one person's. */
@@ -162,7 +165,7 @@ export async function issueBan(env: Env, actor: User, body: { slack_id?: unknown
 	const mine = need(actor, 1)
 	const slack = slackID(body.slack_id)
 	const reason = String(body.reason ?? '').trim().slice(0, 500)
-	if (!reason) throw new Refusal(400, 'Give a reason. The person is shown it, and so are other reviewers.')
+	if (!reason) throw new Refusal(400, 'Give a reason. Only reviewers see it, never the person.')
 	const now = Date.now()
 	let until: number | null = null
 	if (body.days != null && body.days !== '') {

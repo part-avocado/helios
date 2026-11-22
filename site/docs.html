@@ -61,6 +61,7 @@
 	<a href="#run-server">Running a server</a>
 	<a href="#cloudflare">Deploy to Cloudflare</a>
 	<a href="#review-app">The review app</a>
+	<a href="#public-api">Public API</a>
 	<a href="#privacy">Privacy</a>
 	<a href="#troubleshooting">Troubleshooting</a>
 	<a href="#uninstall">Uninstall</a>
@@ -224,7 +225,7 @@
 	<pre><code>teardrop sync -server https://your-site -key tdk_…</code></pre>
 	<p>teardrop remembers the server and the key, so later it's just <code>teardrop sync</code>, and hooks sync in the background when a reply finishes or you stop one. Amp reports a stopped reply at once; Claude Code runs no hook then, so that sync happens at your next prompt or when the session closes. Codex has no hook, so its time goes up with the next of those syncs. The key can only upload stats. If the server answers that it needs your sync key, run the command from Settings again.</p>
 	<p><code>teardrop submit &lt;project&gt;</code> sends a project's hours for review together with the full chat logs behind them: your prompts, the agent's replies, and its code changes. It asks before uploading; <code>-o file</code> writes the submission so you can read it first. The server refuses a submission whose logs were changed after signing, or that claims a block no log backs, and recomputes the hours from the logs itself. You can submit a project again as it grows; time an earlier submission already covered is credited once. Add your Lapse sessions with <code>-lapse &lt;link&gt;,…</code>; time they also cover is taken off, since Hackatime already counts it.</p>
-	<p>Your stats on the website are visible to you and to reviewers: a reviewer sees your total for each project, and neoadmins and superadmins see everything you synced. Deleting your account, under Settings, removes them; admins keep your Slack ID and a record of what your computers reported, without project names. Submissions and their chats are visible only to admins, who review them at <code>/admin</code> on the review server. To host either, see <a href="#run-server">Running a server</a>.</p>
+	<p>Your stats on the website are visible to you and to reviewers: a reviewer sees, for each project, your total and a timeline of your work blocks (when each started and ended, with its prompts, tokens, and lines changed), and neoadmins and superadmins see everything you synced. Deleting your account, under Settings, removes them; admins keep your Slack ID and a record of what your computers reported, without project names. Submissions and their chats are visible only to admins, who review them at <code>/admin</code> on the review server. To host either, see <a href="#run-server">Running a server</a>.</p>
 
 	<h2 id="run-server">Running a server</h2>
 	<p>There are two parts, and you can run either without the other:</p>
@@ -266,12 +267,32 @@ npm run dev</code></pre>
 		<tr><th>Level</th><th>Who</th><th>What they can do</th></tr>
 		<tr><td>Superadmin</td><td>The Slack IDs in <code>ADMINS</code>.</td><td>Everything below, and add or remove neoadmins.</td></tr>
 		<tr><td>Neoadmin</td><td>Added by a superadmin.</td><td>Read every account: its computers, its projects, and a log of every report it sent. Each log entry shows what the report held and which days and projects changed, and links to the report itself, kept as it arrived. Add and remove reviewers. Ban people.</td></tr>
-		<tr><td>Reviewer</td><td>Added by a neoadmin or superadmin.</td><td>Look a person up by Slack ID and read their total for each project. Nothing else of theirs.</td></tr>
+		<tr><td>Reviewer</td><td>Added by a neoadmin or superadmin.</td><td>Look a person up by Slack ID and read their total for each project, with each project's graphs. Nothing else of theirs.</td></tr>
 	</table>
 	<p>To add someone, open Reviewers in the app and paste their Slack ID. They can be added before they first sign in. No one can add, remove, or ban someone at their own level or above, so a neoadmin can't touch another neoadmin.</p>
-	<p>A ban lasts a number of days or until it is lifted, and always has a reason. While it holds, the site takes nothing new from the person: no syncs, uploads, cloud events, or submissions. <code>teardrop sync</code> prints the reason, and so does their dashboard, which they can still open. A banned reviewer can't review. Someone below the level of whoever issued a ban can't lift or replace it.</p>
+	<p>Each person's page has a Project activity panel. For one project at a time it draws engaged time and lines added and removed per day, when in the week they work, and every work block's length against the share of it that was engaged. It also checks the blocks for what to ask about: time counted on two computers at once, long blocks without breaks, lines changed without a prompt, very many lines per hour, and days over 14 hours. A check that stands out is a reason to ask, not proof.</p>
+	<p>A ban lasts a number of days or until it is lifted, and always has a reason, which only reviewers see. While it holds, the site takes nothing new from the person: no syncs, uploads, cloud events, or submissions. <code>teardrop sync</code>, their dashboard, and their settings say plainly that they are banned and until when, but not why. They can still sign in and see what they had. The review app marks a banned person in red wherever they appear. A banned reviewer can't review. Someone below the level of whoever issued a ban can't lift or replace it.</p>
 	<p>Any reviewer can make API keys, under API keys in the app, for a script or a bot. A key acts as the person who made it, at the level they hold when it is used, and stops working when they are removed or banned. The key is shown once, in a popup to copy it from; the site keeps only its hash. Send it as a bearer token:</p>
 	<pre>curl -H "Authorization: Bearer tdr_..." "https://your-site/api/review/person?slack=U012ABCDEF"</pre>
+
+	<h3 id="public-api">Public API</h3>
+	<p>Anyone with an account can read their own stats from a script, or let another site read them, for example to list your projects when you sign in there. Make a read key under Settings, API. It starts with <code>tdp_</code>, is shown once, and can only read: it can't upload, change, or delete anything. Your sync key doesn't work here, and a read key doesn't sync. While your account is banned, your read keys read nothing.</p>
+	<pre>curl -H "Authorization: Bearer tdp_..." "https://your-site/api/public/v1/projects"</pre>
+	<table>
+		<tr><th>Call</th><th>What it returns</th></tr>
+		<tr><td><code>GET /api/public/v1/me</code></td><td><code>name</code>, <code>slack_id</code>, <code>created_at</code>, <code>engaged_seconds</code> in the past year, and <code>synced_at</code>.</td></tr>
+		<tr><td><code>GET /api/public/v1/projects</code></td><td><code>projects</code>, most time first, each with <code>name</code>, <code>repo</code> (such as <code>github.com/you/site</code>, or <code>null</code> for a project that is only a folder), <code>engaged_seconds</code>, <code>first_active</code>, and <code>last_active</code>.</td></tr>
+		<tr><td><code>GET /api/public/v1/days?since=2026-01-01</code></td><td><code>days</code>: each date with its <code>engaged_seconds</code>. <code>since</code> is optional.</td></tr>
+	</table>
+	<p>Times are Unix milliseconds. Answers are JSON; a refusal is plain text with its reason. Any site may call the API from the browser, since it takes only the key and no cookies. Folders on your computer are never shown, only repositories.</p>
+
+	<h3 id="sign-in-with-teardrop">Sign in with teardrop</h3>
+	<p>A site can get a read key without anyone pasting one. Send the person to:</p>
+	<pre>https://your-site/authorize?redirect_uri=https://example.com/callback&amp;state=RANDOM&amp;name=My+portfolio</pre>
+	<p>They sign in if they need to, see the site's address and what it will read, and choose Allow. They come back to <code>redirect_uri</code> with <code>code</code> and your <code>state</code>, or with <code>error=access_denied</code> if they cancel. Check that <code>state</code> is the one you sent, then trade the code within 5 minutes, from your server or the browser:</p>
+	<pre>curl -X POST https://your-site/api/public/v1/token \
+  -d '{"code":"tdc_...","redirect_uri":"https://example.com/callback"}'</pre>
+	<p>The answer is <code>{"key": "tdp_...", "token_type": "Bearer", "name": ..., "slack_id": ...}</code>. Use the key with the calls above. A code works once, for the <code>redirect_uri</code> it was made for; trading it a second time also revokes the key it became. <code>redirect_uri</code> must use https, except on <code>localhost</code>. A site without a server should add PKCE: send <code>code_challenge</code>, the base64url SHA-256 of a random verifier, and send <code>code_verifier</code> with the code. The key shows under the person's Settings, API, named after your site, where they can revoke it. Each site keeps at most 5 keys per person; signing in again after that revokes the oldest. Banned accounts can't sign in.</p>
 
 	<h3 id="review-server">The review server</h3>
 	<p>The review server is the same <code>teardrop</code> binary. It keeps everything as files in one folder, so it needs a machine that stays on and a disk that lasts; Cloudflare Workers can't host it.</p>

@@ -15,21 +15,34 @@
 	<script src="/theme.js"></script>
 </head>
 <body>
-<header class="rv-top">
-	<a class="rv-brand" href="/review/"><img src="/favicon.svg" alt="">teardrop<b>Review</b></a>
-	<div class="rv-who" id="me"></div>
-	<button class="theme" type="button" data-theme-toggle aria-label="Switch between dark and light" title="Switch between dark and light"><svg class="sun" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1.5V3M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/></svg><svg class="moon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M13.5 9.5a5.5 5.5 0 0 1-7-7 5.5 5.5 0 1 0 7 7z"/></svg></button>
-	<a class="btn small" href="/dashboard">Back to teardrop</a>
+<header class="rv-bar">
+	<button class="rv-icon" type="button" data-side-toggle aria-label="Open the menu"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/></svg></button>
+	<a class="rv-brand" href="#/"><img src="/favicon.svg" alt=""><span>teardrop review</span></a>
 </header>
-<div class="rv-shell">
-	<nav class="rv-side" aria-label="Review">
-		<a href="#/" data-page="people">People</a>
-		<a href="#/team" data-page="team" data-min="1" hidden>Reviewers</a>
-		<a href="#/bans" data-page="bans" data-min="1" hidden>Bans</a>
-		<a href="#/keys" data-page="keys">API keys</a>
+<aside class="rv-side" id="side">
+	<div class="rv-side-top">
+		<a class="rv-brand" href="#/"><img src="/favicon.svg" alt=""><span>teardrop review</span></a>
+		<button class="rv-icon" type="button" data-side-toggle aria-label="Show or hide the menu" title="Show or hide the menu"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="2"/><path d="M6 2.5v11"/></svg></button>
+	</div>
+	<div class="rv-me" id="me"></div>
+	<button class="rv-search" type="button" data-search title="Search people"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg><span>Search</span><kbd data-keys></kbd></button>
+	<nav class="rv-nav" aria-label="Review">
+		<h2>Review</h2>
+		<a href="#/" data-page="home" title="Home"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2.5 7.5 8 3l5.5 4.5V13a.5.5 0 0 1-.5.5H9.5v-4h-3v4H3a.5.5 0 0 1-.5-.5z"/></svg><span>Home</span></a>
+		<a href="#/people" data-page="people" data-min="1" title="People" hidden><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="6" cy="5.5" r="2.5"/><path d="M1.5 13.5c0-2.5 2-4 4.5-4s4.5 1.5 4.5 4M10.5 3.2a2.5 2.5 0 0 1 0 4.6M12 9.8c1.6.5 2.5 1.8 2.5 3.7"/></svg><span>People</span></a>
+		<h2 data-min="1" hidden>Team</h2>
+		<a href="#/team" data-page="team" data-min="1" title="Reviewers" hidden><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M8 1.8 13 3.5v4c0 3.2-2 5.5-5 6.7-3-1.2-5-3.5-5-6.7v-4zM5.8 7.8l1.6 1.6 3-3.2"/></svg><span>Reviewers</span></a>
+		<a href="#/bans" data-page="bans" data-min="1" title="Bans" hidden><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="m3.8 3.8 8.4 8.4"/></svg><span>Bans</span></a>
+		<h2>Workbench</h2>
+		<a href="#/keys" data-page="keys" title="API keys"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="5.5" cy="10.5" r="3"/><path d="M7.7 8.3 13.5 2.5M11 5l2 2M9.3 6.7l1.5 1.5"/></svg><span>API keys</span></a>
 	</nav>
-	<main class="rv-view" id="view"><p class="muted">Loading…</p></main>
-</div>
+	<div class="rv-foot">
+		<button type="button" data-theme-toggle title="Switch between dark and light"><svg class="sun" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1.5V3M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/></svg><svg class="moon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M13.5 9.5A6 6 0 0 1 6.5 2.5a6 6 0 1 0 7 7z"/></svg><span class="to-light">Light mode</span><span class="to-dark">Dark mode</span></button>
+		<a href="/dashboard" title="Back to teardrop"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M7 3.5 2.5 8 7 12.5M2.5 8h11"/></svg><span>Back to teardrop</span></a>
+	</div>
+</aside>
+<div class="rv-scrim" data-side-toggle></div>
+<main class="rv-main"><div class="rv-view" id="view"><p class="muted">Loading…</p></div></main>
 
 <dialog class="modal" id="key-dialog" aria-labelledby="key-title">
 	<h2 id="key-title">Your new key</h2>

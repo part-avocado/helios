@@ -1,7 +1,7 @@
 // Runs the Worker in the real Workers runtime with a local D1 database, and
 // stands in for Hack Club Auth and the review server with a local HTTP server.
 import assert from 'node:assert/strict'
-import { createPrivateKey, createPublicKey, generateKeyPairSync, type KeyObject, sign } from 'node:crypto'
+import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, type KeyObject, sign } from 'node:crypto'
 import { readdirSync, readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -84,7 +84,7 @@ async function signIn(person: string): Promise<string> {
 }
 
 async function me(cookie: string) {
-	return (await (await call('/api/me', { cookie })).json()) as { name: string; slack_id: string; admin: boolean; level: number | null; ban: { reason: string; until: number | null } | null; api_key: string; computers: { id: string; cloud: boolean }[] }
+	return (await (await call('/api/me', { cookie })).json()) as { name: string; slack_id: string; admin: boolean; level: number | null; ban: { until: number | null } | null; api_key: string; computers: { id: string; cloud: boolean }[] }
 }
 
 async function reports(cookie: string, query = '') {
@@ -720,13 +720,16 @@ test('reviewers have levels, which decide what they read, whom they add and ban,
 	const laptop = computer()
 	const report = (engaged_seconds: number) => ({
 		engaged_seconds,
-		blocks: [block(Date.now() - 1000)],
+		blocks: [{ ...block(Date.now() - 1000), project: { key: '/home/kid/site', name: 'site' }, prompts: 3, lines_added: 40, lines_removed: 5 }],
 		projects: [{ project: { key: '/home/kid/site', name: 'site' }, engaged_seconds: engaged_seconds - 1800 }, { project: { key: 'game', name: 'game' }, engaged_seconds: 1800 }],
 	})
 	const sync = async (engaged: number) => (await call('/api/v1/reports', { method: 'POST', body: laptop(report(engaged)), key: memberKey })).status
 	assert.equal(await sync(5400), 200)
-	const seen = (await (await review('/person?slack=uplain', rev)).json()) as { limited: boolean; projects: object[]; ban: { reason: string } | null }
-	assert.deepEqual(Object.keys(seen).sort(), ['ban', 'engaged_seconds', 'flagged_reports', 'limited', 'person', 'projects', 'synced_at'])
+	const seen = (await (await review('/person?slack=uplain', rev)).json()) as { limited: boolean; projects: object[]; activity: { name: string; blocks: number[][] }[]; ban: { reason: string } | null }
+	assert.deepEqual(Object.keys(seen).sort(), ['activity', 'ban', 'engaged_seconds', 'flagged_reports', 'limited', 'person', 'projects', 'synced_at'])
+	// The graphs get each work block as numbers: its times, engaged seconds, prompts, tokens, and lines, and which computer sent it.
+	const [drawn] = seen.activity
+	assert.deepEqual([seen.activity.length, drawn!.name, drawn!.blocks.map((b) => [b[1]! - b[0]!, ...b.slice(2)])], [1, 'site', [[600_000, 600, 3, 0, 0, 40, 5, 0, 0]]])
 	assert.deepEqual([seen.limited, seen.projects], [true, [{ name: 'site', engaged_seconds: 3600 }, { name: 'game', engaged_seconds: 1800 }]])
 	assert.doesNotMatch(JSON.stringify(seen), /home\/kid|td-[0-9a-f]|"id"/)
 	const full = (await (await review('/person?slack=UPLAIN', neo)).json()) as Review & { projects: { key: string }[]; bans: object[] }
@@ -772,23 +775,25 @@ test('reviewers have levels, which decide what they read, whom they add and ban,
 	assert.equal((await ban(superadmin, { slack_id: 'UOTHER', reason: 'x' })).status, 403, 'another superadmin')
 	const temp = (await (await ban(neo, { slack_id: 'UPLAIN', reason: 'Edited reports', days: 7 })).json()) as { id: number; until: number }
 	assert.ok(Math.abs(temp.until - (Date.now() + 7 * DAY)) < 60_000)
-	// Nothing new is taken from them, and they are told why.
+	// Nothing new is taken from them. They are told they are banned and until when, but not why.
 	const refused = await call('/api/v1/reports', { method: 'POST', body: laptop(report(6000)), key: memberKey })
 	assert.equal(refused.status, 403)
-	assert.match(await refused.text(), /banned until \d{4}-\d\d-\d\d \d\d:\d\d UTC.*Edited reports/)
+	const said = await refused.text()
+	assert.match(said, /banned until \d{4}-\d\d-\d\d \d\d:\d\d UTC/)
+	assert.doesNotMatch(said, /Edited reports/)
 	assert.equal((await call('/api/v1/events', { method: 'POST', body: '', key: memberKey })).status, 403)
 	assert.equal((await call('/api/reports', { method: 'POST', body: laptop(report(6000)), cookie: member, origin: SITE })).status, 403)
 	// They can still sign in and see what they had.
 	const banned = await me(member)
-	assert.deepEqual([banned.ban?.reason, banned.ban?.until], ['Edited reports', temp.until])
-	const theirs = (await (await call('/api/report', { cookie: member })).json()) as { ban: { reason: string }; computers: object[] }
-	assert.deepEqual([theirs.ban.reason, theirs.computers.length], ['Edited reports', 1])
+	assert.deepEqual(banned.ban, { until: temp.until })
+	const theirs = (await (await call('/api/report', { cookie: member })).json()) as { ban: object; computers: object[] }
+	assert.deepEqual([theirs.ban, theirs.computers.length], [{ until: temp.until }, 1])
 	assert.equal(((await (await review('/person?slack=UPLAIN', rev)).json()) as typeof seen).ban?.reason, 'Edited reports')
 	// Lifting it, and one that runs out.
 	assert.deepEqual([await status(`/bans/${temp.id}`, rev, 'DELETE'), await status(`/bans/${temp.id}`, neo, 'DELETE'), await status(`/bans/${temp.id}`, neo, 'DELETE')], [403, 200, 404])
 	assert.deepEqual([(await me(member)).ban, await sync(6000)], [null, 200])
 	const short = (await (await ban(neo, { slack_id: 'UPLAIN', reason: 'again', days: 1 })).json()) as { id: number }
-	assert.equal((await me(member)).ban?.reason, 'again')
+	assert.notEqual((await me(member)).ban, null)
 	const env = await server.getWorker<{ DB: { prepare(sql: string): { run(): Promise<unknown> } } }>().getEnv()
 	await env.DB.prepare(`UPDATE bans SET until = ${Date.now() - 1000} WHERE id = ${short.id}`).run()
 	assert.equal((await me(member)).ban, null)
@@ -810,6 +815,136 @@ test('reviewers have levels, which decide what they read, whom they add and ban,
 	for (const [action, slack, by] of [['add', 'UNEO', 'UADMIN'], ['change', 'UREV', 'UADMIN'], ['ban', 'UPLAIN', 'UNEO'], ['unban', 'UREV', 'UADMIN'], ['remove', 'UREV', 'UNEO']]) {
 		assert.ok(team.log.some((l) => l.action === action && l.slack_id === slack && l.by_slack_id === by), `${action} ${slack} by ${by}`)
 	}
+})
+
+test('anyone reads their own stats through the public API with a read key, unless banned', async () => {
+	const cookie = await signIn('reader')
+	const { api_key: syncKey, slack_id } = await me(cookie)
+	const keys = (method: string, path = '', body?: object) => call(`/api/keys${path}`, { method, cookie, origin: method === 'GET' ? undefined : SITE, body: body && JSON.stringify(body) })
+	const read = (path: string, key: string) => call(`/api/public/v1${path}`, { key })
+
+	// A read key is made while signed in, shown once, and listed by its start only.
+	assert.equal((await call('/api/keys', { method: 'POST', cookie, body: '{"name":"x"}' })).status, 403, 'no Origin')
+	assert.equal((await keys('POST', '', { name: ' ' })).status, 400)
+	const made = (await (await keys('POST', '', { name: 'portfolio' })).json()) as { id: number; key: string }
+	assert.match(made.key, /^tdp_/)
+	const listed = (await (await keys('GET')).json()) as { keys: { name: string; hint: string }[] }
+	assert.deepEqual(listed.keys.map((k) => [k.name, made.key.startsWith(k.hint)]), [['portfolio', true]])
+	assert.doesNotMatch(JSON.stringify(listed), new RegExp(made.key))
+
+	// Projects come with their repository. A folder on the computer, or a repository on a machine at home, stays private.
+	const now = Date.now()
+	const laptop = computer()
+	const body = laptop({
+		engaged_seconds: 5400,
+		blocks: [{ ...block(now - 60_000, 'site'), project: { key: 'github.com/kid/site', name: 'site' } }, { ...block(now - 5000, 'game'), project: { key: '/home/kid/game', name: 'game' } }],
+		projects: [{ project: { key: 'github.com/kid/site', name: 'site' }, engaged_seconds: 3600 }, { project: { key: '/home/kid/game', name: 'game' }, engaged_seconds: 1800 }, { project: { key: 'nas.local/volume1/homes/kid/app', name: 'app' }, engaged_seconds: 60 }],
+		days: [{ date: '2026-01-02', engaged_seconds: 5400 }],
+	})
+	assert.equal((await call('/api/v1/reports', { method: 'POST', body, key: syncKey })).status, 200)
+	const projects = (await (await read('/projects', made.key)).json()) as { projects: { name: string; repo: string | null; engaged_seconds: number; last_active: number }[] }
+	assert.deepEqual(projects.projects.map((p) => [p.name, p.repo, p.engaged_seconds]), [['site', 'github.com/kid/site', 3600], ['game', null, 1800], ['app', null, 60]])
+	assert.equal(projects.projects[0]!.last_active, now - 60_000)
+	assert.doesNotMatch(JSON.stringify(projects), /home\/kid|homes|nas\.local|td-[0-9a-f]/)
+	const mine = (await (await read('/me', made.key)).json()) as { slack_id: string; engaged_seconds: number }
+	assert.deepEqual([mine.slack_id, mine.engaged_seconds], [slack_id, 5400])
+	assert.deepEqual(await (await read('/days?since=2026-01-02', made.key)).json(), { days: [{ date: '2026-01-02', engaged_seconds: 5400 }] })
+	assert.deepEqual(await (await read('/days?since=2026-01-03', made.key)).json(), { days: [] })
+
+	// Another site may call it from the browser. Only a read key reads: not the sync key, not a session.
+	const preflight = await call('/api/public/v1/projects', { method: 'OPTIONS', origin: 'https://portfolio.example' })
+	assert.deepEqual([preflight.status, preflight.headers.get('Access-Control-Allow-Origin'), preflight.headers.get('Access-Control-Allow-Headers')], [204, '*', 'Authorization, Content-Type'])
+	const refused = await read('/me', syncKey)
+	assert.deepEqual([refused.status, refused.headers.get('Access-Control-Allow-Origin')], [401, '*'])
+	assert.equal((await call('/api/public/v1/me', { cookie })).status, 401)
+	assert.equal((await call('/api/v1/reports', { method: 'POST', body, key: made.key })).status, 401, 'a read key uploads nothing')
+
+	// A banned person's keys read nothing, and work again once the ban is lifted.
+	const admin = await signIn('admin')
+	const banned = (await (await call('/api/review/bans', { method: 'POST', cookie: admin, origin: SITE, body: JSON.stringify({ slack_id, reason: 'Faked hours', days: 1 }) })).json()) as { id: number }
+	const denied = await read('/projects', made.key)
+	assert.equal(denied.status, 403)
+	assert.doesNotMatch(await denied.text(), /Faked hours/)
+	assert.equal((await call(`/api/review/bans/${banned.id}`, { method: 'DELETE', cookie: admin, origin: SITE })).status, 200)
+	assert.equal((await read('/me', made.key)).status, 200)
+
+	// Revoking is at once, and only by the owner.
+	assert.equal((await call(`/api/keys/${made.id}`, { method: 'DELETE', cookie: admin, origin: SITE })).status, 404)
+	assert.equal((await keys('DELETE', `/${made.id}`)).status, 200)
+	assert.equal((await read('/me', made.key)).status, 401)
+})
+
+test('another site gets a read key when a person signs in there with teardrop', async () => {
+	const back = 'https://portfolio.example/done?from=td'
+	const ask = (extra = '') => `/authorize?redirect_uri=${encodeURIComponent(back)}&state=s%7C1&name=${encodeURIComponent('<b>Folio</b>')}${extra}`
+	const allow = (cookie: string, decision: string, fields: Record<string, string> = {}, origin = SITE) =>
+		server.fetch(SITE + '/authorize', {
+			method: 'POST',
+			redirect: 'manual',
+			headers: { Cookie: cookie, Origin: origin, 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: new URLSearchParams({ redirect_uri: back, state: 's|1', name: 'Folio', decision, ...fields }).toString(),
+		})
+	const trade = (fields: Record<string, string>) => call('/api/public/v1/token', { method: 'POST', body: JSON.stringify(fields), origin: 'https://portfolio.example' })
+
+	// Signed out, they sign in first and come back to the same request.
+	const out = await call(ask())
+	assert.equal(out.status, 302)
+	assert.equal(new URL(out.headers.get('Location')!, SITE).searchParams.get('next'), `/authorize?redirect_uri=${encodeURIComponent(back).replace(/%20/g, '+')}&state=s%7C1&name=%3Cb%3EFolio%3C%2Fb%3E`)
+
+	// Only addresses on https, or on this computer, are sent back to.
+	const cookie = await signIn('folio')
+	for (const bad of ['http://portfolio.example/x', 'javascript:alert(1)', 'https://u:p@portfolio.example/', 'https://portfolio.example/#x', '']) {
+		const res = await call(`/authorize?redirect_uri=${encodeURIComponent(bad)}`, { cookie })
+		assert.equal(res.status, 400, bad)
+		assert.equal(res.headers.get('Location'), null)
+	}
+	assert.equal((await call(`/authorize?redirect_uri=${encodeURIComponent('http://localhost:3000/cb')}`, { cookie })).status, 200)
+
+	// The page names the site by its address as well as the name it gives, escaped.
+	const page = await (await call(ask(), { cookie })).text()
+	assert.match(page, /https:\/\/portfolio\.example/)
+	assert.match(page, /&#60;b&#62;Folio/)
+	assert.doesNotMatch(page, /<b>Folio/)
+
+	// Allowing takes a request from this site. Cancelling sends them back with nothing.
+	assert.equal((await allow(cookie, 'allow', {}, 'https://portfolio.example')).status, 403)
+	const denied = new URL((await allow(cookie, 'deny')).headers.get('Location')!)
+	assert.deepEqual([denied.origin + denied.pathname, denied.searchParams.get('error'), denied.searchParams.get('state'), denied.searchParams.get('code')], ['https://portfolio.example/done', 'access_denied', 's|1', null])
+	const allowed = new URL((await allow(cookie, 'allow')).headers.get('Location')!)
+	assert.deepEqual([allowed.searchParams.get('from'), allowed.searchParams.get('state')], ['td', 's|1'])
+	const code = allowed.searchParams.get('code')!
+
+	// The code becomes a read key once, for the address it was made for.
+	assert.equal((await trade({ code, redirect_uri: 'https://portfolio.example/other' })).status, 400)
+	const traded = await trade({ code, redirect_uri: back })
+	assert.equal(traded.headers.get('Access-Control-Allow-Origin'), '*')
+	const got = (await traded.json()) as { key: string; slack_id: string }
+	assert.deepEqual([got.key.startsWith('tdp_'), got.slack_id], [true, 'UFOLIO'])
+	assert.equal((await call('/api/public/v1/me', { key: got.key })).status, 200)
+	const listed = (await (await call('/api/keys', { cookie })).json()) as { keys: { name: string; site: string }[] }
+	assert.deepEqual(listed.keys.map((k) => [k.name, k.site]), [['Folio', 'https://portfolio.example']])
+	// Used again, the code fails and the key it became stops working, since someone else may have it.
+	assert.equal((await trade({ code, redirect_uri: back })).status, 400)
+	assert.equal((await call('/api/public/v1/me', { key: got.key })).status, 401)
+
+	// With PKCE, only the verifier behind the challenge trades the code.
+	const verifier = 'a-verifier-that-is-long-enough-to-count-0123456789'
+	const challenge = createHash('sha256').update(verifier).digest('base64url')
+	assert.equal((await call(ask('&code_challenge=short'), { cookie })).status, 400)
+	const pkce = new URL((await allow(cookie, 'allow', { code_challenge: challenge })).headers.get('Location')!).searchParams.get('code')!
+	assert.equal((await trade({ code: pkce, redirect_uri: back })).status, 400)
+	assert.equal((await trade({ code: pkce, redirect_uri: back, code_verifier: 'wrong' })).status, 400)
+	assert.equal((await trade({ code: pkce, redirect_uri: back, code_verifier: verifier })).status, 200)
+	assert.equal((await trade({ code: 'tdc_nope', redirect_uri: back })).status, 400)
+
+	// A banned person can't allow a site, and isn't told why.
+	const admin = await signIn('admin')
+	const ban = await call('/api/review/bans', { method: 'POST', cookie: admin, origin: SITE, body: JSON.stringify({ slack_id: 'UFOLIO', reason: 'Faked hours', days: 1 }) })
+	assert.equal(ban.status, 200)
+	const bannedPage = await call(ask(), { cookie })
+	assert.equal(bannedPage.status, 403)
+	assert.doesNotMatch(await bannedPage.text(), /Faked hours/)
+	assert.equal((await allow(cookie, 'allow')).status, 403)
 })
 
 test('project submissions go on to the review server', async () => {

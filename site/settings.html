@@ -36,12 +36,17 @@
 </nav>
 
 <main class="wrap dash">
+	<div class="ban-banner" id="ban-banner" role="alert" hidden>
+		<svg viewBox="0 0 16 16" width="28" height="28" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="m3.8 3.8 8.4 8.4"/></svg>
+		<div><h2>This account is banned</h2><p id="ban-text"></p></div>
+	</div>
 	<div class="dash-head"><h1>Settings</h1></div>
 	<div class="settings">
 		<nav class="side" aria-label="Settings">
 			<a href="#setup"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2.5 3.5h11v9h-11zM5 6.5l2 1.5-2 1.5M8.5 10H11"/></svg>Setup</a>
 			<a href="#computers"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2.5 3h11v7.5h-11zM6 13.5h4M8 10.5v3"/></svg>Computers</a>
 			<a href="#data"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M8 10.5V3M5 6l3-3 3 3M3 10.5V13h10v-2.5"/></svg>Data</a>
+			<a href="#api"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="5.5" cy="10.5" r="3"/><path d="M7.7 8.3 13.5 2.5M11 5l2 2M9.3 6.7l1.5 1.5"/></svg>API</a>
 			<a href="#account"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="5.5" r="2.5"/><path d="M3 13.5c.6-2.5 2.6-4 5-4s4.4 1.5 5 4"/></svg>Account</a>
 		</nav>
 
@@ -87,6 +92,27 @@
 			<a class="btn small" href="/api/export" download>Download my data</a>
 		</section>
 
+		<section class="pane" id="api" hidden>
+			<h2>API</h2>
+			<p class="muted">Read keys let a script, or another site you sign in to, read your own stats: your name and Slack ID, your projects with their repositories and hours, and your hours per day. A read key can't upload, change, or delete anything, and it reads nothing while your account is banned. Folders on your computer are never shown, only repositories.</p>
+			<form class="key-form" id="api-form">
+				<label class="field">What will use it<input name="name" maxlength="60" autocomplete="off" placeholder="Such as: my portfolio site" required></label>
+				<button class="btn small primary">Make a read key</button>
+			</form>
+			<p class="msg" id="api-msg" role="status" hidden></p>
+			<div class="list" id="api-keys"></div>
+			<h3>Using a key</h3>
+			<p class="muted">Send it as a bearer token. Any site may call these from the browser.</p>
+			<div class="cmdbox"><div class="cmd"><code id="api-example"></code><button class="copy" type="button">Copy</button></div></div>
+			<div class="table-scroll"><table class="data left api-calls">
+				<tr><th>Call</th><th>What it returns</th></tr>
+				<tr><td><code>GET /api/public/v1/me</code></td><td>Your name, Slack ID, when you joined, your engaged seconds in the past year, and your last sync.</td></tr>
+				<tr><td><code>GET /api/public/v1/projects</code></td><td>Each project: its name, its repository (such as <code>github.com/you/site</code>, or <code>null</code>), its engaged seconds, and when you first and last worked on it.</td></tr>
+				<tr><td><code>GET /api/public/v1/days?since=2026-01-01</code></td><td>Your engaged seconds on each day.</td></tr>
+			</table></div>
+			<p class="muted fine">More in the <a href="docs.html#public-api">docs</a>.</p>
+		</section>
+
 		<section class="pane" id="account" hidden>
 			<h2>Account</h2>
 			<p class="muted">You sign in with Hack Club Auth, so your name and Slack ID come from there. They update each time you sign in.</p>
@@ -114,6 +140,12 @@
 	<p>On each of your computers, run this once:</p>
 	<div class="box"><div class="cmd"><code id="new-key-connect"></code><button class="copy" type="button">Copy</button></div></div>
 	<p class="fine">If you count Amp cloud threads, also put the new key in the <code>TEARDROP_KEY</code> secret, in Amp's Secrets &amp; Env Vars settings. The key stays visible under Setup, so you can come back for it.</p>
+	<form method="dialog" class="actions"><button class="btn primary small">Done</button></form>
+</dialog>
+<dialog class="modal" id="api-dialog" aria-labelledby="api-dialog-title">
+	<h2 id="api-dialog-title">Your new read key</h2>
+	<p>Copy it now and keep it somewhere safe. It is not shown again. If you lose it, revoke it and make another.</p>
+	<div class="box"><div class="cmd plain"><code id="api-key-value"></code><button class="copy" type="button">Copy</button></div></div>
 	<form method="dialog" class="actions"><button class="btn primary small">Done</button></form>
 </dialog>
 <script src="site.js"></script>

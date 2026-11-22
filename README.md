@@ -212,17 +212,28 @@ bar. There are three levels:
 | --- | --- | --- |
 | 0, superadmin | the Slack IDs in `ADMINS` | Everything below, and add or remove neoadmins. |
 | 1, neoadmin | added by a superadmin | Read every account: computers, projects, and the log of every report, each kept as it arrived in the R2 bucket. Add and remove reviewers. Ban people. |
-| 2, reviewer | added by a neoadmin or superadmin | Look a person up by Slack ID and read their total for each project. Nothing else of theirs. |
+| 2, reviewer | added by a neoadmin or superadmin | Look a person up by Slack ID and read their total for each project, with each project's graphs. Nothing else of theirs. |
 
 People are added on the app's Reviewers page by Slack ID, and can be added
 before they first sign in. No one can add, remove, or ban someone at their
 own level or above, so a neoadmin can't touch another neoadmin.
 
-A ban is for a number of days or until it is lifted, and always has a reason.
-While it holds, the site takes nothing new from the person (syncs, uploads,
-cloud events, submissions), and `teardrop sync` prints the reason. They can
-still sign in and see what they had. A banned reviewer can't review. Someone
-below the level of whoever issued a ban can't lift or replace it.
+Each person's page has a Project activity panel. For one project at a time it
+draws engaged time and lines added and removed per day, when in the week they
+work, and every work block's length against the share of it that was engaged.
+It also checks the blocks for what a reviewer should ask about: time counted
+on two computers at once, long blocks without breaks, lines changed without a
+prompt, very many lines per hour, and days over 14 hours. The graphs come from
+the work blocks in each computer's latest report.
+
+A ban is for a number of days or until it is lifted, and always has a reason,
+which only reviewers see. While it holds, the site takes nothing new from the
+person (syncs, uploads, cloud events, submissions). `teardrop sync`, their
+dashboard, and their settings say plainly that they are banned and until
+when, but not why. They can still sign in and see what they had. The review
+app marks a banned person in red wherever they appear. A banned reviewer can't
+review. Someone below the level of whoever issued a ban can't lift or replace
+it.
 
 Any reviewer can make API keys on the app's API keys page. A key acts as the
 person who made it, at whatever level they hold when it is used, and stops
@@ -237,6 +248,31 @@ The log stays when a person deletes their account; the reports kept in full go.
 Set `REVIEW_SERVER` in `wrangler.jsonc` to the address of the review server
 below and `teardrop submit` goes through the website, which then asks for a
 sync key. `npm test` runs the Worker's tests in the Workers runtime.
+
+#### Public API
+
+Anyone with an account can make read keys (`tdp_...`) under Settings, API,
+and read their own stats with them from a script or another site, for example
+to list their projects when they sign in there. A read key can only read, a
+banned person's keys read nothing, and the site keeps only each key's hash.
+Answers allow any origin, since the API takes no cookies.
+
+| Call | Returns |
+| --- | --- |
+| `GET /api/public/v1/me` | name, Slack ID, when they joined, engaged seconds in the past year, last sync |
+| `GET /api/public/v1/projects` | each project's name, repository (or `null` for a folder, which stays private), engaged seconds, and first and last activity |
+| `GET /api/public/v1/days?since=YYYY-MM-DD` | engaged seconds per day |
+
+Sites can also get a key with **Sign in with teardrop**: send the person to
+`/authorize?redirect_uri=…&state=…&name=…`, they choose Allow, and they come
+back with a `code` that `POST /api/public/v1/token` (with the same
+`redirect_uri`, and `code_verifier` if you sent a PKCE `code_challenge`)
+trades once for a `tdp_` key. Codes last 5 minutes, `redirect_uri` must be
+https (or localhost), and a code traded twice revokes its key. See the docs
+for details.
+
+Migration 0008 adds the table of read keys, 0009 keeps each computer's work
+blocks for the review graphs, and 0010 adds sign-in codes.
 
 ### The review server
 

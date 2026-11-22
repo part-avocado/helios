@@ -115,6 +115,9 @@ export async function sessionUser(request: Request, env: Env): Promise<User | nu
 	return load(env, 'u.id = ?2', id)
 }
 
+/** userByID returns the person with this account ID, or null for one deleted or unknown. */
+export const userByID = (env: Env, id: number) => load(env, 'u.id = ?2', id)
+
 /** keyUser returns whose sync key request carries, or null. */
 export async function keyUser(request: Request, env: Env): Promise<User | null> {
 	const key = /^Bearer (tdk_[A-Za-z0-9_-]+)$/.exec(request.headers.get('Authorization') ?? '')?.[1]
@@ -125,6 +128,19 @@ export async function keyUser(request: Request, env: Env): Promise<User | null> 
 export async function keyHash(key: string): Promise<string> {
 	const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key)))
 	return [...digest].map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+/**
+ * userKeyUser returns the person whose read key request carries, or null. It
+ * notes when the key was last used, at most once a minute.
+ */
+export async function userKeyUser(request: Request, env: Env): Promise<User | null> {
+	const key = /^Bearer (tdp_[A-Za-z0-9_-]+)$/.exec(request.headers.get('Authorization') ?? '')?.[1]
+	if (!key) return null
+	const row = await env.DB.prepare('SELECT id, user_id FROM user_keys WHERE hash = ?').bind(await keyHash(key)).first<{ id: number; user_id: number }>()
+	if (!row) return null
+	await env.DB.prepare('UPDATE user_keys SET last_used_at = ?1 WHERE id = ?2 AND (last_used_at IS NULL OR last_used_at < ?1 - 60000)').bind(Date.now(), row.id).run()
+	return load(env, 'u.id = ?2', row.user_id)
 }
 
 /**

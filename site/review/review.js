@@ -5,6 +5,16 @@
 // server would refuse.
 const $ = (id) => document.getElementById(id)
 const view = $('view')
+const root = document.documentElement
+// The side menu stays folded to its icons for whoever folded it.
+const SIDE = 'teardrop-review-side'
+try {
+	if (localStorage.getItem(SIDE) === 'closed') root.dataset.side = 'closed'
+} catch {
+	// Storage is blocked, so the choice lasts for this page only.
+}
+// The keys that go to the search box.
+const KEYS = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘K' : 'Ctrl K'
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 const dur = (sec) => {
 	const m = Math.round(sec / 60)
@@ -30,7 +40,7 @@ const LEVELS = ['Superadmin', 'Neoadmin', 'Reviewer']
 const CAN = [
 	'read every account, add and remove neoadmins and reviewers, and ban anyone but another superadmin',
 	'read every account, add and remove reviewers, and ban members and reviewers',
-	'look a person up by Slack ID and read their total for each project',
+	'look a person up by Slack ID and read their total and work-block timeline for each project',
 ]
 // Who is signed in: {name, slack_id, level}.
 let me = null
@@ -64,19 +74,71 @@ function say(el, text, ok = false) {
 	el.hidden = false
 }
 
+// ---- Home
+
+// Everyone that Home's search box looks through. A reviewer has no list, and looks a person up by Slack ID.
+let everyone = []
+const SEARCH = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg>'
+const asSlackID = (text) => text.trim().replace(/^<@|>$/g, '').toUpperCase()
+const personName = (p) => p.name || (p.deleted_at ? 'Deleted account' : 'No name')
+
+function greeting() {
+	const hour = new Date().getHours()
+	return hour >= 5 && hour < 12 ? 'Good morning' : hour >= 12 && hour < 18 ? 'Good afternoon' : 'Good evening'
+}
+
+async function home() {
+	const limited = me.level === 2
+	let note = "In Slack: open their profile, choose ⋮, then Copy member ID. As a reviewer you see a person's total and work-block timeline for each project, and not their computers, days, or log."
+	if (!limited) {
+		everyone = (await api('/people')).people
+		const flagged = everyone.filter((p) => p.flagged).length
+		const last = Math.max(0, ...everyone.map((p) => p.synced_at ?? 0))
+		note = [plural(everyone.length, 'person', 'people'), flagged ? `${num(flagged)} with flagged reports` : 'no flagged reports', last ? `last sync ${ago(last)}` : 'nothing synced yet'].join(' - ')
+	}
+	return `<div class="rv-home">
+		<h1>${greeting()}${me.name ? `, ${esc(me.name)}` : ''}</h1>
+		<form class="rv-find" role="search" data-form="find">
+			<label>${SEARCH}<input id="find" name="q" autocomplete="off" spellcheck="false" ${limited
+				? 'aria-label="Slack ID" placeholder="Slack ID, such as U012ABCDEF" required'
+				: 'aria-label="Search people" placeholder="Search people…" role="combobox" aria-expanded="false" aria-controls="found" aria-autocomplete="list"'}><kbd>${KEYS}</kbd></label>
+			<div class="rv-found" id="found" role="listbox" hidden></div>
+		</form>
+		<p class="note">${esc(note)}</p>
+	</div>`
+}
+
+// showFound lists, under the search box, the people whose name or Slack ID
+// holds every word typed. Someone who never signed in is not among them, so
+// a Slack ID that matches no one can still be looked up.
+function showFound(input) {
+	const box = $('found')
+	const words = input.value.toLowerCase().split(/\s+/).filter(Boolean)
+	const rows = !words.length ? [] : everyone.filter((p) => words.every((w) => `${p.name} ${p.slack_id}`.toLowerCase().includes(w))).slice(0, 8)
+		.map((p) => `<a role="option" href="#/person/id:${p.id}"><span class="grow"><b>${esc(personName(p))}</b>${p.slack_id ? ` <code>${esc(p.slack_id)}</code>` : ''}</span>${p.banned ? '<span class="badge banned">Banned</span>' : ''}${p.flagged ? `<span class="badge flagged">${num(p.flagged)} flagged</span>` : ''}<small>${dur(p.engaged_seconds)}</small></a>`)
+	const id = asSlackID(input.value)
+	if (!rows.length && /^[UW][A-Z0-9]{4,}$/.test(id)) rows.push(`<a role="option" href="#/person/${encodeURIComponent(id)}"><span class="grow">Look up Slack ID <code>${esc(id)}</code></span></a>`)
+	box.innerHTML = rows.join('') || '<p>No one matches. A Slack ID, such as U012ABCDEF, finds someone who has not signed in.</p>'
+	box.querySelector('a')?.setAttribute('aria-selected', 'true')
+	box.hidden = !words.length
+	input.setAttribute('aria-expanded', String(!box.hidden))
+}
+
+// toFind puts the cursor in Home's search box, going Home first if need be.
+let findWanted = false
+function toFind() {
+	delete root.dataset.menu
+	if ($('find')) return $('find').focus()
+	findWanted = true
+	location.hash = '#/'
+}
+
 // ---- People
 
 async function people() {
-	if (me.level === 2) {
-		return head('Look someone up') + `<div class="panel">
-			<p>Enter the Slack ID of the person whose work you are checking. In Slack: open their profile, choose ⋮, then Copy member ID.</p>
-			${LOOKUP.replace('class="lookup"', 'class="lookup start"')}
-		</div>
-		<p class="muted fine">As a reviewer you see a person's total for each project, and nothing else of theirs. A neoadmin can read their computers and every report they sent.</p>`
-	}
 	const { people } = await api('/people')
-	const rows = people.map((p) => `<tr>
-		<td><a href="#/person/id:${p.id}">${esc(p.name || (p.deleted_at ? 'Deleted account' : 'No name'))}</a></td>
+	const rows = people.map((p) => `<tr${p.banned ? ' class="is-banned"' : ''}>
+		<td><a href="#/person/id:${p.id}">${esc(personName(p))}</a>${p.banned ? ' <span class="badge banned">Banned</span>' : ''}</td>
 		<td>${p.slack_id ? `<code>${esc(p.slack_id)}</code>` : '<span class="muted">none</span>'}</td>
 		<td>${dur(p.engaged_seconds)}</td><td>${p.computers}</td>
 		<td>${p.flagged ? `<a class="flag" href="#/person/id:${p.id}">${p.flagged}</a>` : '<span class="muted">0</span>'}</td>
@@ -102,9 +164,211 @@ function projectTable(projects) {
 	</table></div>`
 }
 
+// ---- Project activity: graphs drawn from a project's work blocks
+
+// A block, as the server sends it.
+const B = { start: 0, end: 1, engaged: 2, prompts: 3, tin: 4, tout: 5, added: 6, removed: 7, kept: 8, computer: 9 }
+const HOUR = 3600_000
+const DAY_MS = 86400_000
+const localDay = (ms) => {
+	const d = new Date(ms)
+	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+const compact = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e4 ? `${Math.round(n / 1e3)}k` : num(n))
+// perLocalDay adds up engaged time by day in the reviewer's time zone. A block
+// that runs past midnight is split, its engaged time spread over its length.
+function perLocalDay(blocks) {
+	const per = new Map()
+	for (const b of blocks) {
+		const span = b[B.end] - b[B.start]
+		for (let t = b[B.start]; ; ) {
+			const next = Math.min(b[B.end], new Date(t).setHours(24, 0, 0, 0))
+			const day = localDay(t)
+			per.set(day, (per.get(day) ?? 0) + (span ? (b[B.engaged] * (next - t)) / span : b[B.engaged]))
+			if (next >= b[B.end]) break
+			t = next
+		}
+	}
+	return per
+}
+// Graphs that show the days before today show this many.
+const SPAN_DAYS = 90
+// The project whose graphs are open, by its place in the list.
+let chartAt = 0
+let chartData = []
+
+// checks looks for what a reviewer should ask about in one project's blocks.
+// Each check says what it found, and whether that is worth a look.
+function checks(blocks) {
+	const out = []
+	// Time on this project counted on two computers at once: while k computers
+	// are working at the same moment, k - 1 of them count it again.
+	let overlap = 0
+	const edges = []
+	for (const b of blocks) edges.push([b[B.start], 1, b[B.computer]], [b[B.end], -1, b[B.computer]])
+	edges.sort((a, b) => a[0] - b[0] || a[1] - b[1])
+	const working = new Map()
+	let last = 0
+	for (const [at, step, c] of edges) {
+		if (working.size > 1) overlap += (working.size - 1) * (at - last)
+		last = at
+		const n = (working.get(c) ?? 0) + step
+		if (n > 0) working.set(c, n)
+		else working.delete(c)
+	}
+	out.push(overlap > 15 * 60_000
+		? ['bad', `${dur(overlap / 1000)} was worked on two computers at the same time.`, 'Both computers count it, so the total holds it twice.']
+		: ['ok', 'No time counted on two computers at once.'])
+	// Long stretches with attention on almost every minute.
+	const steady = blocks.filter((b) => b[B.end] - b[B.start] > 4 * HOUR && b[B.engaged] / ((b[B.end] - b[B.start]) / 1000) > 0.9)
+	out.push(steady.length
+		? ['bad', `${plural(steady.length, 'block')} of over 4 hours engaged for more than 90% of it.`, 'People take breaks. Look at these on the scatter below.']
+		: ['ok', 'No long blocks without breaks.'])
+	// Code that changed without anyone asking for it.
+	const silent = blocks.filter((b) => b[B.added] + b[B.removed] > 0 && b[B.prompts] === 0)
+	out.push(silent.length
+		? ['warn', `${plural(silent.length, 'block')} changed lines without a single prompt.`, 'Could be hand-written code, or lines pasted in.']
+		: ['ok', 'Every block that changed lines had prompts.'])
+	// Many lines for little time.
+	const engaged = blocks.reduce((s, b) => s + b[B.engaged], 0)
+	const added = blocks.reduce((s, b) => s + b[B.added], 0)
+	const pace = engaged ? added / (engaged / 3600) : 0
+	out.push(pace > 1500
+		? ['warn', `${num(Math.round(pace))} lines added per engaged hour.`, 'High even for an agent. Generated or vendored files can do this.']
+		: ['ok', `${num(Math.round(pace))} lines added per engaged hour.`])
+	// Days that are too long to be real.
+	const long = [...perLocalDay(blocks)].filter(([, s]) => s > 14 * 3600)
+	out.push(long.length
+		? ['bad', `${plural(long.length, 'day')} with over 14 hours on this project, by your time zone's days.`, long.slice(0, 3).map(([d, s]) => `${dayName(d)}: ${dur(s)}`).join(', ')]
+		: ['ok', 'No day over 14 hours.'])
+	return out
+}
+
+// dailyBars draws engaged time per day over the last SPAN_DAYS days.
+function dailyBars(blocks) {
+	const today = new Date()
+	today.setHours(0, 0, 0, 0)
+	const first = today.getTime() - (SPAN_DAYS - 1) * DAY_MS
+	const days = perLocalDay(blocks)
+	const per = Array.from({ length: SPAN_DAYS }, (_, i) => days.get(localDay(first + i * DAY_MS + 12 * HOUR)) ?? 0)
+	const W = 720, H = 170, top = Math.max(3600, ...per)
+	const w = W / SPAN_DAYS
+	const bars = per.map((s, i) => {
+		const h = s ? Math.max(2, (s / top) * (H - 24)) : 0
+		const day = new Date(first + i * DAY_MS)
+		return `<rect class="${s > 10 * 3600 ? 'hot' : 'bar'}" x="${(i * w + 1).toFixed(1)}" y="${(H - 18 - h).toFixed(1)}" width="${(w - 2).toFixed(1)}" height="${h.toFixed(1)}" rx="1.5"><title>${esc(day.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }))}: ${s ? dur(s) : 'nothing'}</title></rect>`
+	}).join('')
+	const marks = [0, 30, 60, SPAN_DAYS - 1].map((i) => `<text x="${Math.min(W - 40, i * w)}" y="${H - 3}">${esc(new Date(first + i * DAY_MS).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))}</text>`).join('')
+	const guide = `<line x1="0" x2="${W}" y1="${H - 18 - (H - 24) * (3600 / top)}" y2="${H - 18 - (H - 24) * (3600 / top)}" class="guide"/><text x="${W - 4}" y="${H - 22 - (H - 24) * (3600 / top)}" text-anchor="end">1h</text>`
+	return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Engaged time per day">${guide}${bars}${marks}</svg>`
+}
+
+// punchCard draws when in the week they work: a dot per weekday and hour,
+// larger for more engaged time, from the whole year. Hours are the reviewer's.
+function punchCard(blocks) {
+	const grid = Array.from({ length: 7 }, () => new Array(24).fill(0))
+	for (const b of blocks) {
+		const span = b[B.end] - b[B.start]
+		if (!span) continue
+		// The engaged time is spread over the hours the block covered.
+		for (let t = b[B.start]; t < b[B.end]; ) {
+			const d = new Date(t)
+			const next = Math.min(b[B.end], new Date(d).setMinutes(60, 0, 0))
+			grid[(d.getDay() + 6) % 7][d.getHours()] += (b[B.engaged] * (next - t)) / span
+			t = next
+		}
+	}
+	const top = Math.max(1, ...grid.flat())
+	const W = 720, cw = (W - 40) / 24, rh = 22
+	const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+	let dots = ''
+	grid.forEach((row, r) => {
+		dots += `<text x="0" y="${r * rh + 15}">${names[r]}</text>`
+		row.forEach((s, h) => {
+			const radius = s ? 1.5 + 8 * Math.sqrt(s / top) : 1
+			dots += `<circle class="${s ? (h < 6 ? 'night' : 'dot') : 'none'}" cx="${(40 + h * cw + cw / 2).toFixed(1)}" cy="${r * rh + 11}" r="${radius.toFixed(1)}"><title>${names[r]} ${String(h).padStart(2, '0')}:00: ${s ? dur(s) : 'nothing'}</title></circle>`
+		})
+	})
+	const hours = [0, 6, 12, 18, 23].map((h) => `<text x="${(40 + h * cw + cw / 2).toFixed(1)}" y="${7 * rh + 12}" text-anchor="middle">${String(h).padStart(2, '0')}</text>`).join('')
+	return `<svg class="chart" viewBox="0 0 ${W} ${7 * rh + 16}" role="img" aria-label="Engaged time by weekday and hour">${dots}${hours}</svg>`
+}
+
+// lineBars draws lines added above the axis and removed below it, per day.
+function lineBars(blocks) {
+	const today = new Date()
+	today.setHours(0, 0, 0, 0)
+	const first = today.getTime() - (SPAN_DAYS - 1) * DAY_MS
+	const add = new Array(SPAN_DAYS).fill(0), del = new Array(SPAN_DAYS).fill(0)
+	for (const b of blocks) {
+		const i = Math.floor((new Date(b[B.start]).setHours(0, 0, 0, 0) - first) / DAY_MS + 0.5)
+		if (i >= 0 && i < SPAN_DAYS) (add[i] += b[B.added]), (del[i] += b[B.removed])
+	}
+	const W = 720, H = 170, mid = 80, top = Math.max(50, ...add, ...del)
+	const w = W / SPAN_DAYS
+	const bars = add.map((a, i) => {
+		const day = new Date(first + i * DAY_MS).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+		const up = (a / top) * (mid - 6), down = (del[i] / top) * (mid - 6)
+		return `<g><title>${esc(day)}: ${num(a)} added, ${num(del[i])} removed</title>` +
+			(a ? `<rect class="add" x="${(i * w + 1).toFixed(1)}" y="${(mid - up).toFixed(1)}" width="${(w - 2).toFixed(1)}" height="${Math.max(1, up).toFixed(1)}"/>` : '') +
+			(del[i] ? `<rect class="del" x="${(i * w + 1).toFixed(1)}" y="${mid}" width="${(w - 2).toFixed(1)}" height="${Math.max(1, down).toFixed(1)}"/>` : '') + '</g>'
+	}).join('')
+	return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Lines added and removed per day"><line class="guide" x1="0" x2="${W}" y1="${mid}" y2="${mid}"/>${bars}<text x="0" y="12">+${compact(top)}</text><text x="0" y="${H - 6}">-${compact(top)}</text></svg>`
+}
+
+// blockScatter puts each block at its length across, and the share of it
+// that was engaged up. Long blocks near the top had no breaks.
+function blockScatter(blocks) {
+	const W = 720, H = 200, left = 34, bottom = 20, most = 8 * 3600
+	const dots = blocks.map((b) => {
+		const wall = (b[B.end] - b[B.start]) / 1000
+		const share = wall ? Math.min(1, b[B.engaged] / wall) : 1
+		const x = left + (Math.min(wall, most) / most) * (W - left - 8)
+		const y = 6 + (1 - share) * (H - bottom - 12)
+		const odd = wall > 4 * 3600 && share > 0.9
+		return `<circle class="${odd ? 'odd' : 'dot'}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${odd ? 5 : 3.5}"><title>${esc(when(b[B.start]))}: ${dur(wall)} long, ${dur(b[B.engaged])} engaged (${Math.round(share * 100)}%), ${plural(b[B.prompts], 'prompt')}, ${num(b[B.added])} lines added</title></circle>`
+	}).join('')
+	const axis = [0, 2, 4, 6, 8].map((h) => `<text x="${left + (h / 8) * (W - left - 8)}" y="${H - 4}" text-anchor="middle">${h}h${h === 8 ? '+' : ''}</text>`).join('') +
+		['100%', '50%', '0%'].map((t, i) => `<text x="0" y="${10 + i * ((H - bottom - 12) / 2)}">${t}</text>`).join('')
+	const zone = `<rect class="zone" x="${left + 0.5 * (W - left - 8)}" y="6" width="${0.5 * (W - left - 8)}" height="${0.1 * (H - bottom - 12)}"/>`
+	return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Each block's length and how much of it was engaged">${zone}${axis}${dots}</svg>`
+}
+
+// activity draws the graphs of one project, with buttons to pick another.
+function activity(projects) {
+	chartData = projects
+	if (!projects.length) return '<div class="panel wide"><h2>Project activity</h2><p class="muted">No work blocks to draw. Their computers have synced none, or synced before blocks were kept.</p></div>'
+	chartAt = Math.min(chartAt, projects.length - 1)
+	const p = projects[chartAt]
+	const bl = p.blocks
+	const sum = (i) => bl.reduce((s, b) => s + b[i], 0)
+	const engaged = sum(B.engaged), prompts = sum(B.prompts), added = sum(B.added), kept = sum(B.kept)
+	const facts = [
+		['Engaged', dur(engaged)],
+		['Blocks', num(bl.length)],
+		['Prompts', `${num(prompts)}<small>${engaged ? `${(prompts / (engaged / 3600)).toFixed(1)} an hour` : ''}</small>`],
+		['Lines', `+${compact(added)} -${compact(sum(B.removed))}<small>${added ? `${Math.round((100 * kept) / added)}% committed` : ''}</small>`],
+		['Tokens', `${compact(sum(B.tin))} / ${compact(sum(B.tout))}<small>read / written</small>`],
+		['Active', bl.length ? `${esc(longDate(bl[0][B.start]))}<small>to ${esc(longDate(bl.at(-1)[B.end]))}</small>` : '-'],
+	]
+	return `<div class="panel wide rv-activity" id="activity">
+		<div class="act-head"><h2>Project activity</h2>
+			<div class="act-pick" role="tablist" aria-label="Project">${projects.map((x, i) => `<button type="button" role="tab" data-chart="${i}" aria-selected="${i === chartAt}">${esc(x.name)}<small>${dur(x.engaged_seconds)}</small></button>`).join('')}</div>
+		</div>
+		<div class="act-facts">${facts.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('')}</div>
+		<ul class="act-checks">${checks(bl).map(([kind, text, more]) => `<li class="${kind}"><b>${esc(text)}</b>${more ? ` <span>${esc(more)}</span>` : ''}</li>`).join('')}</ul>
+		<div class="act-grid">
+			<figure><figcaption>Engaged time per day <small>last ${SPAN_DAYS} days in your time zone, red over 10 hours</small></figcaption>${dailyBars(bl)}</figure>
+			<figure><figcaption>Lines added and removed per day <small>last ${SPAN_DAYS} days</small></figcaption>${lineBars(bl)}</figure>
+			<figure><figcaption>When they work <small>weekday and hour in your time zone, orange before 6:00</small></figcaption>${punchCard(bl)}</figure>
+			<figure><figcaption>Every block: length and share engaged <small>red: over 4 hours, engaged over 90%</small></figcaption>${blockScatter(bl)}</figure>
+		</div>
+		<p class="muted fine">Drawn from the work blocks in each computer's latest report. Hover a bar or dot for its numbers. A check that stands out is a reason to ask, not proof: the numbers come from the person's own computers.</p>
+	</div>`
+}
+
 const banForm = (slack = '') => `<form class="rv-form" data-form="ban">
 	${slack ? `<input type="hidden" name="slack_id" value="${esc(slack)}">` : '<label>Slack ID<input name="slack_id" placeholder="U012ABCDEF" autocomplete="off" spellcheck="false" required></label>'}
-	<label class="grow">Reason, which the person is shown<input name="reason" maxlength="500" autocomplete="off" required></label>
+	<label class="grow">Reason, for reviewers only<input name="reason" maxlength="500" autocomplete="off" required></label>
 	<label>For<select name="days">
 		<option value="1">1 day</option><option value="7" selected>7 days</option><option value="30">30 days</option><option value="90">90 days</option><option value="">Until lifted</option>
 	</select></label>
@@ -120,14 +384,21 @@ const banRow = (b, withName) => `<div class="item">
 	${b.active ? `<button class="btn small" type="button" data-lift="${b.id}">Lift</button>` : ''}
 </div>`
 
+// banBanner says, as loudly as the page can, that a person is banned, with
+// the reason, which only reviewers see.
+const banBanner = (ban) => `<div class="ban-banner" role="alert">
+	<svg viewBox="0 0 16 16" width="30" height="30" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="m3.8 3.8 8.4 8.4"/></svg>
+	<div><h2>Banned ${esc(until(ban.until))}</h2><p>${esc(ban.reason)}</p><p class="fine">They are told they are banned and until when, not why. Nothing new is taken from them.</p></div>
+</div>`
+
 // What a reviewer sees of a person: who they are and each project's total.
 function summaryView(b) {
 	const p = b.person
-	const name = p.name || (p.deleted_at ? 'Deleted account' : 'No name')
+	const name = personName(p)
 	return `<div class="review">
 		<a class="back" href="#/"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M10 3L5 8l5 5"/></svg>Look up someone else</a>
 		${head(esc(name), `<span class="status"><code>${esc(p.slack_id)}</code></span>${b.ban ? '<span class="badge banned">Banned</span>' : ''}`)}
-		${b.ban ? `<div class="panel attention"><h2>Banned ${esc(until(b.ban.until))}</h2><p>${esc(b.ban.reason)}</p></div>` : ''}
+		${b.ban ? banBanner(b.ban) : ''}
 		<div class="stats">
 			<div class="stat"><div class="label">Engaged, as synced</div><div class="value">${dur(b.engaged_seconds)}</div><div class="hint">in the past year</div></div>
 			<div class="stat"><div class="label">Projects</div><div class="value">${b.projects.length}</div><div class="hint">with time in the past year</div></div>
@@ -135,6 +406,7 @@ function summaryView(b) {
 			<div class="stat"><div class="label">Flagged reports</div><div class="value${b.flagged_reports ? ' bad' : ''}">${b.flagged_reports}</div><div class="hint">${b.flagged_reports ? 'ask a neoadmin to read them' : 'nothing stood out'}</div></div>
 		</div>
 		<div class="panel"><h2>Projects</h2>${projectTable(b.projects)}</div>
+		${activity(b.activity)}
 		<p class="muted fine">These totals come from the person's own computers, so they show activity and are not proof of it. Time on two computers at once counts for both.${p.deleted_at ? ' They deleted their account, so nothing more will arrive.' : ''}</p>
 	</div>`
 }
@@ -226,9 +498,10 @@ const personPath = (before) => `/person?${open.who}${open.show ? `&show=${open.s
 // What a neoadmin or superadmin sees of a person: everything.
 function fullView(b) {
 	const { person: p, computers, counts } = b
-	const name = p.name || (p.deleted_at ? 'Deleted account' : 'No name')
+	const name = personName(p)
 	const engaged = computers.reduce((sum, c) => sum + c.engaged_seconds, 0)
-	const banned = b.bans.some((x) => x.active)
+	const ban = b.bans.find((x) => x.active)
+	const banned = Boolean(ban)
 	const facts = [
 		['Name', esc(name)],
 		['Slack ID', p.slack_id ? `<code>${esc(p.slack_id)}</code>` : 'None'],
@@ -238,8 +511,9 @@ function fullView(b) {
 	]
 	const none = open.show ? `No ${open.show} entries${open.computer ? ' for this computer' : ''}.` : open.computer ? 'No entries for this computer.' : 'Nothing yet. Entries appear from the first sync after this log was added.'
 	return `<div class="review">
-		<a class="back" href="#/"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M10 3L5 8l5 5"/></svg>All people</a>
+		<a class="back" href="#/people"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M10 3L5 8l5 5"/></svg>All people</a>
 		${head(esc(name), `<span class="status">${p.slack_id ? `<code>${esc(p.slack_id)}</code>` : 'No Slack ID'}</span>${banned ? '<span class="badge banned">Banned</span>' : ''}${LOOKUP}`)}
+		${ban ? banBanner(ban) : ''}
 		<div class="stats">
 			<div class="stat"><div class="label">Engaged, as synced</div><div class="value">${dur(engaged)}</div><div class="hint">${computers.length === 1 ? 'from 1 computer' : `from ${computers.length} computers`}</div></div>
 			<div class="stat"><div class="label">Not checkable</div><div class="value">${dur(b.unchecked_seconds)}</div><div class="hint">earlier history from first syncs</div></div>
@@ -269,6 +543,7 @@ function fullView(b) {
 				${b.bans.length ? `<div class="list">${b.bans.map((x) => banRow(x, false)).join('')}</div>` : ''}
 			</div>
 			<div class="panel"><h2>Projects</h2>${projectTable(b.projects)}</div>
+			${activity(b.activity)}
 			<div class="panel wide" id="log-panel">
 				<div class="log-head">
 					<h2>Log</h2>
@@ -287,9 +562,11 @@ function fullView(b) {
 }
 
 async function person(arg) {
-	if (!arg) return people()
 	const who = arg.startsWith('id:') ? `id=${encodeURIComponent(arg.slice(3))}` : `slack=${encodeURIComponent(arg)}`
-	if (open.who !== who) open = { who, show: '', computer: '' }
+	if (open.who !== who) {
+		open = { who, show: '', computer: '' }
+		chartAt = 0
+	}
 	let body
 	try {
 		body = await api(personPath())
@@ -352,7 +629,7 @@ async function banList() {
 	const past = bans.filter((b) => !b.active)
 	return head('Bans') + `<div class="panel" data-area>
 		<h2>Ban someone</h2>
-		<p class="muted">While banned, nothing new is taken from the person: no syncs, uploads, cloud events, or submissions. They can still sign in and see what they had, with the reason you give. A banned reviewer can't review. You can ban only people below your own level.</p>
+		<p class="muted">While banned, nothing new is taken from the person: no syncs, uploads, cloud events, or submissions. They see that they are banned and until when, but not the reason, which is for reviewers only. A banned reviewer can't review. You can ban only people below your own level.</p>
 		${banForm()}
 	</div>
 	<div class="panel" data-area>
@@ -367,7 +644,7 @@ async function banList() {
 
 async function keyList() {
 	const { keys } = await api('/keys')
-	const all = [['GET /api/review/person?slack=U012ABCDEF', me.level === 2 ? "A person's total for each project." : "Everything about a person: computers, projects, bans, and a page of their log. Also takes id, show, computer, and before."]]
+	const all = [['GET /api/review/person?slack=U012ABCDEF', me.level === 2 ? "A person's total and work-block timeline for each project." : "Everything about a person: computers, projects, bans, and a page of their log. Also takes id, show, computer, and before."]]
 	if (me.level < 2) all.push(
 		['GET /api/review/people', 'Everyone with an account.'],
 		['GET /api/review/log?slack=…', "A person's whole log."],
@@ -407,25 +684,35 @@ async function keyList() {
 
 // ---- Getting around
 
-const ROUTES = { people, person, team, bans: banList, keys: keyList }
+const ROUTES = { home, people, person, team, bans: banList, keys: keyList }
 let turn = 0
 
-// route draws the page the address names, such as #/person/U012ABCDEF.
+// route draws the page the address names, such as #/person/U012ABCDEF. An
+// address that names no page, or one this visitor has none of, leads Home.
 async function route() {
 	const mine = ++turn
 	const [name = '', ...rest] = location.hash.replace(/^#\/?/, '').split('/')
-	const page = name in ROUTES ? name : 'people'
-	for (const a of document.querySelectorAll('.rv-side a')) {
-		if (a.dataset.page === (page === 'person' ? 'people' : page)) a.setAttribute('aria-current', 'page')
+	const arg = decodeURIComponent(rest.join('/'))
+	const page = !(name in ROUTES) || (name === 'people' && me.level === 2) || (name === 'person' && !arg) ? 'home' : name
+	// A person is under People for those who have the list, and under Home for a reviewer.
+	const marked = page !== 'person' ? page : me.level === 2 ? 'home' : 'people'
+	for (const a of document.querySelectorAll('.rv-nav a')) {
+		if (a.dataset.page === marked) a.setAttribute('aria-current', 'page')
 		else a.removeAttribute('aria-current')
 	}
 	let html
 	try {
-		html = await ROUTES[page](decodeURIComponent(rest.join('/')))
+		html = await ROUTES[page](arg)
 	} catch (e) {
 		html = notice('Could not load this', e.message)
 	}
-	if (mine === turn) view.innerHTML = html
+	if (mine !== turn) return
+	document.body.dataset.page = page
+	view.innerHTML = html
+	if (findWanted && page === 'home') {
+		findWanted = false
+		$('find')?.focus()
+	}
 }
 
 // act carries out a change, then draws the page again. A refusal is shown
@@ -447,7 +734,12 @@ view.addEventListener('submit', (e) => {
 	e.preventDefault()
 	const fields = Object.fromEntries(new FormData(form))
 	const kind = form.dataset.form
-	if (kind === 'lookup') location.hash = '#/person/' + encodeURIComponent(fields.slack.trim().replace(/^<@|>$/g, '').toUpperCase())
+	if (kind === 'lookup') location.hash = '#/person/' + encodeURIComponent(asSlackID(fields.slack))
+	// Home's box opens the person marked in its list, or for a reviewer the Slack ID typed.
+	if (kind === 'find') {
+		const to = me.level === 2 ? '#/person/' + encodeURIComponent(asSlackID(fields.q)) : form.querySelector('[aria-selected="true"]')?.getAttribute('href')
+		if (to) location.hash = to
+	}
 	if (kind === 'add') act(form, () => send('POST', '/team', fields))
 	if (kind === 'ban') act(form, () => send('POST', '/bans', fields))
 	if (kind === 'key') {
@@ -467,6 +759,12 @@ view.addEventListener('click', async (e) => {
 	if ('setLevel' in d) act(btn, () => send('POST', '/team', { slack_id: d.slack, level: Number(d.setLevel) }))
 	if ('lift' in d && confirm('Lift this ban now?')) act(btn, () => send('DELETE', '/bans/' + d.lift))
 	if ('revoke' in d && confirm(`Revoke the key "${d.name}"? Whatever uses it stops working at once.`)) act(btn, () => send('DELETE', '/keys/' + d.revoke))
+	// Which project's graphs are drawn.
+	if ('chart' in d) {
+		chartAt = Number(d.chart)
+		$('activity').outerHTML = activity(chartData)
+		return
+	}
 	// A person's log: which entries, which computer, and older ones.
 	if ('show' in d) {
 		open.show = d.show
@@ -487,6 +785,47 @@ view.addEventListener('click', async (e) => {
 			alert(err.message)
 		}
 	}
+})
+
+// Home's search box: typing lists people, the arrow keys move through them, and Escape puts the list away.
+view.addEventListener('input', (e) => {
+	if (e.target.id === 'find' && me.level < 2) showFound(e.target)
+})
+view.addEventListener('keydown', (e) => {
+	if (e.target.id !== 'find') return
+	const options = [...document.querySelectorAll('#found a')]
+	if (e.key === 'Escape') {
+		e.target.value = ''
+		$('found').hidden = true
+	}
+	if ((e.key !== 'ArrowDown' && e.key !== 'ArrowUp') || !options.length) return
+	e.preventDefault()
+	const at = options.findIndex((a) => a.getAttribute('aria-selected') === 'true')
+	const next = (at + (e.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length
+	options.forEach((a, i) => a.setAttribute('aria-selected', String(i === next)))
+})
+
+// The side menu: its search button, the button that folds it, and on a phone the one that opens it.
+document.addEventListener('click', (e) => {
+	if (e.target.closest('[data-search]')) return toFind()
+	if (e.target.closest('.rv-side a')) delete root.dataset.menu
+	if (!e.target.closest('[data-side-toggle]')) return
+	if (matchMedia('(max-width: 760px)').matches) {
+		if ('menu' in root.dataset) delete root.dataset.menu
+		else root.dataset.menu = 'open'
+		return
+	}
+	const closed = root.dataset.side !== 'closed'
+	if (closed) root.dataset.side = 'closed'
+	else delete root.dataset.side
+	try {
+		localStorage.setItem(SIDE, closed ? 'closed' : 'open')
+	} catch {}
+})
+document.addEventListener('keydown', (e) => {
+	if (!(e.metaKey || e.ctrlKey) || e.altKey || e.key.toLowerCase() !== 'k') return
+	e.preventDefault()
+	toFind()
 })
 
 // Copy buttons copy the text next to them.
@@ -510,8 +849,8 @@ async function start() {
 		return
 	}
 	$('me').innerHTML = `<span>${esc(me.name || me.slack_id)}</span>${badge(me.level)}`
-	for (const a of document.querySelectorAll('.rv-side [data-min]')) a.hidden = me.level > Number(a.dataset.min)
-	if (me.level === 2) document.querySelector('.rv-side [data-page="people"]').textContent = 'Look up'
+	for (const el of document.querySelectorAll('.rv-nav [data-min]')) el.hidden = me.level > Number(el.dataset.min)
+	for (const el of document.querySelectorAll('[data-keys]')) el.textContent = KEYS
 	addEventListener('hashchange', route)
 	route()
 }

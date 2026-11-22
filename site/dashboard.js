@@ -316,9 +316,6 @@ async function showSetup() {
 	$('status').textContent = ''
 }
 
-// banned says what a ban on this account means, with the reason the reviewer gave.
-const banned = (ban) => `this account is banned ${ban.until ? `until ${new Date(ban.until).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}` : 'until a reviewer lifts the ban'}, so nothing new is taken from it. The reason given: ${ban.reason}`
-
 async function loadHosted() {
 	let body
 	try {
@@ -327,8 +324,10 @@ async function loadHosted() {
 			$('title').textContent = body.person.name ? `Stats for ${body.person.name}` : 'Their stats'
 			document.querySelector('.nav .links .active')?.classList.remove('active')
 		}
+		if (!viewing) showBan(body.ban)
 		if (!body.computers.length) {
 			if (viewing) notice('Nothing synced yet', 'This person has signed in, but no computer of theirs has synced. <a href="/review/">Back to review</a>')
+			else if (body.ban) notice('Nothing synced', 'This account was banned before anything synced, so there is nothing to show.')
 			else await showSetup()
 			setTimeout(loadHosted, 10000) // so the stats appear as soon as the first sync lands
 			return
@@ -343,7 +342,7 @@ async function loadHosted() {
 	const stale = Date.now() - last > 3 * DAY
 	const from = body.computers.length === 1 ? '1 computer' : `${body.computers.length} computers`
 	show(merge(body.computers), `<span class="dot${stale ? ' old' : ''}"></span>Synced ${esc(ago(last))} from ${from}` +
-		(viewing ? ` - <a href="/review/#/person/id:${encodeURIComponent(viewing)}">review</a> - <a href="/review/">all people</a>` : body.ban ? ` - <b>syncing is paused</b>: ${esc(banned(body.ban))}` : stale ? ' - run <code>teardrop sync</code> to update' : ''))
+		(viewing ? ` - <a href="/review/#/person/id:${encodeURIComponent(viewing)}">review</a> - <a href="/review/#/people">all people</a>` : body.ban ? ' - <b>syncing is paused</b>' : stale ? ' - run <code>teardrop sync</code> to update' : ''))
 	setTimeout(loadHosted, 5 * 60000)
 }
 

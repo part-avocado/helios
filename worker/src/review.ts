@@ -3,7 +3,7 @@
 // person's computers and log. Who is which is in staff.ts.
 import { Refusal } from './http.ts'
 import { type Detail, dur, type Entry, findings, parseStored, remarks } from './log.ts'
-import { computers, personDays, personProjects } from './reports.ts'
+import { computers, personDays, personProjects, projectBlocks } from './reports.ts'
 import { bans } from './staff.ts'
 
 /** How many people the admin list shows. */
@@ -20,10 +20,13 @@ export async function people(env: Env) {
 	const { results } = await env.DB.prepare(
 		`SELECT u.id, u.name, u.slack_id, u.created_at, u.deleted_at, COUNT(c.id) AS computers,
 			COALESCE(SUM(c.engaged_seconds), 0) AS engaged_seconds, MAX(c.synced_at) AS synced_at,
-			(SELECT COUNT(*) FROM account_log l WHERE l.user_id = u.id AND l.flagged = 1) AS flagged
+			(SELECT COUNT(*) FROM account_log l WHERE l.user_id = u.id AND l.flagged = 1) AS flagged,
+			EXISTS (SELECT 1 FROM bans b WHERE b.slack_id = u.slack_id AND u.slack_id != '' AND b.lifted_at IS NULL AND (b.until IS NULL OR b.until > ?1)) AS banned
 		 FROM users u LEFT JOIN computers c ON c.user_id = u.id
 		 GROUP BY u.id ORDER BY synced_at DESC NULLS LAST, u.created_at DESC LIMIT ${PEOPLE_LIMIT}`,
-	).all()
+	)
+		.bind(Date.now())
+		.all()
 	return results
 }
 
@@ -85,7 +88,7 @@ export async function person(env: Env, params: URLSearchParams) {
 	const show = { flagged: 'AND flagged = 1', refused: `AND refusal != ''` }[params.get('show') ?? ''] ?? ''
 	// A computer that isn't one of theirs has no rows in their log.
 	const computer = params.get('computer') ?? ''
-	const [rows, counts, unchecked, theirComputers, days, projects, theirBans] = await Promise.all([
+	const [rows, counts, unchecked, theirComputers, days, projects, theirBans, activity] = await Promise.all([
 		env.DB.prepare(`SELECT * FROM account_log WHERE user_id = ?1 AND id < ?2 AND (?3 = '' OR computer_id = ?3) ${show} ORDER BY id DESC LIMIT ${LOG_PAGE + 1}`)
 			.bind(who.id, before, computer)
 			.all<Row>(),
@@ -104,6 +107,8 @@ export async function person(env: Env, params: URLSearchParams) {
 		personDays(env, who.id),
 		personProjects(env, who.id),
 		who.slack_id ? bans(env, who.slack_id) : [],
+		// Older log pages draw nothing new.
+		params.has('before') ? [] : projectBlocks(env, who.id),
 	])
 
 	// One person can't be engaged for longer than a day lasts, on however many computers.
@@ -119,6 +124,8 @@ export async function person(env: Env, params: URLSearchParams) {
 		person: who,
 		computers: theirComputers,
 		projects,
+		// Each project's work blocks, for the graphs.
+		activity,
 		bans: theirBans,
 		counts,
 		unchecked_seconds: unchecked?.seconds ?? 0,
@@ -136,11 +143,12 @@ export async function person(env: Env, params: URLSearchParams) {
  */
 export async function summary(env: Env, params: URLSearchParams) {
 	const who = await lookup(env, params, false)
-	const [theirComputers, projects, flagged, theirBans] = await Promise.all([
+	const [theirComputers, projects, flagged, theirBans, activity] = await Promise.all([
 		computers(env, who.id),
 		personProjects(env, who.id),
 		env.DB.prepare('SELECT COUNT(*) AS n FROM account_log WHERE user_id = ? AND flagged = 1').bind(who.id).first<{ n: number }>(),
 		bans(env, who.slack_id),
+		projectBlocks(env, who.id),
 	])
 	const ban = theirBans.find((b) => b.active)
 	return {
@@ -153,5 +161,7 @@ export async function summary(env: Env, params: URLSearchParams) {
 		ban: ban ? { reason: ban.reason, at: ban.at, until: ban.until } : null,
 		// A project's own name only. Its key can be a folder on their computer.
 		projects: projects.map(({ name, engaged_seconds }) => ({ name, engaged_seconds })),
+		// Each project's work blocks, for the graphs, by name only too.
+		activity: activity.map(({ name, engaged_seconds, blocks }) => ({ name, engaged_seconds, blocks })),
 	}
 }

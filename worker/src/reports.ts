@@ -154,14 +154,14 @@ async function store(env: Env, user: User, body: string, entry: Entry): Promise<
 	const applied = 'EXISTS (SELECT 1 FROM computers WHERE id = ?1 AND signature = ?2)'
 	const results = await env.DB.batch([
 		env.DB.prepare(
-			`INSERT INTO computers (id, user_id, public_key, signature, generated_at, synced_at, teardrop_version, engaged_seconds, since, days, projects)
-			 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+			`INSERT INTO computers (id, user_id, public_key, signature, generated_at, synced_at, teardrop_version, engaged_seconds, since, days, projects, blocks)
+			 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
 			 ON CONFLICT (id) DO UPDATE SET signature = excluded.signature, generated_at = excluded.generated_at,
 				synced_at = excluded.synced_at, teardrop_version = excluded.teardrop_version, engaged_seconds = excluded.engaged_seconds,
-				since = excluded.since, days = excluded.days, projects = excluded.projects
+				since = excluded.since, days = excluded.days, projects = excluded.projects, blocks = excluded.blocks
 			 WHERE computers.user_id = excluded.user_id AND computers.public_key = excluded.public_key
 				AND computers.generated_at < excluded.generated_at`,
-		).bind(id, user.id, p.account, signed.key, generated, now, version, engaged, since, JSON.stringify(days), JSON.stringify(projects)),
+		).bind(id, user.id, p.account, signed.key, generated, now, version, engaged, since, JSON.stringify(days), JSON.stringify(projects), JSON.stringify(blockTable(p.report))),
 		env.DB.prepare(`DELETE FROM report_chunks WHERE computer_id = ?1 AND ${applied}`).bind(id, signed.key),
 		...chunks.map((data, seq) =>
 			env.DB.prepare(`INSERT INTO report_chunks (computer_id, seq, data) SELECT ?1, ?3, ?4 WHERE ${applied}`).bind(id, signed.key, seq, data),
@@ -290,6 +290,89 @@ export async function personProjects(env: Env, userID: number): Promise<{ key: s
 	return [...all.values()].sort((a, b) => b.engaged_seconds - a.engaged_seconds)
 }
 
+/** How many work blocks of one project are kept for the graphs, the newest. A year of daily work is a few thousand. */
+const BLOCKS_PER_PROJECT = 4000
+/** How many work blocks of one computer are kept, the newest, so they fit in one D1 value with room to spare. */
+const BLOCKS_PER_COMPUTER = 12000
+
+/**
+ * One work block, as numbers for the review app's graphs: start and end in
+ * Unix milliseconds, engaged seconds, prompts, tokens read and written, lines
+ * added, removed and kept, and which of the person's computers sent it (0 for
+ * the one that synced last).
+ */
+export type BlockRow = [number, number, number, number, number, number, number, number, number, number]
+
+/** A computer's stored blocks: by project key, [name, first start, last end, engaged seconds, blocks without the computer]. */
+type StoredBlocks = Record<string, [string, number, number, number, number[][]]>
+
+/**
+ * blockTable reads a report's work blocks into what the computers table keeps:
+ * numbers grouped by project, the newest blocks only. The first start, last
+ * end, and engaged total of each project count every block.
+ */
+function blockTable(report: ReportBody | undefined): StoredBlocks {
+	const n = (v: unknown) => {
+		const x = Number(v)
+		return Number.isFinite(x) && x > 0 ? Math.round(x) : 0
+	}
+	const out: StoredBlocks = {}
+	const rows: [string, number[]][] = []
+	for (const b of Array.isArray(report?.blocks) ? (report.blocks as Record<string, unknown>[]) : []) {
+		const p = (b?.project ?? {}) as { key?: unknown; name?: unknown }
+		const key = String(p.key ?? p.name ?? '').slice(0, 200)
+		const start = Date.parse(String(b?.start ?? ''))
+		const end = Date.parse(String(b?.end ?? ''))
+		if (!key || !Number.isFinite(start) || !(end >= start)) continue
+		// Without a name, the key's last part, since the key can be a folder on their computer.
+		const name = String(p.name ?? '').slice(0, 80) || key.split(/[\\/]/).filter(Boolean).pop()?.slice(0, 80) || 'unnamed'
+		const project = (out[key] ??= [name, start, end, 0, []])
+		const engaged = n(b.engaged_seconds)
+		project[1] = Math.min(project[1], start)
+		project[2] = Math.max(project[2], end)
+		project[3] += engaged
+		rows.push([key, [start, end, engaged, n(b.prompts), n(b.tokens_in), n(b.tokens_out), n(b.lines_added), n(b.lines_removed), n(b.lines_kept)]])
+	}
+	rows.sort((a, b) => a[1][0]! - b[1][0]!)
+	for (const [key, row] of rows.slice(-BLOCKS_PER_COMPUTER)) out[key]![4].push(row)
+	for (const project of Object.values(out)) project[4] = project[4].slice(-BLOCKS_PER_PROJECT)
+	return out
+}
+
+/**
+ * projectBlocks gathers the work blocks of each of a person's computers by
+ * project, the project with the most engaged time first. They are read from
+ * what was kept when each report arrived. A computer that last synced before
+ * that was kept has its report read once, and what it held is kept then.
+ */
+export async function projectBlocks(env: Env, userID: number): Promise<{ key: string; name: string; engaged_seconds: number; first_active: number; last_active: number; blocks: BlockRow[] }[]> {
+	const { results } = await env.DB.prepare('SELECT id, blocks FROM computers WHERE user_id = ? ORDER BY synced_at DESC, id').bind(userID).all<{ id: string; blocks: string }>()
+	const all = new Map<string, { key: string; name: string; engaged_seconds: number; first_active: number; last_active: number; blocks: BlockRow[] }>()
+	for (const [computer, row] of results.entries()) {
+		// One report at a time, so only one is ever held.
+		const stored = row.blocks ? parseStored<StoredBlocks>(row.blocks) : await fillBlocks(env, row.id)
+		for (const [key, [name, first, last, engaged, blocks]] of Object.entries(stored ?? {})) {
+			const project = all.get(key) ?? { key, name, engaged_seconds: 0, first_active: first, last_active: last, blocks: [] }
+			project.engaged_seconds += engaged
+			project.first_active = Math.min(project.first_active, first)
+			project.last_active = Math.max(project.last_active, last)
+			for (const b of blocks) project.blocks.push([...b, computer] as BlockRow)
+			all.set(key, project)
+		}
+	}
+	for (const project of all.values()) project.blocks = project.blocks.sort((a, b) => a[0] - b[0]).slice(-BLOCKS_PER_PROJECT)
+	return [...all.values()].sort((a, b) => b.engaged_seconds - a.engaged_seconds)
+}
+
+/** fillBlocks reads the blocks out of one computer's stored report and keeps them. */
+async function fillBlocks(env: Env, computerID: string): Promise<StoredBlocks> {
+	const { results } = await env.DB.prepare('SELECT data FROM report_chunks WHERE computer_id = ? ORDER BY seq').bind(computerID).all<{ data: string }>()
+	const table = blockTable(parseStored<{ report?: ReportBody }>(results.map((r) => r.data).join(''))?.report)
+	// Only if no newer report filled it in meanwhile.
+	await env.DB.prepare(`UPDATE computers SET blocks = ? WHERE id = ? AND blocks = ''`).bind(JSON.stringify(table), computerID).run()
+	return table
+}
+
 export async function computers(env: Env, userID: number): Promise<Computer[]> {
 	const { results } = await env.DB.prepare(
 		'SELECT id, synced_at, generated_at, teardrop_version, engaged_seconds FROM computers WHERE user_id = ? ORDER BY synced_at DESC',
@@ -326,6 +409,8 @@ export async function deleteUser(env: Env, userID: number): Promise<void> {
 		env.DB.prepare(`UPDATE account_log SET report_key = NULL, detail = json_remove(detail, '$.projects', '$.more_projects') WHERE user_id = ?`).bind(userID),
 		// The report pieces go with the computers (ON DELETE CASCADE).
 		env.DB.prepare('DELETE FROM computers WHERE user_id = ?').bind(userID),
+		// Their read keys stop working.
+		env.DB.prepare('DELETE FROM user_keys WHERE user_id = ?').bind(userID),
 		// The events kept from their cloud threads go too.
 		env.DB.prepare('DELETE FROM relayed_events WHERE user_id = ?').bind(userID),
 		// The new sync key is one no one has seen, so the old one stops working.

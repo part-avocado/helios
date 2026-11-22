@@ -39,7 +39,8 @@ async function load() {
 	$('me-name').textContent = me.name || 'Not set'
 	$('me-slack').textContent = me.slack_id || 'No Slack account linked'
 	$('me-since').textContent = new Intl.DateTimeFormat(undefined, { dateStyle: 'long' }).format(me.created_at)
-	$('me-role').textContent = (['Superadmin', 'Neoadmin', 'Reviewer'][me.level] ?? 'Member') + (me.ban ? `. Banned ${me.ban.until ? `until ${new Date(me.ban.until).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}` : 'until a reviewer lifts the ban'}: ${me.ban.reason}` : '')
+	$('me-role').textContent = (['Superadmin', 'Neoadmin', 'Reviewer'][me.level] ?? 'Member') + (me.ban ? '. Banned' : '')
+	showBan(me.ban)
 }
 
 $('new-key').addEventListener('click', async () => {
@@ -54,6 +55,40 @@ $('new-key').addEventListener('click', async () => {
 		say($('key-msg'), 'New key made. The steps above now use it.', true)
 	} catch (e) {
 		say($('key-msg'), e.message, false)
+	}
+})
+
+// Read keys for the public API.
+async function listKeys() {
+	const { keys } = await api('/api/keys')
+	$('api-keys').innerHTML = keys.map((k) => `<div class="item">
+			<div class="grow"><b>${esc(k.name)}</b> <code>${esc(k.hint)}…</code>
+				<div class="sub">${k.site ? `Signed in at ${esc(k.site)}, ` : 'Made '}${esc(ago(k.created_at))} - ${k.last_used_at ? `last used ${esc(ago(k.last_used_at))}` : 'never used'}</div></div>
+			<button class="btn small danger" type="button" data-revoke="${k.id}" data-name="${esc(k.name)}">Revoke</button>
+		</div>`).join('') || '<div class="item"><div class="grow muted">You have no read keys.</div></div>'
+}
+$('api-example').textContent = `curl -H "Authorization: Bearer $KEY" ${location.origin}/api/public/v1/projects`
+$('api-form').addEventListener('submit', async (e) => {
+	e.preventDefault()
+	try {
+		const made = await change('/api/keys', 'POST', JSON.stringify({ name: e.target.name.value }))
+		e.target.reset()
+		$('api-msg').hidden = true
+		$('api-key-value').textContent = made.key
+		$('api-dialog').showModal()
+		await listKeys()
+	} catch (err) {
+		say($('api-msg'), err.message, false)
+	}
+})
+$('api-keys').addEventListener('click', async (e) => {
+	const d = e.target.closest('[data-revoke]')?.dataset
+	if (!d || !confirm(`Revoke the read key "${d.name}"? Whatever uses it stops working at once.`)) return
+	try {
+		await change('/api/keys/' + d.revoke, 'DELETE')
+		await listKeys()
+	} catch (err) {
+		say($('api-msg'), err.message, false)
 	}
 })
 
@@ -103,5 +138,8 @@ $('delete-account').addEventListener('click', async () => {
 })
 
 // Without an account behind this copy of the site, there is nothing to set.
-if ('hosted' in document.documentElement.dataset) load().catch((e) => say($('key-msg'), e.message, false))
+if ('hosted' in document.documentElement.dataset) {
+	load().catch((e) => say($('key-msg'), e.message, false))
+	listKeys().catch((e) => say($('api-msg'), e.message, false))
+}
 else location.replace('dashboard.html')

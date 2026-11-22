@@ -130,6 +130,12 @@ html[data-theme="light"] .theme .moon { display: block; }
 .copy { flex: none; height: 30px; padding: 0 13px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); font: 600 13px var(--sans); color: var(--text); cursor: pointer; }
 .copy:hover { border-color: var(--line-2); }
 
+/* On a banned person's own pages: that they are banned, and until when. */
+.ban-banner { display: flex; align-items: center; gap: 18px; margin: 0 0 28px; padding: 20px 24px; border: 2px solid var(--bad); border-radius: 12px; background: var(--bad-soft); color: var(--text); }
+.ban-banner svg { flex: none; fill: none; stroke: var(--bad); stroke-width: 1.6; stroke-linecap: round; }
+.ban-banner h2 { margin: 0 0 4px; font: 700 22px/1.2 var(--sans); letter-spacing: -0.02em; color: var(--bad); }
+.ban-banner p { margin: 0; font-size: 15px; color: var(--text); }
+
 /* A popup, such as the one that shows a new key to copy */
 dialog.modal { width: min(580px, calc(100vw - 32px)); padding: 26px 28px 24px; border: 1px solid var(--line-2); border-radius: 12px; background: var(--panel); color: var(--text); }
 dialog.modal::backdrop { background: rgb(0 0 0 / 0.62); }

@@ -6,8 +6,10 @@
 import { clearSession, finishSignIn, keyUser, reviewKeyUser, rotateKey, sameOrigin, sessionUser, signOut, startSignIn, type User } from './auth.ts'
 import { cloudComputer, holdEvents, MAX_EVENTS_BYTES, readEvents } from './events.ts'
 import { json, jsonText, readText, redirect, Refusal } from './http.ts'
+import { createUserKey, publicAPI, revokeUserKey, userKeys } from './public.ts'
 import { computerReportJSON, computers, deleteUser, keptReportJSON, MAX_REPORT_BYTES, removeComputer, reportsJSON, storeReport } from './reports.ts'
 import { fullLog, people, person, summary } from './review.ts'
+import { authorize } from './signin.ts'
 import { addReviewer, banMessage, bans, createKey, issueBan, keys, liftBan, need, removeReviewer, revokeKey, team } from './staff.ts'
 
 export default {
@@ -97,12 +99,17 @@ async function route(request: Request, env: Env): Promise<Response> {
 		return signOut(request)
 	}
 
+	// Sign in with teardrop: another site asks for a read key, and the person allows it.
+	if (path === '/authorize' && (request.method === 'GET' || request.method === 'POST')) return authorize(request, env, url)
+
 	// The review app decides who may open it, as for anyone who asks for it by name.
 	if (request.method === 'GET' && REVIEW_ALIASES.has(page)) {
 		const who = page !== 'person' ? '' : (url.searchParams.get('slack') ?? (url.searchParams.has('id') ? `id:${url.searchParams.get('id')}` : ''))
 		return redirect('/review/' + (who ? `#/person/${encodeURIComponent(who)}` : ''))
 	}
 	if (path.startsWith('/api/review/')) return reviewAPI(request, env, url)
+	// What a person reads about themselves with a read key, from anywhere.
+	if (path.startsWith('/api/public/v1/')) return publicAPI(request, env, url)
 
 	const user = await sessionUser(request, env)
 	if (request.method === 'GET' && page === 'login') {
@@ -127,12 +134,12 @@ async function route(request: Request, env: Env): Promise<Response> {
 		// The computer their cloud threads sync as is named as such, since it is no machine of theirs.
 		const cloud = (await cloudComputer(env, user)).id
 		const all = (await computers(env, user.id)).map((c) => ({ ...c, cloud: c.id === cloud }))
-		return json({ name: user.name, slack_id: user.slack_id, admin: user.admin, level: user.level, ban: user.ban, api_key: user.api_key, created_at: user.created_at, computers: all })
+		return json({ name: user.name, slack_id: user.slack_id, admin: user.admin, level: user.level, ban: ownBan(user), api_key: user.api_key, created_at: user.created_at, computers: all })
 	}
 	if (call === 'GET /api/report') {
 		// Neoadmins and superadmins can read anyone's reports; everyone else only their own.
 		const other = url.searchParams.get('user')
-		if (!other) return jsonText(`{"ban":${JSON.stringify(user.ban)},"computers":${await reportsJSON(env, user.id)}}`)
+		if (!other) return jsonText(`{"ban":${JSON.stringify(ownBan(user))},"computers":${await reportsJSON(env, user.id)}}`)
 		need(user, 1)
 		const person = /^\d+$/.test(other)
 			? await env.DB.prepare('SELECT id, name, slack_id FROM users WHERE id = ?').bind(Number(other)).first<{ id: number }>()
@@ -157,6 +164,19 @@ async function route(request: Request, env: Env): Promise<Response> {
 		return res
 	}
 	if (call === 'POST /api/key') return json({ api_key: await rotateKey(env, user) })
+	// Their read keys for the public API.
+	if (call === 'GET /api/keys') return json({ keys: await userKeys(env, user) })
+	if (call === 'POST /api/keys') {
+		let body: Record<string, unknown> = {}
+		try {
+			body = JSON.parse(await readText(request, 16 << 10)) ?? {}
+		} catch {}
+		return json(await createUserKey(env, user, body))
+	}
+	if (request.method === 'DELETE' && path.startsWith('/api/keys/')) {
+		await revokeUserKey(env, user, path.slice('/api/keys/'.length))
+		return json({})
+	}
 	if (request.method === 'DELETE' && path.startsWith('/api/computers/')) {
 		if (!(await removeComputer(env, user.id, path.slice('/api/computers/'.length)))) throw new Refusal(404, 'No such computer.')
 		return json({})
@@ -173,6 +193,9 @@ async function needKey(request: Request, env: Env, url: URL): Promise<User> {
 	if (user.ban) throw new Refusal(403, banMessage(user.ban))
 	return user
 }
+
+/** ownBan is what a person is told of their own ban: that it holds, and until when. The reason is for reviewers. */
+const ownBan = (user: User) => (user.ban ? { until: user.ban.until } : null)
 
 /**
  * reviewAPI answers the review app, and reviewers' own tools: it takes a

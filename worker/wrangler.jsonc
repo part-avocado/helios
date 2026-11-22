@@ -11,7 +11,8 @@
 	"assets": {
 		"directory": "../site",
 		"binding": "ASSETS",
-		// These reach the Worker before the files in ../site: the API, sign-in,
+		// These reach the Worker before the files in ../site: the API, sign-in
+		// (and signing in to other sites with teardrop),
 		// the pages that need an account, the review app and its old addresses,
 		// and the home page and docs, which show an account menu to signed-in
 		// visitors.
@@ -19,6 +20,7 @@
 			"/api/*",
 			"/auth/*",
 			"/logout",
+			"/authorize",
 			"/login",
 			"/login.html",
 			"/dashboard",
