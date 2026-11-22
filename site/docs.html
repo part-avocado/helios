@@ -210,6 +210,7 @@
 	<p>For a tool with a hooks file in Claude Code's shape, point its prompt and stop hooks at <code>teardrop hook mytool</code>. For a tool with plugins, run the same command from the plugin, as teardrop's own Amp plugin does with <code>teardrop hook amp</code>.</p>
 
 	<h2 id="lines">Lines of code</h2>
+	<p>When a computer syncs, teardrop also sends your site one record per commit of yours in each project with a git remote: its SHA, author time, and lines added and removed, never its message or code. Commits earn no time. Your profile links a public repository's latest commits, and once an hour the site asks GitHub which of them exist, so a reviewer can tell a claimed commit GitHub doesn't have. A private repository's commits are shown as not checked. The check needs a <code>GITHUB_TOKEN</code> secret on the Worker.</p>
 	<p>For each project the report shows the lines agents changed (<strong>AGENT LINES</strong>), how many of the added lines later turned up in your commits (<strong>KEPT</strong>), and the lines your own commits added (<strong>COMMITTED</strong>). The code itself is not kept.</p>
 
 	<h2 id="commands">Commands and flags</h2>

@@ -55,8 +55,13 @@
 			"binding": "REPORTS"
 		}
 	],
+	// Hourly, ask GitHub which claimed commits exist (src/git.ts).
+	"triggers": { "crons": ["17 * * * *"] },
 	"vars": {
 		"HCA_URL": "https://auth.hackclub.com",
+		// Where the commit check asks GitHub; tests point it elsewhere. The
+		// check needs a GITHUB_TOKEN secret, and is off without one.
+		"GITHUB_API": "https://api.github.com",
 		// Local testing only: signs every visitor in as this Slack user ID. Set
 		// it in .dev.vars. It is ignored on any address but localhost.
 		"DEV_LOGIN": ""

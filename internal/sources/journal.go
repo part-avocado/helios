@@ -31,6 +31,7 @@ type JournalEvent struct {
 	Out     int64     `json:"out,omitempty"`     // tokens the model wrote in it
 	Added   int       `json:"added,omitempty"`   // lines the agent added, from harnesses that report them
 	Removed int       `json:"removed,omitempty"` // and removed
+	Sha     string    `json:"sha,omitempty"`     // a commit's, on a commit record; such records earn no time
 }
 
 // AppendJournal adds ev to the month's journal file in dir. Each event is

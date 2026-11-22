@@ -6,6 +6,7 @@
 import { clearSession, finishSignIn, keyUser, reviewKeyUser, rotateKey, sameOrigin, sessionUser, signOut, startSignIn, type User, userByID } from './auth.ts'
 import { cloudComputer, holdEvents, MAX_EVENTS_BYTES, readEvents } from './events.ts'
 import { json, jsonText, readText, redirect, Refusal } from './http.ts'
+import { checkGit } from './git.ts'
 import { relayRecords } from './records.ts'
 import { accept, listSubmissions, submission, submit } from './submissions.ts'
 export { UserHub } from './hub.ts'
@@ -27,6 +28,10 @@ export default {
 			console.error(JSON.stringify({ message: 'request failed', path: new URL(request.url).pathname, error: String(e), stack: (e as Error)?.stack }))
 			return guard(new Response('Something went wrong on the server. Try again in a moment.\n', { status: 500 }))
 		}
+	},
+	// Hourly: ask GitHub which claimed commits exist.
+	async scheduled(_event, env, ctx) {
+		ctx.waitUntil(checkGit(env).then(() => {}))
 	},
 } satisfies ExportedHandler<Env>
 

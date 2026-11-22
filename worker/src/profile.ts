@@ -4,6 +4,7 @@
 // show it. Folders on a person's computer are never shown.
 import { type User, userByHandle } from './auth.ts'
 import { json, Refusal } from './http.ts'
+import { projectCommits } from './git.ts'
 import { repo } from './public.ts'
 import { computers, personDays, personProjects } from './reports.ts'
 
@@ -31,7 +32,7 @@ const isShown = (key: string, choices: Map<string, boolean>) => choices.get(key)
 export async function profileJSON(env: Env, handle: string): Promise<Response> {
 	const user = await visibleOwner(env, handle)
 	if (!user) throw new Refusal(404, 'No such profile.')
-	const [projects, days, choices, theirs] = await Promise.all([personProjects(env, user.id), personDays(env, user.id), shownProjects(env, user.id), computers(env, user.id)])
+	const [projects, days, choices, theirs, git] = await Promise.all([personProjects(env, user.id), personDays(env, user.id), shownProjects(env, user.id), computers(env, user.id), projectCommits(env, user.id)])
 	const perDay: Record<string, number> = {}
 	for (const computer of days) for (const [date, s] of Object.entries(computer)) perDay[date] = (perDay[date] ?? 0) + s
 	const named = projects.filter((p) => isShown(p.key, choices))
@@ -42,7 +43,11 @@ export async function profileJSON(env: Env, handle: string): Promise<Response> {
 		// As in their own total: time on two projects at once counts once.
 		engaged_seconds: theirs.reduce((sum, c) => sum + c.engaged_seconds, 0),
 		days: Object.keys(perDay).sort().map((date) => ({ date, engaged_seconds: perDay[date] })),
-		projects: named.map((p) => ({ name: p.name, repo: repo(p.key), engaged_seconds: p.engaged_seconds })),
+		projects: named.map((p) => {
+			const g = repo(p.key) ? git.get(p.key) : undefined
+			// Only a public repository's commits are linked, newest first.
+			return { name: p.name, repo: repo(p.key), engaged_seconds: p.engaged_seconds, ...(g ? { checked: g.checked, commits: g.commits.slice(0, 5).map((c) => ({ sha: c.sha, t: c.t, found: c.found ?? null })) } : {}) }
+		}),
 		other_projects: { count: unnamed.length, engaged_seconds: unnamed.reduce((sum, p) => sum + p.engaged_seconds, 0) },
 	})
 	res.headers.set('Cache-Control', 'public, max-age=60')

@@ -7,6 +7,7 @@
 // it ends; a record for a sealed day reads the day back from R2 first.
 // Records never hold prompt or reply text.
 import { DurableObject } from 'cloudflare:workers'
+import { type Commit, remember } from './git.ts'
 import { RULES, type Rec, totals, WATCH } from './timeline.ts'
 
 const FLUSH = 10 * 60_000
@@ -34,6 +35,7 @@ interface Line {
 	cwd?: unknown
 	git?: unknown
 	project?: unknown
+	sha?: unknown
 }
 
 const count = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.min(Math.round(v), 1e12) : 0)
@@ -99,7 +101,9 @@ export class UserHub extends DurableObject<Env> {
 				...(ev.human === true ? { judged: count(ev.judged), real: count(ev.real), low: ev.low === true, ...(sim && sim !== '0' ? { sim } : {}) } : {}),
 				...(count(ev.in) || count(ev.out) ? { in: count(ev.in), out: count(ev.out) } : {}),
 				...(count(ev.added) || count(ev.removed) ? { added: count(ev.added), removed: count(ev.removed) } : {}),
+				...(event === 'commit' && typeof ev.sha === 'string' && /^[0-9a-f]{40}$/.test(ev.sha) ? { sha: ev.sha } : {}),
 			}
+			if (event === 'commit' && !rec.sha) continue
 			const day = dayOf(t, offset)
 			if (now - (Date.parse(day) + DAY - offset * 60_000) > SEAL) await this.load(userID, day)
 			const done = sql.exec(`INSERT OR IGNORE INTO recs (computer, tool, session, event, t, arrived, day, rec) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -167,6 +171,10 @@ export class UserHub extends DurableObject<Env> {
 					).bind(user, computer, day, Math.round(s.witnessed / 1000), Math.round(s.unwitnessed / 1000), s.prompts, s.tokens_in, s.tokens_out, s.lines_added, s.lines_removed, JSON.stringify(projects), computer ? '' : hash, RULES, now)
 				}),
 			)
+			// Commits go to their project's row, for links and the GitHub check.
+			const commits = new Map<string, Commit[]>()
+			for (const r of recs) if (r.sha) commits.set(r.project, [...(commits.get(r.project) ?? []), { sha: r.sha, t: r.t, added: r.added ?? 0, removed: r.removed ?? 0, seen: r.arrived }])
+			for (const [project, list] of commits) await remember(this.env, user, project, list)
 			sql.exec('DELETE FROM dirty WHERE day = ?', day)
 		}
 		// Sealed days live in R2 alone from here on.
@@ -186,7 +194,7 @@ export class UserHub extends DurableObject<Env> {
 	 * record, if it is recent, and today's totals on the person's latest clock.
 	 */
 	live(now = Date.now()): Live {
-		const recs = this.ctx.storage.sql.exec('SELECT rec FROM recs WHERE t >= ? ORDER BY t', now - 2 * DAY).toArray().map((r) => JSON.parse(String(r.rec)) as Rec & { offset: number })
+		const recs = this.ctx.storage.sql.exec('SELECT rec FROM recs WHERE t >= ? ORDER BY t', now - 2 * DAY).toArray().map((r) => JSON.parse(String(r.rec)) as Rec & { offset: number }).filter((r) => !r.sha)
 		const last = recs.at(-1)
 		const offset = last?.offset ?? 0
 		const day = dayOf(now, offset)

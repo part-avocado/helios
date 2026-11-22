@@ -3,7 +3,9 @@ package main
 import (
 	"bufio"
 	"maps"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -65,5 +67,82 @@ func (c *commitLines) claim(hashes []uint64) int {
 			n++
 		}
 	}
+	return n
+}
+
+// commit is one commit of the person's, as it goes to the site: never its
+// message or its code.
+type commit struct {
+	Sha     string
+	Time    time.Time // the author's, which they set
+	Added   int
+	Removed int
+}
+
+// listCommits returns the person's commits in the repository at root since t,
+// on any branch, with the lines each added and removed.
+func listCommits(root string, since time.Time) []commit {
+	if root == "" || !exists(root) {
+		return nil
+	}
+	args := []string{"-C", root, "log", "--all", "--no-merges", "--no-color", "--no-renames",
+		"--since=" + strconv.FormatInt(since.Unix(), 10), "--format=@%H %at", "--numstat"}
+	if email := gitOut(root, "config", "user.email"); email != "" {
+		args = append(args, "--author=<"+email+">")
+	}
+	out, err := exec.Command("git", args...).Output()
+	if err != nil {
+		return nil
+	}
+	var list []commit
+	for _, l := range strings.Split(string(out), "\n") {
+		if strings.HasPrefix(l, "@") {
+			f := strings.Fields(l[1:])
+			if len(f) != 2 {
+				continue
+			}
+			at, _ := strconv.ParseInt(f[1], 10, 64)
+			list = append(list, commit{Sha: f[0], Time: time.Unix(at, 0).UTC()})
+			continue
+		}
+		f := strings.Fields(l)
+		if len(f) < 3 || len(list) == 0 {
+			continue
+		}
+		a, _ := strconv.Atoi(f[0]) // "-" for a binary file reads as 0
+		r, _ := strconv.Atoi(f[1])
+		list[len(list)-1].Added += a
+		list[len(list)-1].Removed += r
+	}
+	return list
+}
+
+// queueCommits puts a commit record in the outbox for each commit made since
+// the last sync in every repository with a remote that raws worked in, so the
+// site can link them and check them against the host. It returns how many.
+func queueCommits(raws []sources.Raw, now time.Time) int {
+	stamp := filepath.Join(dataDir(), "last-commits")
+	since := now.AddDate(-1, 0, 0)
+	if info, err := os.Stat(stamp); err == nil {
+		since = info.ModTime().Add(-time.Hour)
+	}
+	resolve := localProjects()
+	seen := map[string]bool{}
+	n := 0
+	for _, r := range raws {
+		p, root := resolve(r)
+		// A project named by its folder has no remote to check against.
+		if p.Key == root || seen[root] || !strings.Contains(p.Key, "/") || strings.HasPrefix(p.Key, "/") {
+			continue
+		}
+		seen[root] = true
+		for _, c := range listCommits(root, since) {
+			ev := sources.JournalEvent{Time: c.Time, Tool: "git", Event: "commit", Session: c.Sha, Git: p.Key, Sha: c.Sha, Added: c.Added, Removed: c.Removed}
+			if queueRelay(localOutbox, ev) == nil {
+				n++
+			}
+		}
+	}
+	os.WriteFile(stamp, nil, 0o600)
 	return n
 }

@@ -144,6 +144,10 @@ func runSync(args []string) {
 		if res, err = post(srv, k, "/api/v1/reports", b); err != nil {
 			return err
 		}
+		// Commits go with the records, which `teardrop relay` sends.
+		if queueCommits(raws, now) > 0 {
+			relaySoon(false)
+		}
 		return os.WriteFile(filepath.Join(dataDir(), "last-sync"), nil, 0o600)
 	}
 	if *background {

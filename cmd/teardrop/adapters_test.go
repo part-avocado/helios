@@ -2,6 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -110,5 +113,36 @@ func TestLocalRecordsQueue(t *testing.T) {
 	sendOutbox(dir, localOutbox, func(b []byte) (int, error) { sent += strings.Count(string(b), "\n"); return 200, nil })
 	if sent != 1 || hasFile(localOutbox) {
 		t.Errorf("sent %d, outbox left %v", sent, hasFile(localOutbox))
+	}
+}
+
+func TestListCommits(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	dir := t.TempDir()
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_DATE=2026-11-20T10:00:00Z", "GIT_COMMITTER_DATE=2026-11-20T10:00:00Z")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("init", "-q")
+	git("config", "user.email", "kid@example.com")
+	git("config", "user.name", "Kid")
+	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("one\ntwo\nthree\n"), 0o600)
+	git("add", ".")
+	git("commit", "-qm", "first")
+	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("one\nTWO\n"), 0o600)
+	git("commit", "-qam", "second")
+	got := listCommits(dir, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	if len(got) != 2 || len(got[0].Sha) != 40 || !got[0].Time.Equal(time.Date(2026, 11, 20, 10, 0, 0, 0, time.UTC)) {
+		t.Fatalf("got %+v", got)
+	}
+	// Newest first: the second commit changed one line and dropped one; the first added three.
+	if got[0].Added != 1 || got[0].Removed != 2 || got[1].Added != 3 || got[1].Removed != 0 {
+		t.Errorf("line counts: %+v", got)
 	}
 }

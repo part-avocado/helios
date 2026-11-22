@@ -698,7 +698,9 @@ async function submissionPage(id) {
 	const bars = (list, cls) => list.map(([a, b]) => `<span class="sub-span ${cls}" style="left:${x(a)}%;width:${Math.max(0.2, x(b) - x(a))}%"></span>`).join('')
 	const marks = recs.map((r) => `<span class="sub-mark${r.human ? ' human' : ''}${r.late_ms > 300000 ? ' late' : ''}" style="left:${x(r.t)}%" title="${esc(exact(r.t))} ${esc(r.tool)} ${esc(r.event)}"></span>`).join('')
 	const late = (ms) => (ms <= 300000 ? `${Math.max(0, Math.round(ms / 1000))}s` : `<b>${dur(Math.round(ms / 1000))}</b>`)
-	const rows = recs.map((r) => `<tr><td>${esc(exact(r.t))}</td><td>${late(r.late_ms)}</td><td>${esc(r.tool)}</td><td>${esc(r.event)}</td><td>${esc(r.computer)}</td>
+	const repoURL = me.level < 2 && /^github\.com\//.test(s.project_key ?? '') ? 'https://' + s.project_key : ''
+	const event = (r) => (r.sha ? `commit ${repoURL ? `<a href="${esc(repoURL)}/commit/${esc(r.sha)}" rel="nofollow noopener">` : ''}<code>${esc(r.sha.slice(0, 7))}</code>${repoURL ? '</a>' : ''}` : esc(r.event))
+	const rows = recs.map((r) => `<tr><td>${esc(exact(r.t))}</td><td>${late(r.late_ms)}</td><td>${esc(r.tool)}</td><td>${event(r)}</td><td>${esc(r.computer)}</td>
 		<td>${r.human ? `${r.real ?? 0}/${r.judged ?? 0} words${r.low ? ', low effort' : ''}` : ''}</td><td>${r.in || r.out ? `${num(r.in ?? 0)} / ${num(r.out ?? 0)}` : ''}</td><td>${r.added || r.removed ? `+${r.added ?? 0} −${r.removed ?? 0}` : ''}</td></tr>`)
 	const flags = d.flags.map((f) => `<li>${esc(f.text)}</li>`).join('')
 	return head(esc(s.project_name), `<span class="status">${esc(s.id)}</span>`) + `

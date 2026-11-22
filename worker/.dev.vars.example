@@ -14,3 +14,7 @@ ADMINS=U012ABCDEF
 # A Hack Club Auth app, to try real sign-in. Remove DEV_LOGIN to use it.
 HCA_CLIENT_ID=
 HCA_CLIENT_SECRET=
+
+# Optional: a GitHub token, to check that claimed commits exist. Read-only
+# public access is enough.
+GITHUB_TOKEN=

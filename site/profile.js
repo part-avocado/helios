@@ -34,7 +34,9 @@ function render(p) {
 	$('s-days').textContent = String(active)
 	$('heatmap').innerHTML = heatmapHTML(perDay, now)
 
-	const rows = p.projects.map((x) => `<tr><td>${x.repo ? `<a href="https://${esc(x.repo)}" rel="nofollow noopener">${esc(x.name)}</a>` : esc(x.name)}</td><td>${dur(x.engaged_seconds)}</td></tr>`)
+	// A public repository's latest commits link to the host, marked when GitHub has them.
+	const commits = (x) => !x.commits?.length ? '' : `<div class="fine muted">${x.commits.map((c) => `<a href="https://${esc(x.repo)}/commit/${esc(c.sha)}" rel="nofollow noopener"><code>${esc(c.sha.slice(0, 7))}</code></a>${c.found === true ? ' ✓' : c.found === false ? ' (not on GitHub)' : ''}`).join(', ')}${x.checked ? '' : ' - not checked yet'}</div>`
+	const rows = p.projects.map((x) => `<tr><td>${x.repo ? `<a href="https://${esc(x.repo)}" rel="nofollow noopener">${esc(x.name)}</a>` : esc(x.name)}${commits(x)}</td><td>${dur(x.engaged_seconds)}</td></tr>`)
 	if (p.other_projects.count) {
 		const n = p.other_projects.count
 		rows.push(`<tr><td class="muted">${n} other ${n === 1 ? 'project' : 'projects'}</td><td>${dur(p.other_projects.engaged_seconds)}</td></tr>`)

@@ -144,7 +144,7 @@ export async function submit(env: Env, user: User, body: Record<string, unknown>
 		id, user_id: user.id, project_key: key, project_name: nameOf(key), received_at: Date.now(),
 		witnessed_seconds: seconds(witnessed), unwitnessed_seconds: seconds(unwitnessed),
 		earlier_overlap_seconds: seconds(witnessed) - seconds(credited), credited_seconds: seconds(credited), accepted_seconds: 0,
-		prompts: recs.filter((r) => r.human).length, tokens_in: recs.reduce((n, r) => n + (r.in ?? 0), 0), tokens_out: recs.reduce((n, r) => n + (r.out ?? 0), 0),
+		prompts: recs.filter((r) => r.human && !r.sha).length, tokens_in: recs.reduce((n, r) => n + (r.in ?? 0), 0), tokens_out: recs.reduce((n, r) => n + (r.out ?? 0), 0),
 		state: 'pending', decided_by: null, decided_at: null, note: null, snapshot_key: snapshotKey, imported: 0,
 	}
 	await env.DB.prepare(
@@ -202,7 +202,7 @@ export async function submission(env: Env, id: string, level: number) {
 		records: recs.map((r) => ({
 			t: r.t, late_ms: r.arrived - r.t, tool: r.tool, event: r.event, session: r.session, human: r.human,
 			computer: level === 2 ? `computer ${computers.indexOf(r.computer) + 1}` : r.computer,
-			judged: r.judged, real: r.real, low: r.low, repeat_print: r.sim, in: r.in, out: r.out, added: r.added, removed: r.removed,
+			judged: r.judged, real: r.real, low: r.low, repeat_print: r.sim, in: r.in, out: r.out, added: r.added, removed: r.removed, sha: r.sha,
 		})),
 	}
 }

@@ -37,6 +37,8 @@ export interface Rec {
 	out?: number
 	added?: number
 	removed?: number
+	/** A commit's, on a commit record, which earns no time. */
+	sha?: string
 }
 
 export interface Stretch {
@@ -94,7 +96,7 @@ export function kinds(recs: Rec[]): Kind[] {
 
 /** credit returns the stretches of one session in which the person was plausibly engaged. */
 export function credit(recs: Rec[]): Stretch[] {
-	const ev = [...recs].sort((a, b) => a.t - b.t)
+	const ev = recs.filter((r) => !r.sha).sort((a, b) => a.t - b.t)
 	const k = kinds(ev)
 	const out: Stretch[] = []
 	let lastHuman = -1
@@ -149,7 +151,8 @@ export interface Totals {
  * adds them up. Time on two projects or tools at once counts once in the
  * total and once in each project.
  */
-export function totals(recs: Rec[], from: number, to: number): Totals {
+export function totals(all_: Rec[], from: number, to: number): Totals {
+	const recs = all_.filter((r) => !r.sha)
 	const sessions = new Map<string, Rec[]>()
 	for (const r of recs) {
 		const key = `${r.tool}\0${r.session}`
@@ -192,7 +195,8 @@ export interface Flag {
 }
 
 /** flags looks for what a script that sends records live would leave behind. */
-export function flags(recs: (Rec & { event: string })[], dayTotals: { day: string; witnessed_seconds: number }[]): Flag[] {
+export function flags(all: (Rec & { event: string })[], dayTotals: { day: string; witnessed_seconds: number }[]): Flag[] {
+	const recs = all.filter((r) => !r.sha)
 	const out: Flag[] = []
 	const long = dayTotals.filter((d) => d.witnessed_seconds > LONG_DAY)
 	if (long.length) out.push({ kind: 'long-day', text: `More than 16 witnessed hours in a day across their computers, on ${long.map((d) => d.day).join(', ')}.` })

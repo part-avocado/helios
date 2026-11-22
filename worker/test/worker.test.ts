@@ -28,6 +28,10 @@ const fake = createServer(async (req, res) => {
 		const sub = req.headers.authorization!.replace('Bearer token-', '')
 		return reply({ sub, slack_id: 'U' + sub.toUpperCase(), name: `<b>${sub}</b>` })
 	}
+	// A stand-in for GitHub's API: kid/site is public with one commit of the two claimed, kid/secret is private.
+	if (req.url === '/repos/kid/site') return reply({ private: false })
+	if (req.url === '/repos/kid/site/commits/' + 'a'.repeat(40)) return reply({ sha: 'a'.repeat(40) })
+	if (req.url?.startsWith('/repos/kid/site/commits/')) return res.writeHead(422).end()
 	res.writeHead(404).end()
 })
 
@@ -1212,4 +1216,32 @@ test('a dashboard hears of each record at once, and a profile never learns the p
 	assert.equal((await call('/api/live/ws', { cookie, origin: SITE })).status, 426)
 	assert.equal((await server.fetch(SITE + '/api/live/ws', { headers: { Upgrade: 'websocket', Origin: 'https://evil.example', Cookie: cookie } })).status, 403)
 	for (const s of [mine, theirs, visitor]) s.ws.close()
+})
+
+test('commits travel as records, earn no time, and are checked against GitHub', async () => {
+	const cookie = await signIn('committer')
+	const { api_key: key } = await me(cookie)
+	const now = Date.now()
+	const rec = (project: string, sha: string, t: number) => JSON.stringify({ t: new Date(t).toISOString(), tool: 'git', event: 'commit', session: sha, git: project, sha, added: 12, removed: 3 })
+	const body = [rec('github.com/kid/site', 'a'.repeat(40), now - 60_000), rec('github.com/kid/site', 'b'.repeat(40), now - 30_000), rec('github.com/kid/secret', 'c'.repeat(40), now - 20_000), rec('github.com/kid/site', 'not-a-sha', now)]
+	assert.deepEqual(await (await call('/api/v1/events', { method: 'POST', key, body: body.join('\n') })).json(), { stored: 0, records: 3 })
+	const env = await server.getWorker<{
+		HUB: { idFromName(name: string): unknown; get(id: unknown): unknown }
+		DB: { prepare(sql: string): { bind(...v: unknown[]): { first<T>(): Promise<T | null>; all(): Promise<{ results: unknown[] }> } } }
+	}>().getEnv()
+	const id = (await env.DB.prepare('SELECT id FROM users WHERE slack_id = ?').bind('UCOMMITTER').first<{ id: number }>())!.id
+	await (env.HUB.get(env.HUB.idFromName(String(id))) as unknown as { flush(): Promise<string[]> }).flush()
+	const day = await env.DB.prepare(`SELECT witnessed_seconds + unwitnessed_seconds AS s, prompts FROM prompt_days WHERE user_id = ? AND computer_id = ''`).bind(id).first<{ s: number; prompts: number }>()
+	assert.deepEqual(day, { s: 0, prompts: 0 }, 'commits earn no time')
+
+	const { checkGit } = await import('../src/git.ts')
+	const github = `http://127.0.0.1:${(fake.address() as AddressInfo).port}`
+	assert.equal(await checkGit({ DB: env.DB, GITHUB_API: github } as never), 0, 'without a token the check is off')
+	assert.ok((await checkGit({ DB: env.DB, GITHUB_TOKEN: 't', GITHUB_API: github } as never)) >= 2)
+	const rows = (await env.DB.prepare('SELECT project_key, claimed, found, recent FROM project_git WHERE user_id = ? ORDER BY project_key').bind(id).all()).results as { project_key: string; claimed: number; found: number; recent: string }[]
+	const found = (r: { recent: string }) => (JSON.parse(r.recent) as { sha: string; found?: boolean }[]).map((c) => [c.sha[0], c.found ?? null])
+	assert.deepEqual(rows.map((r) => [r.project_key, r.claimed, r.found, found(r)]), [
+		['github.com/kid/secret', 1, 0, [['c', null]]], // private: not checked, never "not found"
+		['github.com/kid/site', 2, 1, [['b', false], ['a', true]]],
+	])
 })
