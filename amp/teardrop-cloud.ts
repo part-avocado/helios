@@ -16,7 +16,7 @@ const releases = 'https://github.com/part-avocado/teardrop/releases'
 /** The first release whose `teardrop hook amp -relay` sends events to a site. */
 const oldest = 'v0.5.2'
 /** How often to look for a newer teardrop. */
-const lookEvery = 24 * 3600_000
+const lookEvery = 3600_000
 /** After a failed download, how long to wait before the next one. */
 const retryAfter = 5 * 60_000
 /** teardrop takes an event up to an hour late; older ones can't be placed in time. */
@@ -77,7 +77,7 @@ async function download(tag: string, file: string): Promise<void> {
 /**
  * Returns the path of a teardrop that can relay: $TEARDROP_BIN when set, else
  * the newest release, downloaded into dir and kept there. It looks for a
- * newer release once a day.
+ * newer release once an hour.
  */
 async function findTeardrop(dir: string): Promise<string> {
 	if (process.env.TEARDROP_BIN) return process.env.TEARDROP_BIN
@@ -140,8 +140,11 @@ export default function (amp: PluginAPI) {
 	let teardrop: Promise<string> | undefined
 	let here = false // teardrop is on this machine, so handing it an event is quick
 	let failedAt = 0
+	let askedAt = 0
 	const find = (): Promise<string | undefined> => {
-		if (!teardrop && Date.now() - failedAt > retryAfter) {
+		// Asked again each hour, so a thread that stays open gets a new release too.
+		if ((!teardrop || Date.now() - askedAt > lookEvery) && Date.now() - failedAt > retryAfter) {
+			askedAt = Date.now()
 			const finding = findTeardrop(amp.system.cacheDirectory)
 			teardrop = finding
 			finding.then(
