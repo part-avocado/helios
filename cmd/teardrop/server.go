@@ -38,7 +38,6 @@ type server struct {
 	hca      hcaApp
 	secret   []byte // signs sign-in cookies
 	devLogin string // Slack user ID every visitor is signed in as; local testing only
-	lookout  string // Lookout server, for Lapse sessions
 	client   *http.Client
 	mu       sync.Mutex
 }
@@ -50,7 +49,6 @@ func runServer(args []string) {
 	dir := fs.String("data", "teardrop-data", "directory to store accounts and submissions in")
 	maxMB := fs.Int64("max-submission-mb", 256, "largest submission accepted, in MB")
 	publicURL := fs.String("public-url", os.Getenv("TEARDROP_PUBLIC_URL"), "URL people reach this server at, for Hack Club Auth sign-in")
-	lookout := fs.String("lookout", "https://lookout.hackclub.com", "Lookout server that Lapse records through")
 	devLogin := fs.String("dev-login", "", "sign every visitor in as this Slack user ID, without Hack Club Auth (only on a localhost address)")
 	fs.Parse(args)
 
@@ -65,7 +63,7 @@ func runServer(args []string) {
 	check(err)
 	s := &server{
 		dir: *dir, maxBody: *maxMB << 20, admins: map[string]bool{}, secret: secret, devLogin: *devLogin,
-		lookout: strings.TrimRight(*lookout, "/"), client: &http.Client{Timeout: 15 * time.Second},
+		client: &http.Client{Timeout: 15 * time.Second},
 		hca: hcaApp{
 			base: "https://auth.hackclub.com", clientID: os.Getenv("TEARDROP_HCA_CLIENT_ID"), clientSecret: os.Getenv("TEARDROP_HCA_CLIENT_SECRET"),
 			redirect: strings.TrimRight(*publicURL, "/") + "/auth/callback",
@@ -106,7 +104,6 @@ func (s *server) handler() http.Handler {
 	mux.HandleFunc("POST /logout", s.logout)
 	mux.HandleFunc("GET /admin", s.admin(s.adminHome))
 	mux.HandleFunc("GET /admin/submissions/{id}", s.admin(s.adminSubmission))
-	mux.HandleFunc("POST /admin/submissions/{id}/lapse", s.admin(s.adminAddLapse))
 	mux.HandleFunc("GET /admin/accounts", s.admin(s.adminAccounts))
 	mux.HandleFunc("GET /admin/accounts/{id}", s.admin(s.adminAccount))
 	return mux
@@ -243,8 +240,7 @@ func (s *server) getReport(w http.ResponseWriter, r *http.Request) {
 }
 
 // submissionRecord is what the server keeps besides the submission itself:
-// the hours it recomputed from the logs, and the Lapse sessions checked
-// against them.
+// the hours it recomputed from the logs, and what it credits.
 type submissionRecord struct {
 	ID         string              `json:"id"`
 	Account    string              `json:"account"`
@@ -253,15 +249,12 @@ type submissionRecord struct {
 	Claimed    timeline.Seconds    `json:"claimed_seconds"`
 	Recomputed timeline.Seconds    `json:"recomputed_seconds"`
 	Engaged    []timeline.Interval `json:"engaged"` // recomputed engaged time
-	Lapse      []lapseCheck        `json:"lapse,omitempty"`
 	// Recomputed time that this account's earlier submissions of the project
 	// already cover, so sending a project again doesn't count its hours twice.
 	Earlier        []timeline.Interval `json:"earlier,omitempty"`
 	EarlierOverlap timeline.Seconds    `json:"earlier_overlap_seconds"`
-	// Recomputed time that Lapse sessions also cover, which Hackatime already
-	// counts, and what is left to credit after both are taken off.
-	LapseOverlap timeline.Seconds `json:"lapse_overlap_seconds"`
-	Credited     timeline.Seconds `json:"credited_seconds"`
+	// What is left to credit once that is taken off.
+	Credited timeline.Seconds `json:"credited_seconds"`
 }
 
 // postSubmission accepts a project's hours only with the logs behind every
@@ -284,16 +277,10 @@ func (s *server) postSubmission(w http.ResponseWriter, r *http.Request) {
 	}
 	sum := sha256.Sum256([]byte(sub.Signed.Payload))
 	rec.ID = "sub-" + hex.EncodeToString(sum[:8])
-	// The same submission sent again keeps its record, with the Lapse sessions
-	// reviewers have added to it.
+	// The same submission sent again keeps its record.
 	if old, _, _, err := s.loadSubmission(rec.ID); err == nil {
 		writeJSON(w, old)
 		return
-	}
-	for _, l := range sub.Lapse {
-		if tok := lookoutToken(l); tok != "" {
-			rec.Lapse = setLapse(rec.Lapse, s.checkLapse(tok)) // before locking: it waits on Lookout
-		}
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()

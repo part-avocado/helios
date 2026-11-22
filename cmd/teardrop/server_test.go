@@ -46,25 +46,10 @@ func TestSubmission(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Lookout recorded 3 minutes inside the engaged time and 1 outside it.
-	engagedStart := now.Add(-60 * time.Minute) // see the log above: engaged from -60m to -50m
-	lookout := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/sessions/"+strings.Repeat("ab", 32)+"/timings" {
-			http.NotFound(w, r)
-			return
-		}
-		var ts []string
-		for _, m := range []int{5, 6, 7, 30} {
-			ts = append(ts, `"`+engagedStart.Add(time.Duration(m)*time.Minute).Format(time.RFC3339)+`"`)
-		}
-		w.Write([]byte(`{"status":"complete","timestamps":[` + strings.Join(ts, ",") + `]}`))
-	}))
-	defer lookout.Close()
 	s := &server{dir: t.TempDir(), maxBody: 1 << 20, admins: map[string]bool{"UADMIN": true}, secret: []byte("0123456789abcdef0123456789abcdef"),
-		lookout: lookout.URL, client: http.DefaultClient}
+		client: http.DefaultClient}
 	srv := httptest.NewServer(s.handler())
 	defer srv.Close()
-	sub.Lapse = []string{"https://lookout.hackclub.com/session?token=" + strings.Repeat("AB", 32)}
 	send := func(s Submission) (int, string) {
 		b, _ := json.Marshal(s)
 		res, err := http.Post(srv.URL+"/api/v1/submissions", "application/json", bytes.NewReader(b))
@@ -83,9 +68,9 @@ func TestSubmission(t *testing.T) {
 	if code != 200 || rec.Recomputed != rep.Engaged || rec.Claimed != rep.Engaged || rep.Engaged != timeline.Seconds(10*time.Minute) {
 		t.Fatalf("honest submission: %d %s (client engaged %v)", code, body, rep.Engaged)
 	}
-	// Minutes 5-8 overlap Lapse; minute 30 is outside the engaged time.
-	if rec.LapseOverlap != timeline.Seconds(3*time.Minute) || rec.Credited != timeline.Seconds(7*time.Minute) {
-		t.Errorf("Lapse deflation: overlap %v credited %v, want 3m and 7m", time.Duration(rec.LapseOverlap), time.Duration(rec.Credited))
+	// Nothing else covers this time yet, so all of it is credited.
+	if rec.EarlierOverlap != 0 || rec.Credited != rec.Recomputed {
+		t.Errorf("first submission: already submitted %v, credited %v, want 0 and %v", time.Duration(rec.EarlierOverlap), time.Duration(rec.Credited), time.Duration(rec.Recomputed))
 	}
 
 	// Only admins see details: anonymous callers get 401, other Slack users 403.
@@ -144,13 +129,11 @@ func TestSubmission(t *testing.T) {
 		t.Errorf("unbacked block: %d %s", code, body)
 	}
 
-	// Sending the same submission again keeps its record and Lapse checks.
-	again := sub
-	again.Lapse = nil
-	code, body = send(again)
+	// Sending the same submission again keeps its record.
+	code, body = send(sub)
 	var kept submissionRecord
 	json.Unmarshal([]byte(body), &kept)
-	if code != 200 || kept.ID != rec.ID || kept.Credited != rec.Credited || len(kept.Lapse) != 1 {
+	if code != 200 || kept.ID != rec.ID || kept.Credited != rec.Credited || !kept.ReceivedAt.Equal(rec.ReceivedAt) {
 		t.Errorf("same submission again: %d %s", code, body)
 	}
 
@@ -229,7 +212,7 @@ func TestHCALogin(t *testing.T) {
 	var page bytes.Buffer
 	page.ReadFrom(res.Body)
 	res.Body.Close()
-	if res.StatusCode != 200 || res.Request.URL.Path != "/admin" || !strings.Contains(page.String(), "deflate time spent typing via Lapse/Lookout") {
+	if res.StatusCode != 200 || res.Request.URL.Path != "/admin" || !strings.Contains(page.String(), "Only time in the agent chat counts") {
 		t.Fatalf("after sign-in: %d at %s", res.StatusCode, res.Request.URL)
 	}
 	// A callback whose state doesn't match the browser's is refused.

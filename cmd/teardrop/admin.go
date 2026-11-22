@@ -17,7 +17,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -209,89 +208,12 @@ func (a hcaApp) slackID(c *http.Client, code string) (string, error) {
 	return info.SlackID, nil
 }
 
-// ---- Lapse and Lookout ----
-
-// Lapse records through Lookout, which saves one capture a minute. A
-// capture stands for the minute after it.
-const lookoutCapture = time.Minute
-
-// lapseCheck is one Lapse or Lookout session checked against a submission.
-type lapseCheck struct {
-	Token     string              `json:"token"`
-	CheckedAt time.Time           `json:"checked_at"`
-	Captured  []timeline.Interval `json:"captured"`
-	Error     string              `json:"error,omitempty"`
-}
-
-var lookoutTokenRe = regexp.MustCompile(`[0-9a-fA-F]{64}`)
-
-// lookoutToken finds a Lookout session token in a link or a bare token.
-func lookoutToken(s string) string {
-	return strings.ToLower(lookoutTokenRe.FindString(s))
-}
-
-func setLapse(list []lapseCheck, c lapseCheck) []lapseCheck {
-	for i := range list {
-		if list[i].Token == c.Token {
-			list[i] = c
-			return list
-		}
-	}
-	return append(list, c)
-}
-
-// checkLapse reads when a Lookout session recorded, honoring its cuts.
-func (s *server) checkLapse(tok string) lapseCheck {
-	c := lapseCheck{Token: tok, CheckedAt: time.Now().UTC()}
-	res, err := s.client.Get(s.lookout + "/api/sessions/" + tok + "/timings")
-	if err != nil {
-		c.Error = "could not reach Lookout"
-		return c
-	}
-	defer res.Body.Close()
-	switch res.StatusCode {
-	case http.StatusOK:
-	case http.StatusNotFound:
-		c.Error = "Lookout has no session with this token"
-		return c
-	default:
-		c.Error = "Lookout said " + res.Status
-		return c
-	}
-	var t struct {
-		Timestamps []time.Time `json:"timestamps"`
-	}
-	if json.NewDecoder(res.Body).Decode(&t) != nil {
-		c.Error = "Lookout's reply was not understood"
-		return c
-	}
-	for _, ts := range t.Timestamps {
-		c.Captured = append(c.Captured, timeline.Interval{Start: ts, End: ts.Add(lookoutCapture)})
-	}
-	c.Captured = timeline.Union(c.Captured)
-	if len(c.Captured) == 0 {
-		c.Error = "no captures (recordings made before late May 2026 have no timestamps)"
-	}
-	return c
-}
-
-// deflate takes time that is already counted off the recomputed hours: time
-// Lapse sessions also cover, which goes to Hackatime, and time the account's
-// earlier submissions of the project cover. Time that is both comes off once.
+// deflate takes off the recomputed hours the time this account's earlier
+// submissions of the project already cover, so it is credited once.
 func (rec *submissionRecord) deflate() {
-	lapse := rec.lapseTime()
-	rec.LapseOverlap = timeline.Seconds(timeline.Overlap(rec.Engaged, lapse))
-	rec.EarlierOverlap = timeline.Seconds(timeline.Overlap(rec.Engaged, rec.Earlier))
-	counted := timeline.Overlap(rec.Engaged, append(lapse, rec.Earlier...))
+	counted := timeline.Overlap(rec.Engaged, rec.Earlier)
+	rec.EarlierOverlap = timeline.Seconds(counted)
 	rec.Credited = timeline.Seconds(max(0, time.Duration(rec.Recomputed)-counted))
-}
-
-func (rec submissionRecord) lapseTime() []timeline.Interval {
-	var all []timeline.Interval
-	for _, c := range rec.Lapse {
-		all = append(all, c.Captured...)
-	}
-	return timeline.Union(all)
 }
 
 // ---- Admin pages ----
@@ -306,30 +228,6 @@ func (s *server) adminStyle(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=300")
 	w.Write(adminCSS)
-}
-
-func (s *server) adminAddLapse(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	tok := lookoutToken(r.FormValue("lapse"))
-	if tok == "" {
-		http.Redirect(w, r, "/admin/submissions/"+id+"?err="+url.QueryEscape("That isn't a Lapse or Lookout session link or token (64 hex characters).")+"#lapse", http.StatusSeeOther)
-		return
-	}
-	check := s.checkLapse(tok) // before locking: it waits on Lookout
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	rec, _, _, err := s.loadSubmission(id)
-	if err != nil {
-		httpError(w, http.StatusNotFound, "no such submission")
-		return
-	}
-	rec.Lapse = setLapse(rec.Lapse, check)
-	rec.deflate()
-	if s.saveRecord(rec) != nil {
-		httpError(w, http.StatusInternalServerError, "could not save")
-		return
-	}
-	http.Redirect(w, r, "/admin/submissions/"+id+"#lapse", http.StatusSeeOther)
 }
 
 // records returns every submission record, newest first.
@@ -354,14 +252,7 @@ type accountRow struct {
 }
 
 func (s *server) adminHome(w http.ResponseWriter, r *http.Request) {
-	subs := s.records()
-	unchecked := 0
-	for _, rec := range subs {
-		if len(rec.Lapse) == 0 {
-			unchecked++
-		}
-	}
-	s.render(w, http.StatusOK, "home", map[string]any{"Title": "Submissions", "Nav": "queue", "User": s.user(r), "Submissions": subs, "Unchecked": unchecked})
+	s.render(w, http.StatusOK, "home", map[string]any{"Title": "Submissions", "Nav": "queue", "User": s.user(r), "Submissions": s.records()})
 }
 
 func (s *server) adminAccounts(w http.ResponseWriter, r *http.Request) {
@@ -405,7 +296,6 @@ type chatMessage struct {
 	sources.Message
 	Day     string        // the date, on the first message of each day
 	Since   time.Duration // since the message before it
-	InLapse bool          // a Lapse session was recording then
 	Summary string        // a tool call's first line
 	Lines   []diffLine    // the rest of a tool call
 }
@@ -415,8 +305,7 @@ type diffLine struct{ Text, Kind string }
 // engagedRow is one stretch of recomputed engaged time.
 type engagedRow struct {
 	timeline.Interval
-	Day   string        // the date, on the first stretch of each day
-	Lapse time.Duration // of it, covered by Lapse
+	Day string // the date, on the first stretch of each day
 }
 
 // reviewDay names the day of t on the review page, which shows UTC throughout.
@@ -426,12 +315,12 @@ func reviewDay(t time.Time) string { return t.UTC().Format("Mon, Jan 2") }
 type bar struct{ Left, Width float64 }
 
 type strip struct {
-	From, To       time.Time
-	Engaged, Lapse []bar
-	Prompts        []float64
+	From, To time.Time
+	Engaged  []bar
+	Prompts  []float64
 }
 
-func makeStrip(from, to time.Time, engaged, lapse []timeline.Interval, prompts []time.Time) strip {
+func makeStrip(from, to time.Time, engaged []timeline.Interval, prompts []time.Time) strip {
 	st := strip{From: from, To: to}
 	span := to.Sub(from)
 	if span <= 0 {
@@ -447,7 +336,7 @@ func makeStrip(from, to time.Time, engaged, lapse []timeline.Interval, prompts [
 		}
 		return out
 	}
-	st.Engaged, st.Lapse = bars(engaged), bars(lapse)
+	st.Engaged = bars(engaged)
 	for _, p := range prompts {
 		st.Prompts = append(st.Prompts, pos(p))
 	}
@@ -462,15 +351,6 @@ func (s *server) adminSubmission(w http.ResponseWriter, r *http.Request) {
 	}
 	var p submissionPayload
 	json.Unmarshal([]byte(sub.Signed.Payload), &p)
-	lapse := rec.lapseTime()
-	inLapse := func(t time.Time) bool {
-		for _, iv := range lapse {
-			if !t.Before(iv.Start) && t.Before(iv.End) {
-				return true
-			}
-		}
-		return false
-	}
 	var from, to time.Time
 	widen := func(t time.Time) {
 		if from.IsZero() || t.Before(from) {
@@ -490,7 +370,7 @@ func (s *server) adminSubmission(w http.ResponseWriter, r *http.Request) {
 		msgs := sources.Transcript(l.Tool, sub.Logs[i])
 		for j, m := range msgs {
 			widen(m.Time)
-			cm := chatMessage{Message: m, InLapse: inLapse(m.Time)}
+			cm := chatMessage{Message: m}
 			if j > 0 {
 				cm.Since = m.Time.Sub(msgs[j-1].Time)
 			}
@@ -526,7 +406,7 @@ func (s *server) adminSubmission(w http.ResponseWriter, r *http.Request) {
 	for i, iv := range rec.Engaged {
 		widen(iv.Start)
 		widen(iv.End)
-		row := engagedRow{Interval: iv, Lapse: timeline.Overlap([]timeline.Interval{iv}, lapse)}
+		row := engagedRow{Interval: iv}
 		if i == 0 || reviewDay(iv.Start) != reviewDay(rec.Engaged[i-1].Start) {
 			row.Day = reviewDay(iv.Start)
 		}
@@ -535,8 +415,8 @@ func (s *server) adminSubmission(w http.ResponseWriter, r *http.Request) {
 	diff := time.Duration(rec.Claimed) - time.Duration(rec.Recomputed)
 	s.render(w, http.StatusOK, "submission", map[string]any{
 		"Title": rec.Project.Name, "Nav": "queue", "User": s.user(r), "Rec": rec, "Logs": logs, "Engaged": engaged,
-		"Strip":    makeStrip(from, to, rec.Engaged, lapse, prompts),
-		"Mismatch": diff > time.Minute || diff < -time.Minute, "Err": r.URL.Query().Get("err"),
+		"Strip":    makeStrip(from, to, rec.Engaged, prompts),
+		"Mismatch": diff > time.Minute || diff < -time.Minute,
 	})
 }
 

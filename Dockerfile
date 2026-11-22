@@ -8,7 +8,7 @@ COPY . .
 ARG VERSION=dev
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /teardrop ./cmd/teardrop
 
-# distroless/static has CA certificates, needed to reach Hack Club Auth and Lookout.
+# distroless/static has CA certificates, needed to reach Hack Club Auth.
 FROM gcr.io/distroless/static-debian12
 COPY --from=build /teardrop /teardrop
 VOLUME /data

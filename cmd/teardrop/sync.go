@@ -59,9 +59,6 @@ type submissionPayload struct {
 type Submission struct {
 	Signed SignedReport `json:"signed"`
 	Logs   [][]byte     `json:"logs"` // contents of the logs Payload lists, in order
-	// Lapse holds Lapse or Lookout session links or tokens. Time they cover is
-	// taken off the submission, so it isn't signed: it can only lower the hours.
-	Lapse []string `json:"lapse,omitempty"`
 }
 
 // serverURL returns the central server: -server (remembered for later
@@ -276,7 +273,6 @@ func runSubmit(args []string) {
 	out := fs.String("o", "", "write the submission to this file instead of uploading it")
 	server := fs.String("server", "", "central server URL, remembered for later runs")
 	yes := fs.Bool("yes", false, "upload without asking")
-	lapse := fs.String("lapse", "", "Lapse or Lookout sessions you recorded for this project, comma-separated links or tokens")
 	claudeDir := fs.String("claude-dir", "", "Claude Code config directories, comma-separated")
 	codexDir := fs.String("codex-dir", "", "Codex home directories, comma-separated")
 	fs.Usage = func() {
@@ -298,11 +294,6 @@ func runSubmit(args []string) {
 	check(err)
 	sub, err := makeSubmission(key, rep, sessions, *since, now)
 	check(err)
-	for _, l := range strings.Split(*lapse, ",") {
-		if l = strings.TrimSpace(l); l != "" {
-			sub.Lapse = append(sub.Lapse, l)
-		}
-	}
 	b, err := json.Marshal(sub)
 	check(err)
 
@@ -335,7 +326,6 @@ func runSubmit(args []string) {
 	}
 	json.Unmarshal(res, &r)
 	fmt.Printf("Submitted as %s.\n", r.ID)
-	fmt.Fprintln(os.Stderr, testingNotice)
 }
 
 // parseAnywhere parses flags that come before or after the other arguments,
@@ -351,9 +341,6 @@ func parseAnywhere(fs *flag.FlagSet, args []string) []string {
 		args = fs.Args()[1:]
 	}
 }
-
-// testingNotice tells people where testing time goes.
-const testingNotice = "Note: time spent testing your build outside the agent chat doesn't count here. Record it with Lapse (https://lapse.hackclub.com)."
 
 // pickProject finds the project named arg, by key or name.
 func pickProject(rep timeline.Report, arg string) (string, error) {

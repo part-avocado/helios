@@ -275,7 +275,6 @@ func printReport(out io.Writer, rep timeline.Report, nSessions int) {
 		// Says that prompts were skipped, not which check skipped them.
 		fmt.Fprintf(out, "%s earned no time (SKIPPED). Prompts that don't reflect real work aren't counted.\n", plural(skipped, "prompt"))
 	}
-	fmt.Fprintln(out, testingNotice)
 }
 
 func reportWarnings(warnings []string, verbose bool) {

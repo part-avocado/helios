@@ -124,8 +124,6 @@ table.data th { color: var(--muted); font-weight: 500; font-size: 13px; }
 .drop:hover, .drop.over { border-color: var(--accent); color: var(--text); }
 .tag { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 5px; background: var(--good-soft); color: var(--good); margin-left: 4px; }
 .tag .ico { width: 12px; height: 12px; vertical-align: -2px; margin-right: 3px; }
-.small-left { font-size: 14px; margin: 0; }
-p.panel.small-left { padding: 14px 20px; }
 .fine { font-size: 13px; }
 .msg { margin: 14px 0 0; padding: 10px 14px; border-radius: 8px; font-size: 14px; text-align: left; }
 .msg.ok { border: 1px solid var(--good-line); background: var(--good-soft); color: var(--good); }

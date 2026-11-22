@@ -40,20 +40,19 @@ for (const f of document.querySelectorAll('[data-filter]')) {
 {{define "home"}}{{template "top" .}}
 <div class="head">
 	<div><h1>Submissions</h1>
-	<div class="meta">{{len .Submissions}} received{{if .Unchecked}} - <span style="color:var(--warn)">{{.Unchecked}} without a Lapse check</span>{{end}}</div></div>
+	<div class="meta">{{len .Submissions}} received</div></div>
 	<div class="actions"><input class="search" type="search" placeholder="Filter by project or account" data-filter="#subs"></div>
 </div>
-<div class="notice"><strong>Reviewers</strong><span>Please deflate time spent typing via Lapse/Lookout. Open a submission and add its Lapse sessions; time they overlap is taken off automatically. Testing the build outside the chat isn't counted here.</span></div>
+<div class="notice"><strong>Reviewers</strong><span>Only time in the agent chat counts. Credit the hours recomputed from the logs; time an earlier submission of the same project covered is taken off automatically.</span></div>
 <section class="card">
 {{if .Submissions}}<div class="scroll"><table class="t" id="subs">
-	<thead><tr><th>Project</th><th>Account</th><th>Received</th><th class="r">Claimed</th><th class="r">From logs</th><th class="r">Lapse</th><th class="r">Credited</th></tr></thead>
+	<thead><tr><th>Project</th><th>Account</th><th>Received</th><th class="r">Claimed</th><th class="r">From logs</th><th class="r">Credited</th></tr></thead>
 	<tbody>{{range .Submissions}}<tr data-href="/admin/submissions/{{.ID}}">
 		<td><a href="/admin/submissions/{{.ID}}"><strong>{{.Project.Name}}</strong></a><span class="second mono">{{.Project.Key}}</span></td>
 		<td><a class="lnk mono" href="/admin/accounts/{{.Account}}">{{.Account}}</a></td>
 		<td class="muted">{{when .ReceivedAt}}</td>
 		<td class="r">{{secs .Claimed}}</td>
 		<td class="r">{{secs .Recomputed}}</td>
-		<td class="r">{{if .Lapse}}<span class="chip">−{{secs .LapseOverlap}}</span>{{else}}<span class="chip warn">Not checked</span>{{end}}</td>
 		<td class="r"><strong>{{secs .Credited}}</strong></td>
 	</tr>{{end}}</tbody>
 </table></div>
@@ -113,17 +112,16 @@ for (const f of document.querySelectorAll('[data-filter]')) {
 		<section class="card"><header><h2>Timeline</h2><span class="right">{{stamp .Strip.From}} – {{stamp .Strip.To}} UTC</span></header><div class="body">
 			<div class="lanes">
 				<div class="lane-label">Engaged</div><div class="lane">{{range .Strip.Engaged}}<i class="e" style="left:{{pct .Left}}%;width:{{pct .Width}}%"></i>{{end}}</div>
-				<div class="lane-label">Lapse</div><div class="lane">{{range .Strip.Lapse}}<i class="l" style="left:{{pct .Left}}%;width:{{pct .Width}}%"></i>{{else}}<span class="lane-empty">no Lapse sessions added</span>{{end}}</div>
 				<div class="lane-label">Prompts</div><div class="lane">{{range .Strip.Prompts}}<i class="p" style="left:{{pct .}}%"></i>{{end}}</div>
 				<div></div><div class="axis"><span>{{stamp .Strip.From}}</span><span>{{stamp .Strip.To}}</span></div>
 			</div>
-			<div class="legend-list">{{range .Engaged}}{{if .Day}}<span class="day">{{.Day}}</span>{{end}}<span>{{clock .Start}}–{{clock .End}} <b>{{dur (.End.Sub .Start)}}</b>{{if .Lapse}} <span class="chip warn">−{{dur .Lapse}} Lapse</span>{{end}}</span>{{end}}</div>
+			<div class="legend-list">{{range .Engaged}}{{if .Day}}<span class="day">{{.Day}}</span>{{end}}<span>{{clock .Start}}–{{clock .End}} <b>{{dur (.End.Sub .Start)}}</b></span>{{end}}</div>
 		</div></section>
 		{{range .Logs}}<section class="card"><header><h2>{{.Tool}}</h2><span class="mono muted">{{.ID}}</span><span class="right">{{len .Messages}} messages</span></header>
 		<div class="chat">{{range .Messages}}{{if .Day}}<div class="day">{{.Day}}</div>{{end}}
-			{{if eq .Role "tool"}}<div class="msg tool{{if .InLapse}} inlapse{{end}}"><div class="time">{{clock .Time}}</div><div>{{if .Lines}}<details><summary>{{.Summary}}</summary><div class="diff">{{range .Lines}}<div class="{{.Kind}}">{{.Text}}</div>{{end}}</div></details>{{else}}<details><summary>{{.Summary}}</summary></details>{{end}}</div></div>
-			{{else}}<div class="msg {{.Role}}{{if .InLapse}} inlapse{{end}}"><div class="time">{{clock .Time}}</div><div{{if eq .Role "you"}} class="bubble"{{end}}>
-				<div class="who">{{if eq .Role "you"}}Human{{else}}Agent{{end}}{{if and (eq .Role "you") .Since}}<span class="chip">{{gap .Since}} after the last message</span>{{end}}{{if .InLapse}}<span class="chip warn">during Lapse</span>{{end}}</div>
+			{{if eq .Role "tool"}}<div class="msg tool"><div class="time">{{clock .Time}}</div><div>{{if .Lines}}<details><summary>{{.Summary}}</summary><div class="diff">{{range .Lines}}<div class="{{.Kind}}">{{.Text}}</div>{{end}}</div></details>{{else}}<details><summary>{{.Summary}}</summary></details>{{end}}</div></div>
+			{{else}}<div class="msg {{.Role}}"><div class="time">{{clock .Time}}</div><div{{if eq .Role "you"}} class="bubble"{{end}}>
+				<div class="who">{{if eq .Role "you"}}Human{{else}}Agent{{end}}{{if and (eq .Role "you") .Since}}<span class="chip">{{gap .Since}} after the last message</span>{{end}}</div>
 				<div class="text">{{.Text}}</div></div></div>{{end}}
 		{{end}}</div></section>{{end}}
 	</div>
@@ -132,20 +130,7 @@ for (const f of document.querySelectorAll('[data-filter]')) {
 			<div class="row"><div class="label">Claimed<small>signed by the account</small></div><div class="val">{{secs .Rec.Claimed}}</div></div>
 			<div class="row"><div class="label">From the logs<small>recomputed by this server</small></div><div class="val">{{if .Mismatch}}<span class="chip warn" title="Differs from the claim; credit the time from the logs">differs</span> {{end}}{{secs .Rec.Recomputed}}</div></div>
 			{{if .Rec.EarlierOverlap}}<div class="row minus"><div class="label">Already submitted<small>in this account's <a class="lnk" href="/admin/accounts/{{.Rec.Account}}">earlier submissions</a> of the project</small></div><div class="val">−{{secs .Rec.EarlierOverlap}}</div></div>{{end}}
-			<div class="row minus"><div class="label">Lapse overlap<small>already counted on Hackatime</small></div><div class="val">−{{secs .Rec.LapseOverlap}}</div></div>
 			<div class="row total"><div class="label">Credited</div><div class="val">{{secs .Rec.Credited}}</div></div>
-		</div></section>
-		<section class="card" id="lapse"><header><h2>Lapse sessions</h2><span class="right">{{len .Rec.Lapse}} added</span></header><div class="body">
-			<form method="post" action="/admin/submissions/{{.Rec.ID}}/lapse" class="lapse-form">
-				<p class="hint">Deflate time spent typing via Lapse/Lookout: paste each session link or token for this project.</p>
-				<input class="field" name="lapse" placeholder="Session link or 64-character token" required>
-				<button class="btn primary">Add and deflate</button>
-			</form>
-			{{if .Err}}<div class="notice bad" style="margin-top:12px">{{.Err}}</div>{{end}}
-			{{if .Rec.Lapse}}<div class="sessions">{{range .Rec.Lapse}}<div class="s">
-				<div class="info"><span class="mono">{{short .Token}}</span><small>{{if .Error}}<span style="color:var(--bad)">{{.Error}}</span>{{else}}{{len .Captured}} recorded stretch{{if ne (len .Captured) 1}}es{{end}} - checked {{when .CheckedAt}}{{end}}</small></div>
-				<form method="post" action="/admin/submissions/{{$.Rec.ID}}/lapse"><input type="hidden" name="lapse" value="{{.Token}}"><button class="btn small">Recheck</button></form>
-			</div>{{end}}</div>{{end}}
 		</div></section>
 	</aside>
 </div>

@@ -171,13 +171,6 @@ sees your total for each project, and neoadmins and superadmins see
 everything you synced. Submissions and chat logs are for the review server's
 admins only.
 
-### Testing time and Lapse
-
-Time spent testing your build outside the agent chat doesn't count in
-teardrop. Record it with [Lapse](https://lapse.hackclub.com) instead. Pass
-your Lapse sessions with `teardrop submit -lapse <link>,...` and the server
-takes off any time Lapse also recorded, since Hackatime already counts it.
-
 ### The website, on Cloudflare
 
 ```sh
@@ -300,9 +293,8 @@ also come from `TEARDROP_PUBLIC_URL`. To try the review pages locally without
 Hack Club Auth, run `teardrop server -addr 127.0.0.1:8080 -dev-login U012ABCDEF`.
 
 The review page shows the claimed hours, the hours the server recomputed
-from the logs, and every chat with the time between messages. Reviewers add
-a project's Lapse or Lookout sessions there, and the time they overlap is
-deflated automatically.
+from the logs, and every chat with the time between messages. Time an
+earlier submission of the same project covered is taken off automatically.
 
 ### Deploy to Fly.io
 
