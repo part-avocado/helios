@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/part-avocado/teardrop/internal/sources"
+	"github.com/part-avocado/teardrop/internal/textscore"
 	"github.com/part-avocado/teardrop/internal/timeline"
 )
 
@@ -171,5 +174,45 @@ func TestCalibrate(t *testing.T) {
 	}
 	if !strings.Contains(out, "a prompt") || !strings.Contains(out, "100%") {
 		t.Errorf("the 16-minute gap before the prompt should be over the 5m cap:\n%s", out)
+	}
+}
+
+func TestSyncRecords(t *testing.T) {
+	at := time.Date(2026, 11, 20, 10, 0, 0, 0, time.UTC)
+	m := func(min float64) time.Time { return at.Add(time.Duration(min * float64(time.Minute))) }
+	// A transcript of two turns: hooks saw the first (prompt and Stop), not the second.
+	transcript := sources.Raw{Tool: "claude-code", ID: "s", Cwd: "/w", Events: []timeline.Event{
+		{Time: m(0), Kind: timeline.Human},
+		{Time: m(1), Kind: timeline.Agent, In: 100},
+		{Time: m(2), Kind: timeline.Agent, Out: 50, Added: 3},
+		{Time: m(10), Kind: timeline.Human},
+		{Time: m(11), Kind: timeline.Agent},
+	}, Scores: map[int]textscore.Score{3: {Judged: 7, Real: 6}}}
+	journal := []sources.JournalEvent{
+		{Time: m(0.1), Tool: "claude-code", Event: "UserPromptSubmit", Session: "s", Cwd: "/w", Human: true},
+		{Time: m(2.02), Tool: "claude-code", Event: "Stop", Session: "s", Cwd: "/w"},
+	}
+	resolve := func(sources.Raw) (timeline.Project, string) {
+		return timeline.Project{Key: "github.com/kid/site"}, "/w"
+	}
+	recs := syncRecords([]sources.Raw{transcript}, journal, resolve, at.Add(-time.Hour))
+	var got []string
+	for _, r := range recs {
+		if r.Git != "github.com/kid/site" || r.Cwd != "" {
+			t.Errorf("a record names its folder, or not its project: %+v", r)
+		}
+		got = append(got, fmt.Sprintf("%s@%v in%d out%d +%d judged%d", r.Event, r.Time.Sub(at), r.In, r.Out, r.Added, r.Judged))
+	}
+	want := []string{
+		"UserPromptSubmit@6s in0 out0 +0 judged0", "Stop@2m1.2s in0 out0 +0 judged0", // the hooks' own, sent again
+		"usage@0s in100 out50 +3 judged0",                                        // the first turn's tokens and lines, and nothing the hooks sent
+		"prompt@10m0s in0 out0 +0 judged7", "turn_end@11m0s in0 out0 +0 judged0", // the turn no hook saw
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("records:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	// A later sync sends only what is after its cutoff, but still finds the first turn's hooks.
+	if later := syncRecords([]sources.Raw{transcript}, journal, resolve, m(5)); len(later) != 2 || later[0].Event != "prompt" {
+		t.Errorf("after the cutoff: %+v", later)
 	}
 }

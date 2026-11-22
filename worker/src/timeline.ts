@@ -39,6 +39,8 @@ export interface Rec {
 	removed?: number
 	/** A commit's, on a commit record, which earns no time. */
 	sha?: string
+	/** The event's name; a `usage` record carries a turn's tokens and lines from its transcript and earns no time. */
+	event?: string
 }
 
 export interface Stretch {
@@ -48,6 +50,8 @@ export interface Stretch {
 }
 
 const witnessed = (r: Rec) => r.arrived - r.t <= WITNESS
+/** timed says whether a record is a prompt or agent output, which time is credited between. */
+export const timed = (r: Rec) => !r.sha && r.event !== 'usage'
 
 /** similar says whether two fingerprints are near-repeats: at most 10 of their 64 bits differ. */
 export function similar(a: string | undefined, b: string | undefined): boolean {
@@ -96,7 +100,7 @@ export function kinds(recs: Rec[]): Kind[] {
 
 /** credit returns the stretches of one session in which the person was plausibly engaged. */
 export function credit(recs: Rec[]): Stretch[] {
-	const ev = recs.filter((r) => !r.sha).sort((a, b) => a.t - b.t)
+	const ev = recs.filter(timed).sort((a, b) => a.t - b.t)
 	const k = kinds(ev)
 	const out: Stretch[] = []
 	let lastHuman = -1
@@ -196,7 +200,7 @@ export interface Flag {
 
 /** flags looks for what a script that sends records live would leave behind. */
 export function flags(all: (Rec & { event: string })[], dayTotals: { day: string; witnessed_seconds: number }[]): Flag[] {
-	const recs = all.filter((r) => !r.sha)
+	const recs = all.filter(timed)
 	const out: Flag[] = []
 	const long = dayTotals.filter((d) => d.witnessed_seconds > LONG_DAY)
 	if (long.length) out.push({ kind: 'long-day', text: `More than 16 witnessed hours in a day across their computers, on ${long.map((d) => d.day).join(', ')}.` })
@@ -212,4 +216,79 @@ export function flags(all: (Rec & { event: string })[], dayTotals: { day: string
 	const silent = recs.filter((r) => !r.human && r.tool === 'amp' && r.event === 'agent.end' && !r.in && !r.out)
 	if (silent.length >= 3) out.push({ kind: 'no-tokens', text: `${silent.length} Amp turns ended with no tokens, which Amp always reports.` })
 	return out
+}
+
+/** Engaged stretches closer than this are shown as one work block. */
+export const BLOCK_GAP = 15 * 60_000
+
+/** A work block, as the hub keeps it per day: like a report's block, in numbers. */
+export interface Block {
+	project: string
+	start: number
+	end: number
+	engaged: number
+	prompts: number
+	in: number
+	out: number
+	added: number
+	removed: number
+	tools: string[]
+}
+
+/**
+ * blocks groups the credited time of records in [from, to) into work blocks
+ * per project, as teardrop's reports do, and puts each record's prompts,
+ * tokens, and lines in the block it falls in.
+ */
+export function blocks(all: Rec[], from: number, to: number): Block[] {
+	const recs = all.filter((r) => !r.sha)
+	const sessions = new Map<string, Rec[]>()
+	for (const r of recs) {
+		const key = `${r.tool}\0${r.session}`
+		sessions.set(key, [...(sessions.get(key) ?? []), r])
+	}
+	const byProject = new Map<string, { s: { start: number; end: number; tool: string }[]; recs: [Rec, Kind][] }>()
+	for (const list of sessions.values()) {
+		const sorted = [...list].sort((a, b) => a.t - b.t)
+		const project = sorted.find((r) => r.project)?.project ?? ''
+		const p = byProject.get(project) ?? { s: [], recs: [] }
+		byProject.set(project, p)
+		for (const st of credit(sorted)) {
+			const start = Math.max(st.start, from), end = Math.min(st.end, to)
+			if (end > start) p.s.push({ start, end, tool: sorted[0]!.tool })
+		}
+		const timedRecs = sorted.filter(timed)
+		const k = kinds(timedRecs)
+		const kindOf = new Map(timedRecs.map((r, i) => [r, k[i]!]))
+		for (const r of sorted) if (r.t >= from && r.t < to) p.recs.push([r, kindOf.get(r) ?? 'agent'])
+	}
+	const out: Block[] = []
+	for (const [project, { s, recs: rs }] of byProject) {
+		s.sort((a, b) => a.start - b.start)
+		const mine: Block[] = []
+		let covered = 0
+		for (const x of s) {
+			const b = mine.at(-1)
+			if (b && x.start - b.end < BLOCK_GAP) {
+				// Time two sessions share counts once.
+				if (x.end > covered) b.engaged += x.end - Math.max(x.start, covered)
+				b.end = Math.max(b.end, x.end)
+				if (!b.tools.includes(x.tool)) b.tools.push(x.tool)
+			} else {
+				mine.push({ project, start: x.start, end: x.end, engaged: x.end - x.start, prompts: 0, in: 0, out: 0, added: 0, removed: 0, tools: [x.tool] })
+			}
+			covered = Math.max(covered, x.end)
+		}
+		for (const [r, kind] of rs) {
+			const b = mine.find((b) => r.t >= b.start && r.t <= b.end + BLOCK_GAP) ?? mine.findLast((b) => b.start <= r.t)
+			if (!b) continue
+			if (kind === 'human') b.prompts++
+			b.in += r.in ?? 0
+			b.out += r.out ?? 0
+			b.added += r.added ?? 0
+			b.removed += r.removed ?? 0
+		}
+		out.push(...mine)
+	}
+	return out.sort((a, b) => a.start - b.start)
 }

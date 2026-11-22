@@ -111,8 +111,9 @@ async function route(request: Request, env: Env): Promise<Response> {
 	if (call === 'POST /api/v1/events') {
 		const user = await needKey(request, env, url)
 		const body = await readText(request, MAX_EVENTS_BYTES)
-		// Amp cloud events are also kept the old way, for cloud plugins that still count them themselves.
-		const [records, stored] = await Promise.all([relayRecords(env, user, request, body), holdEvents(env, user, body)])
+		// Amp cloud events are also kept the old way, for cloud plugins that still count them themselves. A computer's own records are not.
+		const cloud = (request.headers.get('X-Teardrop-Computer') ?? 'cloud') === 'cloud'
+		const [records, stored] = await Promise.all([relayRecords(env, user, request, body), cloud ? holdEvents(env, user, body) : 0])
 		return json({ stored, records })
 	}
 	if (call === 'GET /api/v1/cloud') return json(await readEvents(env, await needKey(request, env, url), url.searchParams))

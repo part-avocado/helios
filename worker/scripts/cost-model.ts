@@ -13,8 +13,10 @@ const inputs = {
 	flushesPerHour: 6, // the hub writes a changed day at most every 10 minutes
 	syncsPerTurn: 0.5, // turn ends that start a sync; queued syncs merge
 	reportBytes: 6_000, // one computer's latest report in R2, compressed
-	logRowBytes: 600, // an account_log row, which each sync adds
-	logRowsKept: 5_000, // per person and flag kind (LOG_ROWS in src/log.ts)
+	logRowBytes: 600, // an account_log row, which each report sync adds
+	logRowsInD1: 400, // per person at most (LOG_KEPT + ARCHIVE in src/log.ts); older rows go to R2
+	reportSyncShare: 0.1, // syncs that still send a report: Amp cloud threads and teardrop before 0.7
+	keptReportBytes: 40_000, // each such report, kept in R2 for good
 	promptDayBytes: 300,
 	pageRequests: 4_500_000, // pages, API calls, profiles, and sockets
 	submissionsPerPerson: 2,
@@ -33,20 +35,21 @@ function month(m: number) {
 	const prompts = i.engagedHours * i.promptsPerHour
 	const records = prompts * i.recordsPerTurn
 	const syncs = prompts * i.syncsPerTurn
+	const reportSyncs = syncs * i.reportSyncShare
 	const requests = records + syncs + i.pageRequests + i.people * i.submissionsPerPerson
 	const workers = price.workersBase + Math.max(0, requests - price.requestsIncluded) / 1e6 * price.perMillionRequests + Math.max(0, requests * price.cpuMsPerRequest - price.cpuMsIncluded) / 1e6 * price.perMillionCpuMs
 
 	const flushes = i.engagedHours * i.flushesPerHour
 	const r2Writes = flushes + syncs + i.people * i.submissionsPerPerson
-	const recordsGB = (records * i.bytesPerRecord * m) / 1e9
+	const recordsGB = (records * i.bytesPerRecord * m) / 1e9 + (reportSyncs * (i.keptReportBytes + i.logRowBytes / 4) * m) / 1e9
 	const reportsGB = (i.people * i.computersPerPerson * i.reportBytes) / 1e9
 	const r2GB = recordsGB + reportsGB
 	const r2 = Math.max(0, r2Writes - price.r2WritesIncluded) / 1e6 * price.r2PerMillionWrites + Math.max(0, r2GB - price.r2StorageIncludedGB) * price.r2PerGB
 
 	// prompt_days: a person row and a computer row per active day, written at each flush.
 	const activeDays = i.people * i.computersPerPerson * 10
-	const d1Rows = flushes * 2 + syncs * 3
-	const logGB = Math.min(syncs * m, i.people * i.logRowsKept) * i.logRowBytes / 1e9
+	const d1Rows = flushes * 3 + reportSyncs * 3
+	const logGB = Math.min(reportSyncs * m, i.people * i.logRowsInD1) * i.logRowBytes / 1e9
 	const d1GB = (activeDays * 2 * i.promptDayBytes * m) / 1e9 + logGB
 	const d1 = Math.max(0, d1Rows - price.d1RowsWrittenIncluded) / 1e6 * price.d1PerMillionRows + Math.max(0, d1GB - price.d1StorageIncludedGB) * price.d1PerGB
 
@@ -62,7 +65,7 @@ for (const m of [1, 12, 36, 84]) {
 	const c = month(m)
 	const label = m === 1 ? '1 month' : `${m / 12} year${m > 12 ? 's' : ''}`
 	console.log([label.padEnd(10), $(c.workers).padEnd(9), $(c.d1).padEnd(8), $(c.r2).padEnd(8), $(c.dos).padEnd(8), $(c.total).padEnd(8), `${c.d1GB.toFixed(1)} GB`.padEnd(9), `${c.r2GB.toFixed(1)} GB`].join(' '))
-	if (c.d1GB > price.d1LimitGB) console.log(`           D1 is past its ${price.d1LimitGB} GB limit; account_log is ${c.logGB.toFixed(1)} GB of it (one row per sync).`)
+	if (c.d1GB > price.d1LimitGB) console.log(`           D1 is past its ${price.d1LimitGB} GB limit: fold old prompt_days rows into months.`)
 }
 const c = month(12)
 console.log(`\nA month: ${(c.requests / 1e6).toFixed(1)}M requests, ${(c.r2Writes / 1e6).toFixed(2)}M R2 writes, ${(c.d1Rows / 1e6).toFixed(1)}M D1 rows written. The limit is $500.`)

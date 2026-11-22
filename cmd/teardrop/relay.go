@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"crypto/ed25519"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -107,16 +106,11 @@ func runRelay(args []string) {
 			return false, fmt.Errorf("no sync key set; put yours in $TEARDROP_KEY")
 		}
 		client := &http.Client{Timeout: time.Minute}
-		// Records from this computer's hooks say which computer they come
-		// from, and its clock's UTC offset, which decides their days.
-		_, offset := time.Now().Zone()
-		header := http.Header{"X-Teardrop-Utc-Offset": {fmt.Sprint(offset / 60)}}
+		header := http.Header{}
 		if hasFile(localOutbox) {
-			priv, err := accountKey()
-			if err != nil {
+			if header, err = computerHeader(); err != nil {
 				return false, err
 			}
-			header.Set("X-Teardrop-Computer", accountID(priv.Public().(ed25519.PublicKey)))
 			if err := sendOutbox(dataDir(), localOutbox, func(lines []byte) (int, error) {
 				return relayRequestWith(client, "POST", server+"/api/v1/events", key, lines, nil, header)
 			}); err != nil {
@@ -160,22 +154,31 @@ func sendOutbox(dir, outbox string, send func(lines []byte) (int, error)) error 
 		if err != nil {
 			continue // another run sent it first
 		}
-		for len(b) > 0 {
-			n := len(b)
-			if n > relayBatchBytes {
-				n = bytes.LastIndexByte(b[:relayBatchBytes], '\n') + 1
-				if n == 0 {
-					n = len(b)
-				}
-			}
-			status, err := send(b[:n])
-			// A batch the site will never take is dropped, so it can't block the rest.
-			if err != nil && status != http.StatusBadRequest && status != http.StatusRequestEntityTooLarge {
-				return err
-			}
-			b = b[n:]
+		if err := sendLines(b, send); err != nil {
+			return err
 		}
 		os.Remove(path)
+	}
+	return nil
+}
+
+// sendLines uploads JSON lines in batches of whole lines through send, which
+// returns the site's HTTP status. It stops at the first batch the site may
+// take later; a batch it will never take is dropped, so it can't block the rest.
+func sendLines(b []byte, send func(lines []byte) (int, error)) error {
+	for len(b) > 0 {
+		n := len(b)
+		if n > relayBatchBytes {
+			n = bytes.LastIndexByte(b[:relayBatchBytes], '\n') + 1
+			if n == 0 {
+				n = len(b)
+			}
+		}
+		status, err := send(b[:n])
+		if err != nil && status != http.StatusBadRequest && status != http.StatusRequestEntityTooLarge {
+			return err
+		}
+		b = b[n:]
 	}
 	return nil
 }

@@ -151,8 +151,11 @@ synced yet it shows the two commands that connect a computer; the second is
 teardrop sync -server https://your-site -key tdk_...
 ```
 
-`sync` uploads your signed counts: time blocks, prompt and skipped-prompt
-counts, tokens, and line counts. It never uploads text. teardrop remembers
+`sync` sends records: one per prompt and turn end, with its time, word
+counts, tokens, and lines, never its text. The first sync sends the past
+year; later ones send only what changed since the last. Turns your hooks
+already sent count as witnessed; turns from transcripts no hook saw arrive
+late and are shown but not credited. teardrop remembers
 the server and the key (which can only upload stats), so hooks sync in the
 background when a reply finishes in Claude Code or Amp, or when you stop
 one. Amp reports a stopped reply at once. Claude Code runs no hook then, so
@@ -297,9 +300,10 @@ credited again.
 
 `node worker/scripts/cost-model.ts [prompts per hour]` prints the monthly bill
 from named inputs. At 15,488 people and 109,759 engaged hours a month it is
-about $13 after a year at 20 prompts an hour, and $40 at 60, against a $500
-limit. `account_log` (one row per sync) is what grows D1 toward its 10 GB
-limit, in the second year at that load.
+about $10 a month after a year at 20 prompts an hour and $13 after three
+($27 and $35 at 60), against a $500 limit. D1 keeps each person's newest few
+hundred log rows; older rows, every report, and every record live in R2 for
+good. D1 grows only by day totals, past 10 GB in about year 6.
 
 ## Privacy
 

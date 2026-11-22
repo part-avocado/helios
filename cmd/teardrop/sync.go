@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -16,11 +15,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/part-avocado/teardrop/internal/sources"
 	"github.com/part-avocado/teardrop/internal/timeline"
 )
 
 const (
-	// syncWindow is how much history a sync uploads.
+	// syncWindow is how much history the first sync sends.
 	syncWindow = "365d"
 	// syncEvery is how often hooks start a background sync while no turn
 	// ends, such as at a prompt. A turn that ends starts one at once.
@@ -126,28 +126,42 @@ func runSync(args []string) {
 	k, err := syncKey(*key, srv)
 	check(err)
 
-	var rep timeline.Report
-	var res []byte
+	sent, total := 0, 0
 	once := func() error {
-		window, _ := parseSince(syncWindow)
 		now := time.Now()
-		raws, _ := loadAll(*claudeDir, *codexDir)
-		rep, _ = buildReport(raws, now.Add(-window), timeline.DefaultRules)
-		signed, err := signReport(rep, syncWindow, now)
+		// After the first run, only what changed since the last one, with an
+		// hour to spare. The site drops a record it already has.
+		stamp := filepath.Join(dataDir(), "last-records")
+		window, _ := parseSince(syncWindow)
+		cutoff := now.Add(-window)
+		if info, err := os.Stat(stamp); err == nil && info.ModTime().After(cutoff) {
+			cutoff = info.ModTime().Add(-time.Hour)
+		}
+		transcripts, _, _ := load(locations(*claudeDir, *codexDir), cutoff)
+		journal := sources.ReadJournalEvents(dataDir(), cutoff.Add(-24*time.Hour))
+		recs := syncRecords(transcripts, journal, localProjects(), cutoff)
+		var body bytes.Buffer
+		for _, r := range recs {
+			b, err := json.Marshal(r)
+			if err != nil {
+				return err
+			}
+			body.Write(append(b, '\n'))
+		}
+		header, err := computerHeader()
 		if err != nil {
 			return err
 		}
-		b, err := json.Marshal(signed)
+		n, err := sendRecords(&http.Client{Timeout: 2 * time.Minute}, srv, k, body.Bytes(), header)
+		sent, total = n, len(recs)
 		if err != nil {
-			return err
-		}
-		if res, err = post(srv, k, "/api/v1/reports", b); err != nil {
 			return err
 		}
 		// Commits go with the records, which `teardrop relay` sends.
-		if queueCommits(raws, now) > 0 {
+		if queueCommits(mergeJournal(transcripts, journalRaws(journal)), now) > 0 {
 			relaySoon(false)
 		}
+		os.WriteFile(stamp, nil, 0o600)
 		return os.WriteFile(filepath.Join(dataDir(), "last-sync"), nil, 0o600)
 	}
 	if *background {
@@ -158,17 +172,22 @@ func runSync(args []string) {
 	if *quiet {
 		return
 	}
-	priv, _ := accountKey()
-	id := accountID(priv.Public().(ed25519.PublicKey))
-	fmt.Printf("Synced %s engaged across %s from this computer (%s).\n",
-		dur(time.Duration(rep.Engaged)), plural(len(rep.Projects), "project"), id)
-	// A server with accounts answers with the page that shows these stats.
-	var r struct {
-		URL string `json:"url"`
+	id, _ := thisComputer()
+	fmt.Printf("Sent %s from this computer (%s); %d were new to the site.\n", plural(total, "record"), id, sent)
+	fmt.Printf("See it at %s/dashboard\n", srv)
+}
+
+// journalRaws gives each journal session's folder, for finding its repository.
+func journalRaws(journal []sources.JournalEvent) []sources.Raw {
+	seen := map[string]bool{}
+	var out []sources.Raw
+	for _, ev := range journal {
+		if k := ev.Tool + "\x00" + ev.Session; !seen[k] {
+			seen[k] = true
+			out = append(out, sources.Raw{Tool: ev.Tool, ID: ev.Session, Cwd: ev.Cwd, GitURL: ev.Git})
+		}
 	}
-	if json.Unmarshal(res, &r) == nil && r.URL != "" {
-		fmt.Printf("See it at %s\n", r.URL)
-	}
+	return out
 }
 
 // syncQueued runs sync for a hook, in dir. Only one runs at a time on a

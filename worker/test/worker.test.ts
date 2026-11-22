@@ -1268,3 +1268,63 @@ test('a superadmin imports what the old review server credited, and it is never 
 	const sub = (await (await call('/api/v1/submissions', { method: 'POST', key, body: JSON.stringify({ project: 'github.com/kid/old' }) })).json()) as { credited_seconds: number; earlier_overlap_seconds: number }
 	assert.deepEqual([sub.credited_seconds, sub.earlier_overlap_seconds], [110, 10])
 })
+
+test('a computer that sends only records shows on the dashboard, and usage earns no time', async () => {
+	const cookie = await signIn('recordsonly')
+	const { api_key: key } = await me(cookie)
+	const now = Date.now()
+	const pc = 'td-00aa11bb22cc'
+	const line = (t: number, event: string, extra: object = {}) => JSON.stringify({ t: new Date(t).toISOString(), tool: 'claude-code', event, session: 'r1', git: 'github.com/kid/rec', ...extra })
+	const post = (lines: string[]) => server.fetch(SITE + '/api/v1/events', { method: 'POST', body: lines.join('\n'), headers: { Authorization: `Bearer ${key}`, 'X-Teardrop-Computer': pc, 'X-Teardrop-UTC-Offset': '0' } })
+	await post([line(now - 290_000, 'UserPromptSubmit', { human: true, judged: 6, real: 6 }), line(now - 170_000, 'Stop'), line(now - 290_000, 'usage', { in: 500, out: 20 })])
+	// The usage of a growing turn is sent again; the latest replaces it.
+	await post([line(now - 290_000, 'usage', { in: 900, out: 40 })])
+	const env = await server.getWorker<{ HUB: { idFromName(name: string): unknown; get(id: unknown): unknown }; DB: { prepare(sql: string): { bind(...v: unknown[]): { first<T>(): Promise<T | null>; run(): Promise<unknown> } } } }>().getEnv()
+	const id = (await env.DB.prepare('SELECT id FROM users WHERE slack_id = ?').bind('URECORDSONLY').first<{ id: number }>())!.id
+	await (env.HUB.get(env.HUB.idFromName(String(id))) as unknown as { flush(): Promise<string[]> }).flush()
+	const day = await env.DB.prepare(`SELECT witnessed_seconds AS w, prompts, tokens_in FROM prompt_days WHERE user_id = ? AND computer_id = ''`).bind(id).first()
+	assert.deepEqual(day, { w: 120, prompts: 1, tokens_in: 900 })
+	const [c] = (await reports(cookie)) as unknown as { id: string; report: { since: string; report: { engaged_seconds: number; blocks: { project: { key: string }; prompts: number; tokens_in: number; tools: string[] }[] } } }[]
+	assert.equal(c!.id, pc)
+	assert.equal(c!.report.since, 'records')
+	assert.equal(c!.report.report.engaged_seconds, 120)
+	assert.deepEqual(c!.report.report.blocks.map((b) => [b.project.key, b.prompts, b.tokens_in, b.tools]), [['github.com/kid/rec', 1, 900, ['claude-code']]])
+	assert.deepEqual((await me(cookie)).computers.map((x) => x.id), [pc])
+	// Another account can't take the computer over by naming it.
+	const { api_key: other } = await me(await signIn('squatter'))
+	await server.fetch(SITE + '/api/v1/events', { method: 'POST', body: line(now - 60_000, 'UserPromptSubmit', { human: true }), headers: { Authorization: `Bearer ${other}`, 'X-Teardrop-Computer': pc } })
+	const otherID = (await env.DB.prepare('SELECT id FROM users WHERE slack_id = ?').bind('USQUATTER').first<{ id: number }>())!.id
+	await (env.HUB.get(env.HUB.idFromName(String(otherID))) as unknown as { flush(): Promise<string[]> }).flush()
+	assert.equal((await env.DB.prepare('SELECT user_id FROM computers WHERE id = ?').bind(pc).first<{ user_id: number }>())!.user_id, id)
+})
+
+test('old log rows move to R2, and reviewers still read every one', async () => {
+	const cookie = await signIn('longlog')
+	const { api_key: key } = await me(cookie)
+	const env = await server.getWorker<{ DB: { prepare(sql: string): { bind(...v: unknown[]): { first<T>(): Promise<T | null>; run(): Promise<unknown> } } } }>().getEnv()
+	const id = (await env.DB.prepare('SELECT id FROM users WHERE slack_id = ?').bind('ULONGLOG').first<{ id: number }>())!.id
+	// 450 old rows, the oldest flagged, then one sync that archives the oldest 200.
+	for (let i = 0; i < 450; i++) {
+		await env.DB.prepare(`INSERT INTO account_log (user_id, at, event, computer_id, flagged, engaged_seconds) VALUES (?, ?, 'sync', 'td-old', ?, ?)`).bind(id, i, Number(i === 0), i).run()
+	}
+	const sync = computer()
+	assert.equal((await call('/api/v1/reports', { method: 'POST', key, body: sync({ blocks: [], projects: [], engaged_seconds: 0 }) })).status, 200)
+	const inD1 = await env.DB.prepare('SELECT COUNT(*) AS n FROM account_log WHERE user_id = ?').bind(id).first<{ n: number }>()
+	assert.equal(inD1!.n, 251)
+	const admin = await signIn('admin')
+	const page = async (q = '') => (await (await call(`/api/review/person?id=${id}${q}`, { cookie: admin })).json()) as { counts: { entries: number; flagged: number }; log: { id: number; at: number }[]; more: number | null }
+	const first = await page()
+	assert.deepEqual([first.counts.entries, first.counts.flagged], [451, 1])
+	// Page on until the oldest row, which is archived.
+	let p = first, seen = first.log.length
+	while (p.more) {
+		p = await page(`&before=${p.more}`)
+		seen += p.log.length
+	}
+	assert.equal(seen, 451)
+	assert.equal(p.log.at(-1)!.at, 0)
+	const flagged = await page('&show=flagged')
+	assert.deepEqual(flagged.log.map((r) => r.at), [0])
+	const all = (await (await call(`/api/review/log?id=${id}`, { cookie: admin })).json()) as { log: unknown[] }
+	assert.equal(all.log.length, 451)
+})

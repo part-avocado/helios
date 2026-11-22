@@ -104,6 +104,38 @@ func ReadJournal(dir string) (out []Raw, warnings []string) {
 	return j.raws(), warnings
 }
 
+// ReadJournalEvents returns the journal's events from since on, as written,
+// each once, oldest file first. Unlike ReadJournal it keeps each event's name,
+// so an event sent to the site again matches the one its hook sent.
+func ReadJournalEvents(dir string, since time.Time) []JournalEvent {
+	files, _ := filepath.Glob(filepath.Join(dir, "events-*.jsonl"))
+	first := "events-" + since.UTC().Format("2006-01") + ".jsonl"
+	seen := map[string]bool{}
+	var out []JournalEvent
+	for _, path := range files {
+		if filepath.Base(path) < first {
+			continue
+		}
+		f, err := os.Open(path)
+		if err != nil {
+			continue
+		}
+		lines(f, func(b []byte) {
+			var ev JournalEvent
+			if json.Unmarshal(b, &ev) != nil || ev.Session == "" || ev.Time.Before(since) {
+				return
+			}
+			once := ev.Tool + "\x00" + ev.Session + "\x00" + ev.Event + "\x00" + ev.Time.UTC().Format(time.RFC3339Nano)
+			if !seen[once] {
+				seen[once] = true
+				out = append(out, ev)
+			}
+		})
+		f.Close()
+	}
+	return out
+}
+
 type journal struct {
 	byKey map[string]*Raw
 	order []string

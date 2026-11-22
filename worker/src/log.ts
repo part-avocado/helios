@@ -6,8 +6,9 @@
 // it, using its own clock, and flag the ones that don't add up.
 
 const DAY = 86400_000
-/** How many log rows are kept per person: this many flagged, and this many not. */
-const LOG_ROWS = 5000
+/** How many of a person's newest log rows stay in D1. Older ones move to R2, ARCHIVE at a time, and are kept for good. */
+const LOG_KEPT = 200
+const ARCHIVE = 200
 /** Seconds a report may be off by before it is flagged, for clocks that disagree. */
 const SLACK = 300
 /**
@@ -291,18 +292,76 @@ export function remarks(e: Entry): string[] {
 const COLUMNS =
 	'user_id, at, event, computer_id, refusal, flagged, generated_at, teardrop_version, since, engaged_seconds, prev_generated_at, prev_since, prev_engaged_seconds, prev_teardrop_version, past_added_seconds, detail, report_key'
 
+/** A log row as kept, with its ID. */
+export type LogRow = Entry & { id: number; user_id: number }
+
+const gz = async (text: string) => new Response(new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer()
+
+/** readArchive returns the rows of one archive of the log, oldest first. */
+export async function readArchive(env: Env, key: string): Promise<LogRow[]> {
+	const obj = await env.REPORTS.get(key)
+	if (!obj) return []
+	const text = await new Response(obj.body.pipeThrough(new DecompressionStream('gzip'))).text()
+	return text.split('\n').filter(Boolean).map((l) => JSON.parse(l) as LogRow)
+}
+
+/** writeArchive stores rows as one archive. */
+export async function writeArchive(env: Env, key: string, rows: LogRow[]): Promise<void> {
+	await env.REPORTS.put(key, await gz(rows.map((r) => JSON.stringify(r)).join('\n') + '\n'))
+}
+
 /**
- * trim drops a person's oldest log rows once they have more than LOG_ROWS.
- * Flagged rows are counted apart from the rest, so a flood of other rows
- * can't push them out. It returns the dropped rows' report_key, so whoever
- * runs it can delete the reports kept for them.
+ * archiveLog moves a person's oldest log rows to R2 once D1 holds more than
+ * LOG_KEPT + ARCHIVE of them, so D1 holds a few hundred rows per person and
+ * nothing is ever dropped. Two runs at once write the same archive.
  */
-const trim = (env: Env, userID: number, flagged: number) =>
-	env.DB.prepare(
-		`DELETE FROM account_log WHERE user_id = ?1 AND flagged = ?2
-			AND id <= (SELECT id FROM account_log WHERE user_id = ?1 AND flagged = ?2 ORDER BY id DESC LIMIT 1 OFFSET ${LOG_ROWS})
-		 RETURNING report_key`,
-	).bind(userID, flagged)
+export async function archiveLog(env: Env, userID: number): Promise<void> {
+	const n = await env.DB.prepare('SELECT COUNT(*) AS n FROM account_log WHERE user_id = ?').bind(userID).first<{ n: number }>()
+	if ((n?.n ?? 0) <= LOG_KEPT + ARCHIVE) return
+	const { results } = await env.DB.prepare(`SELECT * FROM account_log WHERE user_id = ? ORDER BY id LIMIT ${ARCHIVE}`).bind(userID).all<LogRow>()
+	const first = results[0]?.id, last = results.at(-1)?.id
+	if (first == null || last == null) return
+	// Outside the person's own prefix, so deleting their account keeps their log.
+	const key = `log/${userID}/${String(first).padStart(15, '0')}-${last}.ndjson.gz`
+	await writeArchive(env, key, results)
+	const unchecked: Record<string, number> = {}
+	for (const r of results) if (!r.refusal && r.event !== 'remove' && r.prev_generated_at == null && r.computer_id) unchecked[r.computer_id] = (unchecked[r.computer_id] ?? 0) + r.engaged_seconds
+	await env.DB.batch([
+		env.DB.prepare('INSERT OR IGNORE INTO log_archives (user_id, key, first_id, last_id, rows, flagged, refused, unchecked, archived_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(
+			userID, key, first, last, results.length, results.filter((r) => r.flagged).length, results.filter((r) => r.refusal).length, JSON.stringify(unchecked), Date.now()),
+		env.DB.prepare('DELETE FROM account_log WHERE user_id = ? AND id >= ? AND id <= ?').bind(userID, first, last),
+	])
+}
+
+/**
+ * archivedRows returns up to limit of a person's archived log rows with IDs
+ * below before that keep accepts, newest first.
+ */
+export async function archivedRows(env: Env, userID: number, before: number, limit: number, keep: (r: LogRow) => boolean = () => true): Promise<LogRow[]> {
+	const { results } = await env.DB.prepare('SELECT key FROM log_archives WHERE user_id = ? AND first_id < ? ORDER BY last_id DESC').bind(userID, before).all<{ key: string }>()
+	const out: LogRow[] = []
+	for (const a of results) {
+		if (out.length >= limit) break
+		out.push(...(await readArchive(env, a.key)).filter((r) => r.id < before && keep(r)).reverse())
+	}
+	return out.slice(0, limit)
+}
+
+/** logRow returns one log row by ID, from D1 or its archive. */
+export async function logRow(env: Env, id: number): Promise<LogRow | null> {
+	const row = await env.DB.prepare('SELECT * FROM account_log WHERE id = ?').bind(id).first<LogRow>()
+	if (row) return row
+	const a = await env.DB.prepare('SELECT key FROM log_archives WHERE first_id <= ? AND last_id >= ?').bind(id, id).first<{ key: string }>()
+	return a ? ((await readArchive(env, a.key)).find((r) => r.id === id) ?? null) : null
+}
+
+/** archiveTotals returns how many of a person's archived rows there are, flagged, and refused, and each computer's unchecked seconds in them. */
+export async function archiveTotals(env: Env, userID: number) {
+	const { results } = await env.DB.prepare('SELECT rows, flagged, refused, unchecked FROM log_archives WHERE user_id = ?').bind(userID).all<{ rows: number; flagged: number; refused: number; unchecked: string }>()
+	const unchecked: Record<string, number> = {}
+	for (const r of results) for (const [c, s] of Object.entries(JSON.parse(r.unchecked) as Record<string, number>)) unchecked[c] = (unchecked[c] ?? 0) + s
+	return { entries: results.reduce((n, r) => n + r.rows, 0), flagged: results.reduce((n, r) => n + r.flagged, 0), refused: results.reduce((n, r) => n + r.refused, 0), unchecked }
+}
 
 /**
  * logEntry returns the statements that add e to a person's log. Given `when`,
@@ -310,7 +369,7 @@ const trim = (env: Env, userID: number, flagged: number) =>
  */
 export function logEntry(env: Env, userID: number, e: Entry, when = '1', ...values: unknown[]): D1PreparedStatement[] {
 	const row = [userID, e.at, e.event, e.computer_id, e.refusal, e.flagged, e.generated_at, e.teardrop_version, e.since, e.engaged_seconds, e.prev_generated_at, e.prev_since, e.prev_engaged_seconds, e.prev_teardrop_version, e.past_added_seconds, e.detail, e.report_key]
-	return [env.DB.prepare(`INSERT INTO account_log (${COLUMNS}) SELECT ${row.map(() => '?').join(', ')} WHERE ${when}`).bind(...row, ...values), trim(env, userID, e.flagged)]
+	return [env.DB.prepare(`INSERT INTO account_log (${COLUMNS}) SELECT ${row.map(() => '?').join(', ')} WHERE ${when}`).bind(...row, ...values)]
 }
 
 /**
@@ -336,7 +395,7 @@ export function logRemoval(env: Env, userID: number, computerID?: string): D1Pre
 			).bind(userID, now),
 		)
 	}
-	return [...statements, trim(env, userID, 0)]
+	return statements
 }
 
 /** The last report of a computer the person removed, which a report from it is compared with when it comes back. */

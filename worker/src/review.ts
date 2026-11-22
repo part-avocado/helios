@@ -2,7 +2,7 @@
 // more. Neoadmins and superadmins get everyone with an account, and one
 // person's computers and log. Who is which is in staff.ts.
 import { Refusal } from './http.ts'
-import { type Detail, dur, type Entry, findings, parseStored, remarks } from './log.ts'
+import { archivedRows, archiveTotals, type Detail, dur, type Entry, findings, parseStored, remarks } from './log.ts'
 import { computers, personDays, personProjects, projectBlocks } from './reports.ts'
 import { type User } from './auth.ts'
 import { access, bans, slackID } from './staff.ts'
@@ -11,8 +11,8 @@ import { access, bans, slackID } from './staff.ts'
 const PEOPLE_LIMIT = 1000
 /** How many log rows one request returns. */
 const LOG_PAGE = 200
-/** How many log rows a download holds, which is as many as are kept for one person. */
-const LOG_DOWNLOAD = 10_000
+/** How many log rows a download holds, archived ones included. */
+const LOG_DOWNLOAD = 100_000
 /** The longest a calendar day gets, when the clocks go back, in seconds. */
 const LONGEST_DAY = 25 * 3600
 
@@ -21,7 +21,7 @@ export async function people(env: Env) {
 	const { results } = await env.DB.prepare(
 		`SELECT u.id, u.name, u.slack_id, u.created_at, u.deleted_at, COUNT(c.id) AS computers,
 			COALESCE(SUM(c.engaged_seconds), 0) AS engaged_seconds, MAX(c.synced_at) AS synced_at,
-			(SELECT COUNT(*) FROM account_log l WHERE l.user_id = u.id AND l.flagged = 1) AS flagged,
+			(SELECT COUNT(*) FROM account_log l WHERE l.user_id = u.id AND l.flagged = 1) + (SELECT COALESCE(SUM(a.flagged), 0) FROM log_archives a WHERE a.user_id = u.id) AS flagged,
 			EXISTS (SELECT 1 FROM bans b WHERE b.slack_id = u.slack_id AND u.slack_id != '' AND b.lifted_at IS NULL) AS banned
 		 FROM users u LEFT JOIN computers c ON c.user_id = u.id
 		 GROUP BY u.id ORDER BY synced_at DESC NULLS LAST, u.created_at DESC LIMIT ${PEOPLE_LIMIT}`,
@@ -72,7 +72,9 @@ function explain(e: Row) {
 export async function fullLog(env: Env, params: URLSearchParams) {
 	const who = await lookup(env, params)
 	const { results } = await env.DB.prepare(`SELECT * FROM account_log WHERE user_id = ? ORDER BY id DESC LIMIT ${LOG_DOWNLOAD}`).bind(who.id).all<Row>()
-	return { person: who, downloaded_at: Date.now(), log: results.map(explain) }
+	// Then the archived rows, which are every older one.
+	const older = await archivedRows(env, who.id, results.at(-1)?.id ?? Number.MAX_SAFE_INTEGER, LOG_DOWNLOAD)
+	return { person: who, downloaded_at: Date.now(), log: [...results, ...older].map(explain) }
 }
 
 /**
@@ -90,10 +92,11 @@ export async function person(env: Env, actor: User, params: URLSearchParams) {
 	}
 	const who = await lookup(env, params)
 	const before = /^\d{1,15}$/.test(params.get('before') ?? '') ? Number(params.get('before')) : Number.MAX_SAFE_INTEGER
-	const show = { flagged: 'AND flagged = 1', refused: `AND refusal != ''` }[params.get('show') ?? ''] ?? ''
+	const shown = params.get('show') ?? ''
+	const show = { flagged: 'AND flagged = 1', refused: `AND refusal != ''` }[shown] ?? ''
 	// A computer that isn't one of theirs has no rows in their log.
 	const computer = params.get('computer') ?? ''
-	const [rows, counts, unchecked, theirComputers, days, projects, theirBans, activity] = await Promise.all([
+	const [rows, counts, unchecked, theirComputers, days, projects, theirBans, activity, archived] = await Promise.all([
 		env.DB.prepare(`SELECT * FROM account_log WHERE user_id = ?1 AND id < ?2 AND (?3 = '' OR computer_id = ?3) ${show} ORDER BY id DESC LIMIT ${LOG_PAGE + 1}`)
 			.bind(who.id, before, computer)
 			.all<Row>(),
@@ -114,7 +117,15 @@ export async function person(env: Env, actor: User, params: URLSearchParams) {
 		who.slack_id ? bans(env, who.slack_id) : [],
 		// Older log pages draw nothing new.
 		params.has('before') ? [] : projectBlocks(env, who.id),
+		archiveTotals(env, who.id),
 	])
+	// When D1's newest rows run out, the page goes on into the archived ones.
+	const log = rows.results
+	if (log.length <= LOG_PAGE) {
+		const keep = (r: Row) => (!computer || r.computer_id === computer) && (shown !== 'flagged' || r.flagged === 1) && (shown !== 'refused' || r.refusal !== '')
+		log.push(...(await archivedRows(env, who.id, log.at(-1)?.id ?? before, LOG_PAGE + 1 - log.length, keep)))
+	}
+	const archivedUnchecked = theirComputers.reduce((n, c) => n + (archived.unchecked[c.id] ?? 0), 0)
 
 	// One person can't be engaged for longer than a day lasts, on however many computers.
 	const perDay: Record<string, number> = {}
@@ -124,7 +135,7 @@ export async function person(env: Env, actor: User, params: URLSearchParams) {
 		.sort(([a], [b]) => (a < b ? 1 : -1))
 		.map(([date, seconds]) => `${date}: their computers add up to ${dur(seconds)}, which is more than the day had.`)
 
-	const page = rows.results.slice(0, LOG_PAGE)
+	const page = log.slice(0, LOG_PAGE)
 	return {
 		signed_in: true,
 		person: who,
@@ -135,12 +146,12 @@ export async function person(env: Env, actor: User, params: URLSearchParams) {
 		// Each project's work blocks, for the graphs.
 		activity,
 		bans: theirBans,
-		counts,
-		unchecked_seconds: unchecked?.seconds ?? 0,
+		counts: { entries: (counts?.entries ?? 0) + archived.entries, flagged: (counts?.flagged ?? 0) + archived.flagged, refused: (counts?.refused ?? 0) + archived.refused },
+		unchecked_seconds: (unchecked?.seconds ?? 0) + archivedUnchecked,
 		impossible_days: impossible,
 		log: page.map(explain),
 		// The ID to pass as `before` for the next page, when there is one.
-		more: rows.results.length > LOG_PAGE ? page.at(-1)!.id : null,
+		more: log.length > LOG_PAGE ? page.at(-1)!.id : null,
 	}
 }
 
@@ -154,7 +165,7 @@ export async function summary(env: Env, params: URLSearchParams) {
 	const [theirComputers, projects, flagged, theirBans, activity] = await Promise.all([
 		computers(env, who.id),
 		personProjects(env, who.id),
-		env.DB.prepare('SELECT COUNT(*) AS n FROM account_log WHERE user_id = ? AND flagged = 1').bind(who.id).first<{ n: number }>(),
+		env.DB.prepare('SELECT (SELECT COUNT(*) FROM account_log WHERE user_id = ?1 AND flagged = 1) + (SELECT COALESCE(SUM(flagged), 0) FROM log_archives WHERE user_id = ?1) AS n').bind(who.id).first<{ n: number }>(),
 		bans(env, who.slack_id),
 		projectBlocks(env, who.id),
 	])

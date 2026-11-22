@@ -4,7 +4,7 @@
 import { newKey, type User } from './auth.ts'
 import { cloudComputer } from './events.ts'
 import { fromBase64Url, Refusal } from './http.ts'
-import { dayChanges, dayTotals, type Detail, type Entry, findings, logEntry, type LogEvent, logRemoval, parseDays, parseStored, pastAdded, projectChanges, projectTotals, removedReport, type ReportBody, summarize } from './log.ts'
+import { archiveLog, dayChanges, dayTotals, type Detail, type Entry, findings, logEntry, type LogEvent, logRemoval, logRow, parseDays, readArchive, writeArchive, parseStored, pastAdded, projectChanges, projectTotals, removedReport, type ReportBody, summarize } from './log.ts'
 
 /** The largest report accepted, the same as the Go server. */
 export const MAX_REPORT_BYTES = 16 << 20
@@ -58,7 +58,8 @@ export async function storeReport(env: Env, user: User, body: string, event: Log
 	} catch (e) {
 		if (!(e instanceof Refusal)) throw e
 		const refused: Entry = { ...entry, refusal: e.message, flagged: Number(e instanceof FlaggedRefusal), prev_generated_at: null, prev_since: null, prev_engaged_seconds: null, prev_teardrop_version: null, past_added_seconds: null }
-		await forgetDropped(env, await env.DB.batch(logEntry(env, user.id, refused)))
+		await env.DB.batch(logEntry(env, user.id, refused))
+		await archiveLog(env, user.id).catch((e) => console.error('could not archive the log', e))
 		throw e
 	}
 }
@@ -155,7 +156,7 @@ async function store(env: Env, user: User, body: string, entry: Entry): Promise<
 		env.DB.prepare(`DELETE FROM report_chunks WHERE computer_id = ?1 AND EXISTS (SELECT 1 FROM computers WHERE id = ?1 AND signature = ?2)`).bind(id, signed.key),
 		...logEntry(env, user.id, entry, 'EXISTS (SELECT 1 FROM computers WHERE id = ? AND signature = ?)', id, signed.key),
 	])
-	await forgetDropped(env, results)
+	await archiveLog(env, user.id).catch((e) => console.error('could not archive the log', e))
 	if (!results[0]?.meta.changes) {
 		await env.REPORTS.delete(latestKey)
 		throw stale
@@ -183,25 +184,13 @@ async function forget(env: Env, keys: string[]): Promise<void> {
 }
 
 /**
- * forgetDropped deletes the kept reports of the log rows that a batch dropped
- * for being the oldest. The batch has already taken effect, and a file left
- * behind is out of reach, so a failure here is noted and not passed on.
- */
-async function forgetDropped(env: Env, results: D1Result[]): Promise<void> {
-	const keys = results.flatMap((r) => (r.results as { report_key?: string | null }[]).flatMap((row) => row.report_key ?? []))
-	await forget(env, keys).catch((e) => console.error('could not delete the reports of dropped log rows', e))
-}
-
-/**
  * keptReportJSON returns, as JSON text, the report behind one log row exactly
  * as it was signed, with every work block, or null when none is kept for it.
  * It is for admins.
  */
 export async function keptReportJSON(env: Env, entryID: string): Promise<string | null> {
 	if (!/^\d{1,15}$/.test(entryID)) return null
-	const row = await env.DB.prepare('SELECT user_id, computer_id, at, refusal, report_key FROM account_log WHERE id = ?')
-		.bind(Number(entryID))
-		.first<{ user_id: number; computer_id: string; at: number; refusal: string; report_key: string | null }>()
+	const row = await logRow(env, Number(entryID))
 	const kept = row?.report_key ? await env.REPORTS.get(row.report_key) : null
 	if (!row || !kept) return null
 	// Only a body that parsed as a signed report is ever kept.
@@ -231,13 +220,99 @@ export async function reportsJSON(env: Env, userID: number): Promise<string> {
  * reports moved there. null for none.
  */
 async function latestPayload(env: Env, computerID: string): Promise<string | null> {
-	const row = await env.DB.prepare('SELECT report_key FROM computers WHERE id = ?').bind(computerID).first<{ report_key: string | null }>()
+	const row = await env.DB.prepare('SELECT user_id, report_key, since, synced_at FROM computers WHERE id = ?').bind(computerID).first<{ user_id: number; report_key: string | null; since: string; synced_at: number }>()
+	if (row?.since === RECORDS) return recordPayload(env, row.user_id, computerID, row.synced_at)
 	if (row?.report_key) {
 		const obj = await env.REPORTS.get(row.report_key)
 		return obj ? new Response(obj.body.pipeThrough(new DecompressionStream('gzip'))).text() : null
 	}
 	const { results } = await env.DB.prepare('SELECT data FROM report_chunks WHERE computer_id = ? ORDER BY seq').bind(computerID).all<{ data: string }>()
 	return results.length ? results.map((r) => r.data).join('') : null
+}
+
+/** The `since` of a computer that sends records, not reports: its view is worked out from them. */
+const RECORDS = 'records'
+
+type DayRow = { day: string; s: number; projects: string; blocks: string; updated_at: number }
+
+const recordDays = (env: Env, userID: number, computerID: string) =>
+	env.DB.prepare(`SELECT day, witnessed_seconds + unwitnessed_seconds AS s, projects, blocks, updated_at FROM prompt_days WHERE user_id = ? AND computer_id = ? ORDER BY day DESC LIMIT 400`)
+		.bind(userID, computerID)
+		.all<DayRow>()
+
+const nameOf = (key: string) => key.split(/[\\/]/).filter(Boolean).pop()?.slice(0, 80) || 'unnamed'
+
+/** A day's work blocks, as the hub stores them. */
+type DayBlock = [number, number, number, number, number, number, number, number, string, string]
+
+/**
+ * recordPayload makes, from a computer's day totals and work blocks, the same
+ * shape of payload a synced report has, so the dashboard and review app read
+ * a computer that sends records as one that sends reports. It is unsigned:
+ * the site worked it out itself.
+ */
+async function recordPayload(env: Env, userID: number, computerID: string, syncedAt: number): Promise<string> {
+	const { results } = await recordDays(env, userID, computerID)
+	const projects = new Map<string, number>()
+	const blocks: object[] = []
+	for (const d of results) {
+		for (const [key, [w, u]] of Object.entries(JSON.parse(d.projects) as Record<string, [number, number, number]>)) projects.set(key, (projects.get(key) ?? 0) + w + u)
+		for (const [start, end, engaged, prompts, tin, tout, added, removed, key, tools] of JSON.parse(d.blocks) as DayBlock[]) {
+			blocks.push({ project: { key, name: nameOf(key) }, start: new Date(start).toISOString(), end: new Date(end).toISOString(), engaged_seconds: engaged, prompts, tokens_in: tin, tokens_out: tout, lines_added: added, lines_removed: removed, lines_kept: 0, tools: tools ? tools.split(',') : [] })
+		}
+	}
+	const report = {
+		engaged_seconds: results.reduce((n, d) => n + d.s, 0),
+		days: results.filter((d) => d.s > 0).map((d) => ({ date: d.day, engaged_seconds: d.s })).reverse(),
+		projects: [...projects].map(([key, s]) => ({ project: { key, name: nameOf(key) }, engaged_seconds: s })),
+		blocks: blocks.reverse(),
+	}
+	return JSON.stringify({ account: '', generated_at: new Date(syncedAt).toISOString(), since: RECORDS, teardrop_version: RECORDS, report })
+}
+
+/**
+ * refreshRecordComputer updates the computers row of a computer that sends
+ * records from its day totals, after the hub writes them, so every list of a
+ * person's computers, days, and projects includes it. A computer that synced
+ * reports before keeps its key, and its old report is no longer read: its
+ * records go back as far as the report did. A computer of another account is left alone.
+ */
+export async function refreshRecordComputer(env: Env, userID: number, computerID: string): Promise<void> {
+	if (!/^td-[0-9a-f]{12}$/.test(computerID)) return
+	const [{ results }, old] = await Promise.all([
+		recordDays(env, userID, computerID),
+		env.DB.prepare('SELECT user_id, report_key FROM computers WHERE id = ?').bind(computerID).first<{ user_id: number; report_key: string | null }>(),
+	])
+	if (!results.length || (old && old.user_id !== userID)) return
+	const days: Record<string, number> = {}
+	const projects: Record<string, [string, number]> = {}
+	const stored: Record<string, [string, number, number, number, number[][]]> = {}
+	for (const d of results) {
+		if (d.s > 0) days[d.day] = d.s
+		for (const [key, [w, u]] of Object.entries(JSON.parse(d.projects) as Record<string, [number, number, number]>)) {
+			if (w + u) projects[key] = [nameOf(key), (projects[key]?.[1] ?? 0) + w + u]
+		}
+		for (const [start, end, engaged, prompts, tin, tout, added, removed, key] of JSON.parse(d.blocks) as DayBlock[]) {
+			const p = (stored[key] ??= [nameOf(key), start, end, 0, []])
+			p[1] = Math.min(p[1], start)
+			p[2] = Math.max(p[2], end)
+			p[3] += engaged
+			p[4].push([start, end, engaged, prompts, tin, tout, added, removed, 0])
+		}
+	}
+	for (const p of Object.values(stored)) p[4].sort((a, b) => a[0]! - b[0]!)
+	const synced = Math.max(...results.map((d) => d.updated_at))
+	const engaged = results.reduce((n, d) => n + d.s, 0)
+	await env.DB.prepare(
+		`INSERT INTO computers (id, user_id, public_key, signature, generated_at, synced_at, teardrop_version, engaged_seconds, since, days, projects, blocks, report_key)
+		 VALUES (?1, ?2, '', '', ?3, ?3, ?4, ?5, ?4, ?6, ?7, ?8, NULL)
+		 ON CONFLICT (id) DO UPDATE SET generated_at = excluded.generated_at, synced_at = excluded.synced_at, teardrop_version = excluded.teardrop_version,
+			engaged_seconds = excluded.engaged_seconds, since = excluded.since, days = excluded.days, projects = excluded.projects, blocks = excluded.blocks, report_key = NULL
+		 WHERE computers.user_id = excluded.user_id`,
+	)
+		.bind(computerID, userID, synced, RECORDS, engaged, JSON.stringify(days), JSON.stringify(projects), JSON.stringify(stored))
+		.run()
+	if (old?.report_key) await env.REPORTS.delete(old.report_key).catch(() => {})
 }
 
 /**
@@ -388,7 +463,7 @@ export async function removeComputer(env: Env, userID: number, id: string): Prom
 		...logRemoval(env, userID, id),
 		env.DB.prepare('DELETE FROM computers WHERE id = ? AND user_id = ?').bind(id, userID),
 	])
-	await forgetDropped(env, results)
+	await archiveLog(env, userID).catch((e) => console.error('could not archive the log', e))
 	return results.at(-1)!.meta.changes > 0
 }
 
@@ -414,6 +489,16 @@ export async function deleteUser(env: Env, userID: number): Promise<void> {
 		env.DB.prepare('DELETE FROM project_settings WHERE user_id = ?').bind(userID),
 		env.DB.prepare(`UPDATE users SET name = '', handle = NULL, profile_public = 1, api_key = ?, deleted_at = ? WHERE id = ?`).bind(newKey(), Date.now(), userID),
 	])
+	// The archived part of their log stays too, without project names or report keys.
+	const { results: archives } = await env.DB.prepare('SELECT key FROM log_archives WHERE user_id = ?').bind(userID).all<{ key: string }>()
+	for (const a of archives) {
+		const rows = (await readArchive(env, a.key)).map((r) => {
+			const detail = parseStored<Record<string, unknown>>(r.detail)
+			if (detail) delete detail.projects, delete detail.more_projects
+			return { ...r, report_key: null, detail: detail ? JSON.stringify(detail) : r.detail }
+		})
+		await writeArchive(env, a.key, rows)
+	}
 	// Their working copy of recent records, and their day totals.
 	await env.HUB.get(env.HUB.idFromName(String(userID))).forget()
 	await env.DB.prepare('DELETE FROM prompt_days WHERE user_id = ?').bind(userID).run()

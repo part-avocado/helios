@@ -8,7 +8,8 @@
 // Records never hold prompt or reply text.
 import { DurableObject } from 'cloudflare:workers'
 import { type Commit, remember } from './git.ts'
-import { RULES, type Rec, totals, WATCH } from './timeline.ts'
+import { refreshRecordComputer } from './reports.ts'
+import { blocks, RULES, type Rec, timed, totals, WATCH } from './timeline.ts'
 
 const FLUSH = 10 * 60_000
 const SEAL = 48 * 3600_000
@@ -96,7 +97,7 @@ export class UserHub extends DurableObject<Env> {
 			// The fingerprint is a 64-bit number: read from the text, so it is never rounded.
 			const sim = /"sim":\s*"?(\d{1,20})/.exec(line)?.[1]
 			const rec: Rec = {
-				t, arrived: now, tool, session, human: ev.human === true,
+				t, arrived: now, tool, session, event, human: ev.human === true && event !== 'usage',
 				project: text(ev.project, 500) || text(ev.git, 500) || text(ev.cwd, 500),
 				...(ev.human === true ? { judged: count(ev.judged), real: count(ev.real), low: ev.low === true, ...(sim && sim !== '0' ? { sim } : {}) } : {}),
 				...(count(ev.in) || count(ev.out) ? { in: count(ev.in), out: count(ev.out) } : {}),
@@ -106,7 +107,8 @@ export class UserHub extends DurableObject<Env> {
 			if (event === 'commit' && !rec.sha) continue
 			const day = dayOf(t, offset)
 			if (now - (Date.parse(day) + DAY - offset * 60_000) > SEAL) await this.load(userID, day)
-			const done = sql.exec(`INSERT OR IGNORE INTO recs (computer, tool, session, event, t, arrived, day, rec) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			// A turn's usage, from its transcript, is sent again as the turn grows, and the latest counts.
+			const done = sql.exec(`INSERT OR ${event === 'usage' ? 'REPLACE' : 'IGNORE'} INTO recs (computer, tool, session, event, t, arrived, day, rec) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 				computer, tool, session, event, t, now, day, JSON.stringify({ ...rec, computer, event, offset }))
 			if (done.rowsWritten) {
 				sql.exec('INSERT OR IGNORE INTO dirty (day) VALUES (?)', day)
@@ -163,12 +165,14 @@ export class UserHub extends DurableObject<Env> {
 				rows.map(([computer, list]) => {
 					const s = totals(list, from, from + DAY)
 					const projects = Object.fromEntries(Object.entries(s.projects).map(([k, p]) => [k, [Math.round(p.witnessed / 1000), Math.round(p.unwitnessed / 1000), p.prompts]]))
+					// A computer's work blocks, for the dashboard and review graphs: [start, end, engaged s, prompts, in, out, added, removed, project, tools].
+					const day_blocks = computer ? blocks(list, from, from + DAY).map((b) => [b.start, b.end, Math.round(b.engaged / 1000), b.prompts, b.in, b.out, b.added, b.removed, b.project, b.tools.join(',')]) : []
 					return this.env.DB.prepare(
-						`INSERT INTO prompt_days (user_id, computer_id, day, witnessed_seconds, unwitnessed_seconds, prompts, tokens_in, tokens_out, lines_added, lines_removed, projects, sha256, rules, updated_at)
-						 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+						`INSERT INTO prompt_days (user_id, computer_id, day, witnessed_seconds, unwitnessed_seconds, prompts, tokens_in, tokens_out, lines_added, lines_removed, projects, sha256, rules, updated_at, blocks)
+						 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
 						 ON CONFLICT (user_id, computer_id, day) DO UPDATE SET witnessed_seconds = ?4, unwitnessed_seconds = ?5, prompts = ?6, tokens_in = ?7,
-							tokens_out = ?8, lines_added = ?9, lines_removed = ?10, projects = ?11, sha256 = ?12, rules = ?13, updated_at = ?14`,
-					).bind(user, computer, day, Math.round(s.witnessed / 1000), Math.round(s.unwitnessed / 1000), s.prompts, s.tokens_in, s.tokens_out, s.lines_added, s.lines_removed, JSON.stringify(projects), computer ? '' : hash, RULES, now)
+							tokens_out = ?8, lines_added = ?9, lines_removed = ?10, projects = ?11, sha256 = ?12, rules = ?13, updated_at = ?14, blocks = ?15`,
+					).bind(user, computer, day, Math.round(s.witnessed / 1000), Math.round(s.unwitnessed / 1000), s.prompts, s.tokens_in, s.tokens_out, s.lines_added, s.lines_removed, JSON.stringify(projects), computer ? '' : hash, RULES, now, JSON.stringify(day_blocks))
 				}),
 			)
 			// Commits go to their project's row, for links and the GitHub check.
@@ -177,6 +181,10 @@ export class UserHub extends DurableObject<Env> {
 			for (const [project, list] of commits) await remember(this.env, user, project, list)
 			sql.exec('DELETE FROM dirty WHERE day = ?', day)
 		}
+		// The computers the days came from show their new totals on the dashboard and in the review app.
+		const touched = new Set<string>()
+		for (const day of days) for (const r of sql.exec('SELECT DISTINCT computer FROM recs WHERE day = ?', day).toArray()) touched.add(String(r.computer))
+		for (const c of touched) await refreshRecordComputer(this.env, user, c)
 		// Sealed days live in R2 alone from here on.
 		const sealed = dayOf(Date.now() - SEAL - DAY, 0)
 		sql.exec('DELETE FROM recs WHERE day < ? AND day NOT IN (SELECT day FROM dirty)', sealed)
@@ -194,7 +202,7 @@ export class UserHub extends DurableObject<Env> {
 	 * record, if it is recent, and today's totals on the person's latest clock.
 	 */
 	live(now = Date.now()): Live {
-		const recs = this.ctx.storage.sql.exec('SELECT rec FROM recs WHERE t >= ? ORDER BY t', now - 2 * DAY).toArray().map((r) => JSON.parse(String(r.rec)) as Rec & { offset: number }).filter((r) => !r.sha)
+		const recs = this.ctx.storage.sql.exec('SELECT rec FROM recs WHERE t >= ? ORDER BY t', now - 2 * DAY).toArray().map((r) => JSON.parse(String(r.rec)) as Rec & { offset: number }).filter(timed)
 		const last = recs.at(-1)
 		const offset = last?.offset ?? 0
 		const day = dayOf(now, offset)
