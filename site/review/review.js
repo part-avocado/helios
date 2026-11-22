@@ -190,11 +190,6 @@ function perLocalDay(blocks) {
 	}
 	return per
 }
-// Graphs that show the days before today show this many.
-const SPAN_DAYS = 90
-// The project whose graphs are open, by its place in the list.
-let chartAt = 0
-let chartData = []
 
 // checks looks for what a reviewer should ask about in one project's blocks.
 // Each check says what it found, and whether that is worth a look.
@@ -243,25 +238,6 @@ function checks(blocks) {
 	return out
 }
 
-// dailyBars draws engaged time per day over the last SPAN_DAYS days.
-function dailyBars(blocks) {
-	const today = new Date()
-	today.setHours(0, 0, 0, 0)
-	const first = today.getTime() - (SPAN_DAYS - 1) * DAY_MS
-	const days = perLocalDay(blocks)
-	const per = Array.from({ length: SPAN_DAYS }, (_, i) => days.get(localDay(first + i * DAY_MS + 12 * HOUR)) ?? 0)
-	const W = 720, H = 170, top = Math.max(3600, ...per)
-	const w = W / SPAN_DAYS
-	const bars = per.map((s, i) => {
-		const h = s ? Math.max(2, (s / top) * (H - 24)) : 0
-		const day = new Date(first + i * DAY_MS)
-		return `<rect class="${s > 10 * 3600 ? 'hot' : 'bar'}" x="${(i * w + 1).toFixed(1)}" y="${(H - 18 - h).toFixed(1)}" width="${(w - 2).toFixed(1)}" height="${h.toFixed(1)}" rx="1.5"><title>${esc(day.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }))}: ${s ? dur(s) : 'nothing'}</title></rect>`
-	}).join('')
-	const marks = [0, 30, 60, SPAN_DAYS - 1].map((i) => `<text x="${Math.min(W - 40, i * w)}" y="${H - 3}">${esc(new Date(first + i * DAY_MS).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))}</text>`).join('')
-	const guide = `<line x1="0" x2="${W}" y1="${H - 18 - (H - 24) * (3600 / top)}" y2="${H - 18 - (H - 24) * (3600 / top)}" class="guide"/><text x="${W - 4}" y="${H - 22 - (H - 24) * (3600 / top)}" text-anchor="end">1h</text>`
-	return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Engaged time per day">${guide}${bars}${marks}</svg>`
-}
-
 // punchCard draws when in the week they work: a dot per weekday and hour,
 // larger for more engaged time, from the whole year. Hours are the reviewer's.
 function punchCard(blocks) {
@@ -292,28 +268,6 @@ function punchCard(blocks) {
 	return `<svg class="chart" viewBox="0 0 ${W} ${7 * rh + 16}" role="img" aria-label="Engaged time by weekday and hour">${dots}${hours}</svg>`
 }
 
-// lineBars draws lines added above the axis and removed below it, per day.
-function lineBars(blocks) {
-	const today = new Date()
-	today.setHours(0, 0, 0, 0)
-	const first = today.getTime() - (SPAN_DAYS - 1) * DAY_MS
-	const add = new Array(SPAN_DAYS).fill(0), del = new Array(SPAN_DAYS).fill(0)
-	for (const b of blocks) {
-		const i = Math.floor((new Date(b[B.start]).setHours(0, 0, 0, 0) - first) / DAY_MS + 0.5)
-		if (i >= 0 && i < SPAN_DAYS) (add[i] += b[B.added]), (del[i] += b[B.removed])
-	}
-	const W = 720, H = 170, mid = 80, top = Math.max(50, ...add, ...del)
-	const w = W / SPAN_DAYS
-	const bars = add.map((a, i) => {
-		const day = new Date(first + i * DAY_MS).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-		const up = (a / top) * (mid - 6), down = (del[i] / top) * (mid - 6)
-		return `<g><title>${esc(day)}: ${num(a)} added, ${num(del[i])} removed</title>` +
-			(a ? `<rect class="add" x="${(i * w + 1).toFixed(1)}" y="${(mid - up).toFixed(1)}" width="${(w - 2).toFixed(1)}" height="${Math.max(1, up).toFixed(1)}"/>` : '') +
-			(del[i] ? `<rect class="del" x="${(i * w + 1).toFixed(1)}" y="${mid}" width="${(w - 2).toFixed(1)}" height="${Math.max(1, down).toFixed(1)}"/>` : '') + '</g>'
-	}).join('')
-	return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Lines added and removed per day"><line class="guide" x1="0" x2="${W}" y1="${mid}" y2="${mid}"/>${bars}<text x="0" y="12">+${compact(top)}</text><text x="0" y="${H - 6}">-${compact(top)}</text></svg>`
-}
-
 // blockScatter puts each block at its length across, and the share of it
 // that was engaged up. Long blocks near the top had no breaks.
 function blockScatter(blocks) {
@@ -332,38 +286,225 @@ function blockScatter(blocks) {
 	return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Each block's length and how much of it was engaged">${zone}${axis}${dots}</svg>`
 }
 
-// activity draws the graphs of one project, with buttons to pick another.
-function activity(projects) {
-	chartData = projects
-	if (!projects.length) return '<div class="panel wide"><h2>Project activity</h2><p class="muted">No work blocks to draw. Their computers have synced none, or synced before blocks were kept.</p></div>'
-	chartAt = Math.min(chartAt, projects.length - 1)
-	const p = projects[chartAt]
+// ---- One project: every series on one time axis
+//
+// The chart draws what a project's blocks and commits hold, each series as
+// a share of its own total, so their shapes line up and any can be laid over
+// any other. Where one climbs and the others stay flat is worth a question.
+// Below it, the same series per day. Lightweight Charts by TradingView draws
+// them (vendor/, Apache 2.0).
+
+const SERIES = [
+	{ id: 'added', name: 'Lines added', color: 'accent', on: true },
+	{ id: 'removed', name: 'Lines removed', color: 'bad' },
+	{ id: 'kept', name: 'Lines kept', color: 'good' },
+	{ id: 'committed', name: 'Lines committed', color: 'important', on: true },
+	{ id: 'engaged', name: 'Engaged time', color: 'warn', on: true },
+	{ id: 'prompts', name: 'Prompts', color: 'pink', on: true },
+	{ id: 'tokens', name: 'Tokens written', color: 'teal' },
+]
+const PALETTE = { pink: '#f472b6', teal: '#2dd4bf' }
+const SHOWN = 'teardrop-review-series'
+// Which series are on, for whoever chose them.
+let shown = new Set(SERIES.filter((s) => s.on).map((s) => s.id))
+try {
+	const saved = JSON.parse(localStorage.getItem(SHOWN) ?? 'null')
+	if (Array.isArray(saved)) shown = new Set(saved)
+} catch {}
+const fmt = (id, v) => (id === 'engaged' ? dur(v) : num(Math.round(v)))
+// The charts' clock is UTC, so times move by the reviewer's offset to read as theirs.
+const localSec = (ms) => Math.floor(ms / 1000) - new Date(ms).getTimezoneOffset() * 60
+
+// series works out, for one project, each series' running total at every
+// moment something happened, and its total per day.
+function series(p) {
+	const at = new Map(), days = new Map()
+	const put = (ms, id, v) => {
+		if (!v) return
+		const t = localSec(ms)
+		const row = at.get(t) ?? {}
+		row[id] = (row[id] ?? 0) + v
+		at.set(t, row)
+		const d = localSec(new Date(ms).setHours(0, 0, 0, 0))
+		const day = days.get(d) ?? {}
+		day[id] = (day[id] ?? 0) + v
+		days.set(d, day)
+	}
+	for (const b of p.blocks) {
+		put(b[B.start], 'added', b[B.added])
+		put(b[B.start], 'removed', b[B.removed])
+		put(b[B.start], 'kept', b[B.kept])
+		put(b[B.start], 'engaged', b[B.engaged])
+		put(b[B.start], 'prompts', b[B.prompts])
+		put(b[B.start], 'tokens', b[B.tout])
+	}
+	for (const c of p.commits ?? []) put(c.t, 'committed', c.added)
+	const times = [...at.keys()].sort((a, b) => a - b)
+	const total = Object.fromEntries(SERIES.map(({ id }) => [id, times.reduce((n, t) => n + (at.get(t)[id] ?? 0), 0)]))
+	const run = Object.fromEntries(SERIES.map(({ id }) => [id, []]))
+	const sums = Object.fromEntries(SERIES.map(({ id }) => [id, 0]))
+	for (const t of times) for (const { id } of SERIES) run[id].push((sums[id] += at.get(t)[id] ?? 0))
+	return { times, at, total, run, days: [...days.keys()].sort((a, b) => a - b).map((t) => [t, days.get(t)]) }
+}
+
+// spark is a card's small picture: lines added, engaged time, and lines
+// committed, each as a share of its total, over the project's life.
+function spark(p) {
+	const W = 260, H = 56
+	const s = series(p)
+	if (s.times.length < 2) return `<svg class="spark" viewBox="0 0 ${W} ${H}"></svg>`
+	const t0 = s.times[0], t1 = s.times.at(-1)
+	const path = (id) => s.total[id] ? `<path class="s-${id}" d="${s.times.map((t, i) => `${i ? 'L' : 'M'}${(((t - t0) / (t1 - t0)) * (W - 4) + 2).toFixed(1)},${(H - 3 - (s.run[id][i] / s.total[id]) * (H - 6)).toFixed(1)}`).join('')}"/>` : ''
+	return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">${path('engaged')}${path('committed')}${path('added')}</svg>`
+}
+
+// projectCards lists a person's projects, each a link to its own page.
+function projectCards(projects, base) {
+	if (!projects.length) return '<div class="panel"><p class="muted">No work blocks yet. Their computers have synced none, or synced before blocks were kept.</p></div>'
+	return `<section class="pcards">${projects.map((p, i) => {
+		const sum = (k) => p.blocks.reduce((s, b) => s + b[k], 0)
+		return `<a class="pcard" href="${base}/p/${i}">
+			<div class="pcard-top"><b>${esc(p.name)}</b><small>${esc(longDate(p.blocks.at(-1)?.[B.end] ?? Date.now()))}</small></div>
+			${spark(p)}
+			<div class="pcard-nums"><span>${dur(p.engaged_seconds)}</span><span>+${compact(sum(B.added))} lines</span><span>${plural(sum(B.prompts), 'prompt')}</span><span>${plural(p.commits?.length ?? 0, 'commit')}</span></div>
+		</a>`
+	}).join('')}</section>`
+}
+
+// projectPage is one project, alone: its numbers, the chart, its checks, and its commits.
+function projectPage(name, back, p) {
 	const bl = p.blocks
 	const sum = (i) => bl.reduce((s, b) => s + b[i], 0)
-	const engaged = sum(B.engaged), prompts = sum(B.prompts), added = sum(B.added), kept = sum(B.kept)
-	const facts = [
-		['Engaged', dur(engaged)],
-		['Blocks', num(bl.length)],
-		['Prompts', `${num(prompts)}<small>${engaged ? `${(prompts / (engaged / 3600)).toFixed(1)} an hour` : ''}</small>`],
-		['Lines', `+${compact(added)} -${compact(sum(B.removed))}<small>${added ? `${Math.round((100 * kept) / added)}% committed` : ''}</small>`],
-		['Tokens', `${compact(sum(B.tin))} / ${compact(sum(B.tout))}<small>read / written</small>`],
-		['Active', bl.length ? `${esc(longDate(bl[0][B.start]))}<small>to ${esc(longDate(bl.at(-1)[B.end]))}</small>` : '-'],
-	]
-	return `<div class="panel wide rv-activity" id="activity">
-		<div class="act-head"><h2>Project activity</h2>
-			<div class="act-pick" role="tablist" aria-label="Project">${projects.map((x, i) => `<button type="button" role="tab" data-chart="${i}" aria-selected="${i === chartAt}">${esc(x.name)}<small>${dur(x.engaged_seconds)}</small></button>`).join('')}</div>
+	const commits = [...(p.commits ?? [])].sort((a, b) => b.t - a.t)
+	const found = commits.filter((c) => c.found === true).length, missing = commits.filter((c) => c.found === false).length
+	const repo = /^github\.com\//.test(p.key ?? '') ? 'https://' + p.key : ''
+	afterDraw = () => drawProject(p)
+	return `<div class="review project">
+		<nav class="crumbs"><a href="${back}">${esc(name)}</a><span>/</span><b>${esc(p.name)}</b></nav>
+		${head(esc(p.name), p.key && p.key !== p.name ? `<span class="status"><code>${esc(p.key)}</code></span>` : '')}
+		<div class="act-facts">${[
+			['Engaged', dur(sum(B.engaged))],
+			['Blocks', num(bl.length)],
+			['Prompts', num(sum(B.prompts))],
+			['Lines', `+${compact(sum(B.added))} -${compact(sum(B.removed))}<small>${compact(sum(B.kept))} kept</small>`],
+			['Commits', `${num(commits.length)}<small>${commits.length ? `${num(found)} found on the host${missing ? `, ${num(missing)} not` : ''}` : 'none reported'}</small>`],
+			['Active', bl.length ? `${esc(longDate(bl[0][B.start]))}<small>to ${esc(longDate(bl.at(-1)[B.end]))}</small>` : '-'],
+		].map(([k, x]) => `<div><span>${k}</span><b>${x}</b></div>`).join('')}</div>
+		<div class="panel pchart-panel">
+			<div class="pchips" role="group" aria-label="Series to draw">${SERIES.map((s) => `<button type="button" data-series="${s.id}" aria-pressed="${shown.has(s.id)}" style="--c: var(--s-${s.id})"><i></i>${s.name}</button>`).join('')}</div>
+			<div class="plegend" id="plegend"></div>
+			<div class="pchart" id="pchart"></div>
+			<p class="muted fine">Top: each series' running total, as a share of its own total, so their shapes line up. Bottom: the same per day. Times are in your time zone. Scroll to zoom, drag to pan, hover for numbers.</p>
 		</div>
-		<div class="act-facts">${facts.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('')}</div>
 		<ul class="act-checks">${checks(bl).map(([kind, text, more]) => `<li class="${kind}"><b>${esc(text)}</b>${more ? ` <span>${esc(more)}</span>` : ''}</li>`).join('')}</ul>
 		<div class="act-grid">
-			<figure><figcaption>Engaged time per day <small>last ${SPAN_DAYS} days in your time zone, red over 10 hours</small></figcaption>${dailyBars(bl)}</figure>
-			<figure><figcaption>Lines added and removed per day <small>last ${SPAN_DAYS} days</small></figcaption>${lineBars(bl)}</figure>
 			<figure><figcaption>When they work <small>weekday and hour in your time zone, orange before 6:00</small></figcaption>${punchCard(bl)}</figure>
 			<figure><figcaption>Every block: length and share engaged <small>red: over 4 hours, engaged over 90%</small></figcaption>${blockScatter(bl)}</figure>
 		</div>
-		<p class="muted fine">Drawn from the work blocks in each computer's latest report. Hover a bar or dot for its numbers. A check that stands out is a reason to ask, not proof: the numbers come from the person's own computers.</p>
+		${commits.length ? `<div class="panel"><h2>Commits <small>newest first, the last ${commits.length} the site kept</small></h2><div class="table-scroll"><table class="data left">
+			<tr><th>When</th><th>Lines</th><th>On the host</th>${commits[0].sha ? '<th>Commit</th>' : ''}</tr>
+			${commits.map((c) => `<tr><td>${esc(when(c.t))}</td><td>+${num(c.added)} −${num(c.removed)}</td><td class="${c.found === false ? 'bad' : ''}">${c.found === true ? 'Found' : c.found === false ? 'Not found' : 'Not checked'}</td>${c.sha ? `<td>${repo ? `<a href="${esc(repo)}/commit/${esc(c.sha)}" rel="nofollow noopener" target="_blank"><code>${esc(c.sha.slice(0, 7))}</code></a>` : `<code>${esc(c.sha.slice(0, 7))}</code>`}</td>` : ''}</tr>`).join('')}
+		</table></div></div>` : ''}
+		<p class="muted fine">Drawn from the work blocks in each computer's latest report and the commits their computers reported. The numbers come from the person's own computers.</p>
 	</div>`
 }
+
+// What the chart on the page draws, so the series buttons and the theme switch can reach it.
+let drawn = null
+
+// drawProject draws the open project's chart into #pchart, over the stretch
+// of time given, as a redraw keeps the reviewer's zoom.
+function drawProject(p, range = null) {
+	clearCharts()
+	const el = $('pchart')
+	if (!el || !window.LightweightCharts) return
+	const LW = window.LightweightCharts
+	const css = getComputedStyle(root)
+	const v = (n) => css.getPropertyValue('--' + n).trim()
+	const color = (c) => PALETTE[c] ?? v(c)
+	for (const s of SERIES) el.closest('.panel').style.setProperty('--s-' + s.id, color(s.color))
+	const s = series(p)
+	const on = SERIES.filter(({ id }) => shown.has(id) && s.total[id])
+	const TOP = 280, PANE = 84
+	el.style.height = `${TOP + on.length * PANE + 30}px`
+	const chart = LW.createChart(el, {
+		autoSize: true,
+		layout: { background: { type: 'solid', color: v('panel') }, textColor: v('muted'), fontFamily: v('sans'), fontSize: 12, attributionLogo: true, panes: { separatorColor: v('line'), separatorHoverColor: v('line-2') } },
+		grid: { vertLines: { visible: false }, horzLines: { color: v('line') } },
+		rightPriceScale: { borderVisible: false },
+		timeScale: { borderColor: v('line'), timeVisible: true, rightOffset: 4 },
+		crosshair: { mode: 0, vertLine: { color: v('line-2'), labelBackgroundColor: v('panel-2') }, horzLine: { color: v('line-2'), labelBackgroundColor: v('panel-2') } },
+	})
+	const pct = { type: 'custom', minMove: 0.1, formatter: (x) => `${Math.round(x)}%` }
+	const whole = () => ({ priceRange: { minValue: 0, maxValue: 100 } })
+	// The series turned on that have anything to draw: each a line on top, and its own pane of days below.
+	drawn = { chart, p, s, line: {} }
+	on.forEach(({ id, name, color: c }, k) => {
+		const line = chart.addSeries(LW.LineSeries, { color: color(c), lineWidth: 2, lineType: 1, priceFormat: pct, autoscaleInfoProvider: whole, lastValueVisible: false, priceLineVisible: false, crosshairMarkerRadius: 3 })
+		line.setData(s.times.map((t, i) => ({ time: t, value: (100 * s.run[id][i]) / s.total[id] })))
+		const bars = chart.addSeries(LW.HistogramSeries, { color: color(c), priceFormat: { type: 'custom', minMove: 1, formatter: (x) => fmt(id, x) }, lastValueVisible: false, priceLineVisible: false }, k + 1)
+		bars.priceScale().applyOptions({ scaleMargins: { top: 0.2, bottom: 0 } })
+		bars.setData(s.days.filter(([, d]) => d[id]).map(([t, d]) => ({ time: t, value: d[id] })))
+		drawn.line[id] = line
+	})
+	// Each commit is a dot on the committed line, red when the host doesn't have it.
+	if (drawn.line.committed) LW.createSeriesMarkers(drawn.line.committed, (p.commits ?? []).map((c) => ({ time: localSec(c.t), position: 'inBar', shape: 'circle', size: 0.6, color: c.found === false ? v('bad') : color('important') })).sort((a, b) => a.time - b.time))
+	// The top pane gets TOP of the height and each day pane PANE, however wide the page is.
+	const panes = chart.panes()
+	panes[0]?.setStretchFactor(TOP)
+	for (const pane of panes.slice(1)) pane.setStretchFactor(PANE)
+	chart.priceScale('right', 0).applyOptions({ scaleMargins: { top: 0.06, bottom: 0.04 } })
+	// Each day pane is named in its corner, once the panes are laid out.
+	requestAnimationFrame(() => requestAnimationFrame(() => {
+		let top = 0
+		panes.forEach((pane, k) => {
+			if (k) el.insertAdjacentHTML('beforeend', `<span class="plabel" style="top:${top + 4}px; --c: var(--s-${on[k - 1].id})"><i></i>${on[k - 1].name} per day</span>`)
+			top += pane.getHeight() + 1
+		})
+	}))
+	if (range) chart.timeScale().setVisibleLogicalRange(range)
+	else chart.timeScale().fitContent()
+	chart.subscribeCrosshairMove((param) => legend(param.time))
+	legend()
+}
+
+// legend writes what the chart shows at a moment: each series' running total
+// and share by then, and that day's amount. With no moment, the totals.
+function legend(time) {
+	const box = $('plegend')
+	if (!box || !drawn) return
+	const { s } = drawn
+	// The last moment at or before the one pointed at.
+	let i = s.times.length - 1
+	if (time != null) {
+		let lo = 0, hi = s.times.length - 1
+		i = -1
+		while (lo <= hi) {
+			const mid = (lo + hi) >> 1
+			if (s.times[mid] <= time) (i = mid), (lo = mid + 1)
+			else hi = mid - 1
+		}
+	}
+	const dayStart = time == null ? null : s.days.findLast(([t]) => t <= time)
+	const sameDay = dayStart && time - dayStart[0] < 86400 ? dayStart[1] : null
+	const label = time == null ? 'Totals' : new Date((time + new Date(time * 1000).getTimezoneOffset() * 60) * 1000).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+	box.innerHTML = `<b>${esc(label)}</b>` + SERIES.filter(({ id }) => shown.has(id) && s.total[id]).map(({ id, name }) => {
+		const so = i < 0 ? 0 : s.run[id][i]
+		return `<span style="--c: var(--s-${id})"><i></i>${name} <b>${fmt(id, so)}</b> <small>${Math.round((100 * so) / s.total[id])}%${sameDay ? `, ${fmt(id, sameDay[id] ?? 0)} that day` : ''}</small></span>`
+	}).join('') + SERIES.filter(({ id }) => shown.has(id) && !s.total[id]).map(({ name }) => `<span class="none">${name}: none</span>`).join('')
+}
+
+function clearCharts() {
+	drawn?.chart.remove()
+	drawn = null
+	for (const el of document.querySelectorAll('.plabel')) el.remove()
+}
+
+// redraw draws the open project again, keeping the stretch of time in view.
+const redraw = () => drawn && drawProject(drawn.p, drawn.chart.timeScale().getVisibleLogicalRange())
+
+// The theme switch redraws the chart in the new colors.
+new MutationObserver(redraw).observe(root, { attributes: true, attributeFilter: ['data-theme'] })
 
 const banForm = (slack = '') => `<form class="rv-form" data-form="ban">
 	${slack ? `<input type="hidden" name="slack_id" value="${esc(slack)}">` : '<label>Slack ID<input name="slack_id" placeholder="U012ABCDEF" autocomplete="off" spellcheck="false" required></label>'}
@@ -439,6 +580,11 @@ const banBanner = (ban) => `<div class="ban-banner" role="alert">
 	<div><h2>Banned until lifted</h2><p>${esc(ban.reason)}</p><p class="fine">They are told they are banned, not why. Nothing new is taken from them.</p></div>
 </div>`
 
+// projectsSection leads a person's page: a card per project, each opening
+// that project alone. Without work blocks, the synced totals stand in.
+const projectsSection = (b) => `<h2 class="section">Projects <small>${b.activity.length ? 'open one to review it' : ''}</small></h2>` +
+	(b.activity.length ? projectCards(b.activity, open.base) : `<div class="panel">${projectTable(b.projects)}</div>`)
+
 // What a reviewer sees of a person: who they are and each project's total.
 function summaryView(b) {
 	const p = b.person
@@ -453,8 +599,7 @@ function summaryView(b) {
 			<div class="stat"><div class="label">Last sync</div><div class="value">${b.synced_at ? esc(ago(b.synced_at)) : 'never'}</div><div class="hint">joined ${esc(longDate(p.created_at))}</div></div>
 			<div class="stat"><div class="label">Flagged reports</div><div class="value${b.flagged_reports ? ' bad' : ''}">${b.flagged_reports}</div><div class="hint">${b.flagged_reports ? 'ask a neoadmin to read them' : 'nothing stood out'}</div></div>
 		</div>
-		<div class="panel"><h2>Projects</h2>${projectTable(b.projects)}</div>
-		${activity(b.activity)}
+		${projectsSection(b)}
 		<p class="muted fine">These totals come from the person's own computers, so they show activity and are not proof of it. Time on two computers at once counts for both.${p.deleted_at ? ' They deleted their account, so nothing more will arrive.' : ''}</p>
 	</div>`
 }
@@ -569,6 +714,8 @@ function fullView(b) {
 			<div class="stat"><div class="label">Refused reports</div><div class="value">${counts.refused}</div><div class="hint">of ${counts.entries} log entries</div></div>
 		</div>
 		${b.impossible_days.length ? `<div class="panel attention"><h2>Days that don't add up</h2><ul>${b.impossible_days.map((d) => `<li>${esc(d)}</li>`).join('')}</ul></div>` : ''}
+		${projectsSection(b)}
+		<h2 class="section">Account and log</h2>
 		<div class="panels">
 			<div class="panel">
 				<h2>Account</h2>
@@ -587,8 +734,6 @@ function fullView(b) {
 			</div>
 			${p.slack_id ? accessPanel(p.slack_id, b.access) : ''}
 			${banPanel(p.slack_id, b.access ?? { ban: false, lift: false }, b.bans)}
-			<div class="panel"><h2>Projects</h2>${projectTable(b.projects)}</div>
-			${activity(b.activity)}
 			<div class="panel wide" id="log-panel">
 				<div class="log-head">
 					<h2>Log</h2>
@@ -606,18 +751,20 @@ function fullView(b) {
 	</div>`
 }
 
+// person draws #/person/<who>, or with /p/<n> one of their projects alone.
 async function person(arg) {
-	const who = arg.startsWith('id:') ? `id=${encodeURIComponent(arg.slice(3))}` : `slack=${encodeURIComponent(arg)}`
-	if (open.who !== who) {
-		open = { who, show: '', computer: '' }
-		chartAt = 0
-	}
+	const [whoArg, project] = arg.split('/p/')
+	const who = whoArg.startsWith('id:') ? `id=${encodeURIComponent(whoArg.slice(3))}` : `slack=${encodeURIComponent(whoArg)}`
+	if (open.who !== who) open = { who, show: '', computer: '' }
+	open.base = '#/person/' + encodeURIComponent(whoArg).replace('%3A', ':')
 	let body
 	try {
 		body = await api(personPath())
 	} catch (e) {
 		return head('No one found', LOOKUP) + notice('No one found', e.message)
 	}
+	const one = project != null && body.activity?.[Number(project)]
+	if (one) return projectPage(personName(body.person), open.base, one)
 	return body.limited ? summaryView(body) : body.signed_in ? fullView(body) : unknownView(body)
 }
 
@@ -786,6 +933,8 @@ async function keyList() {
 
 const ROUTES = { home, people, person, team, bans: banList, keys: keyList, submissions: submissionList, submission: submissionPage }
 let turn = 0
+// What a page draws once it is on screen, such as a project's chart.
+let afterDraw = null
 
 // route draws the page the address names, such as #/person/U012ABCDEF. An
 // address that names no page, or one this visitor has none of, leads Home.
@@ -801,6 +950,7 @@ async function route() {
 		else a.removeAttribute('aria-current')
 	}
 	let html
+	afterDraw = null
 	try {
 		html = await ROUTES[page](arg)
 	} catch (e) {
@@ -808,7 +958,9 @@ async function route() {
 	}
 	if (mine !== turn) return
 	document.body.dataset.page = page
+	clearCharts()
 	view.innerHTML = html
+	afterDraw?.()
 	if (findWanted && page === 'home') {
 		findWanted = false
 		$('find')?.focus()
@@ -859,10 +1011,16 @@ view.addEventListener('click', async (e) => {
 	if ('remove' in d && confirm(`Remove ${d.remove} from the reviewers? Their API keys stop working too.`)) act(btn, () => send('DELETE', '/team/' + encodeURIComponent(d.remove)))
 	if ('lift' in d && confirm('Lift this ban now?')) act(btn, () => send('DELETE', '/bans/' + d.lift))
 	if ('revoke' in d && confirm(`Revoke the key "${d.name}"? Whatever uses it stops working at once.`)) act(btn, () => send('DELETE', '/keys/' + d.revoke))
-	// Which project's graphs are drawn.
-	if ('chart' in d) {
-		chartAt = Number(d.chart)
-		$('activity').outerHTML = activity(chartData)
+	// A project chart's series, on or off, remembered for the next project.
+	if ('series' in d && drawn) {
+		const on = !shown.has(d.series)
+		if (on) shown.add(d.series)
+		else shown.delete(d.series)
+		btn.setAttribute('aria-pressed', String(on))
+		redraw()
+		try {
+			localStorage.setItem(SHOWN, JSON.stringify([...shown]))
+		} catch {}
 		return
 	}
 	// A person's log: which entries, which computer, and older ones.
@@ -951,7 +1109,8 @@ async function start() {
 	$('me').innerHTML = `<span>${esc(me.name || me.slack_id)}</span>${badge(me.level)}`
 	for (const el of document.querySelectorAll('.rv-nav [data-min]')) el.hidden = me.level > Number(el.dataset.min)
 	for (const el of document.querySelectorAll('[data-keys]')) el.textContent = KEYS
-	addEventListener('hashchange', route)
+	// A new address is a new page, so it opens at its top.
+	addEventListener('hashchange', () => route().then(() => scrollTo(0, 0)))
 	route()
 }
 start()

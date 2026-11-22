@@ -6,6 +6,7 @@ import { archivedRows, archiveTotals, type Detail, dur, type Entry, findings, pa
 import { computers, personDays, personProjects, projectBlocks } from './reports.ts'
 import { type User } from './auth.ts'
 import { access, bans, slackID } from './staff.ts'
+import { projectCommits } from './git.ts'
 
 /** How many people the admin list shows. */
 const PEOPLE_LIMIT = 1000
@@ -55,6 +56,19 @@ async function lookup(env: Env, params: URLSearchParams, byNumber = true): Promi
 }
 
 type Row = Entry & { id: number }
+
+/**
+ * withCommits adds to each project's work blocks the commits its computers
+ * reported, for the graphs: time, lines, and whether the git host has it.
+ * The sha goes only to those who may read everything.
+ */
+async function withCommits(env: Env, userID: number, full: boolean) {
+	const [projects, git] = await Promise.all([projectBlocks(env, userID), projectCommits(env, userID)])
+	return projects.map((p) => ({
+		...p,
+		commits: (git.get(p.key)?.commits ?? []).map((c) => ({ t: c.t, added: c.added, removed: c.removed, found: c.found ?? null, ...(full ? { sha: c.sha } : {}) })),
+	}))
+}
 
 /**
  * explain turns a log row into what a reviewer reads: the row, what the
@@ -116,7 +130,7 @@ export async function person(env: Env, actor: User, params: URLSearchParams) {
 		personProjects(env, who.id),
 		who.slack_id ? bans(env, who.slack_id) : [],
 		// Older log pages draw nothing new.
-		params.has('before') ? [] : projectBlocks(env, who.id),
+		params.has('before') ? [] : withCommits(env, who.id, true),
 		archiveTotals(env, who.id),
 	])
 	// When D1's newest rows run out, the page goes on into the archived ones.
@@ -167,7 +181,7 @@ export async function summary(env: Env, params: URLSearchParams) {
 		personProjects(env, who.id),
 		env.DB.prepare('SELECT (SELECT COUNT(*) FROM account_log WHERE user_id = ?1 AND flagged = 1) + (SELECT COALESCE(SUM(flagged), 0) FROM log_archives WHERE user_id = ?1) AS n').bind(who.id).first<{ n: number }>(),
 		bans(env, who.slack_id),
-		projectBlocks(env, who.id),
+		withCommits(env, who.id, false),
 	])
 	const ban = theirBans.find((b) => b.active)
 	return {
@@ -181,6 +195,6 @@ export async function summary(env: Env, params: URLSearchParams) {
 		// A project's own name only. Its key can be a folder on their computer.
 		projects: projects.map(({ name, engaged_seconds }) => ({ name, engaged_seconds })),
 		// Each project's work blocks, for the graphs, by name only too.
-		activity: activity.map(({ name, engaged_seconds, blocks }) => ({ name, engaged_seconds, blocks })),
+		activity: activity.map(({ name, engaged_seconds, blocks, commits }) => ({ name, engaged_seconds, blocks, commits })),
 	}
 }
