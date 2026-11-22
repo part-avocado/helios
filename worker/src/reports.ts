@@ -272,6 +272,24 @@ export async function personDays(env: Env, userID: number): Promise<Record<strin
 	return results.map((c) => parseDays(c.days))
 }
 
+/**
+ * personProjects adds up each project's engaged seconds over a person's
+ * computers, the largest first. Time on one project on two computers at once
+ * counts for both, as it does in their total.
+ */
+export async function personProjects(env: Env, userID: number): Promise<{ key: string; name: string; engaged_seconds: number }[]> {
+	const { results } = await env.DB.prepare('SELECT projects FROM computers WHERE user_id = ?').bind(userID).all<{ projects: string }>()
+	const all = new Map<string, { key: string; name: string; engaged_seconds: number }>()
+	for (const computer of results) {
+		for (const [key, [name, seconds]] of Object.entries(parseStored<Record<string, [string, number]>>(computer.projects) ?? {})) {
+			const project = all.get(key) ?? { key, name, engaged_seconds: 0 }
+			project.engaged_seconds += seconds
+			all.set(key, project)
+		}
+	}
+	return [...all.values()].sort((a, b) => b.engaged_seconds - a.engaged_seconds)
+}
+
 export async function computers(env: Env, userID: number): Promise<Computer[]> {
 	const { results } = await env.DB.prepare(
 		'SELECT id, synced_at, generated_at, teardrop_version, engaged_seconds FROM computers WHERE user_id = ? ORDER BY synced_at DESC',

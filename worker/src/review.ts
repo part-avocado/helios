@@ -1,7 +1,10 @@
-// What admins see: everyone with an account, and one person's computers and log.
+// What reviewers read. A reviewer gets a person's totals per project and no
+// more. Neoadmins and superadmins get everyone with an account, and one
+// person's computers and log. Who is which is in staff.ts.
 import { Refusal } from './http.ts'
 import { type Detail, dur, type Entry, findings, parseStored, remarks } from './log.ts'
-import { computers, personDays } from './reports.ts'
+import { computers, personDays, personProjects } from './reports.ts'
+import { bans } from './staff.ts'
 
 /** How many people the admin list shows. */
 const PEOPLE_LIMIT = 1000
@@ -12,7 +15,7 @@ const LOG_DOWNLOAD = 10_000
 /** The longest a calendar day gets, when the clocks go back, in seconds. */
 const LONGEST_DAY = 25 * 3600
 
-/** people lists everyone for admins, those who synced most recently first. */
+/** people lists everyone with an account, those who synced most recently first. */
 export async function people(env: Env) {
 	const { results } = await env.DB.prepare(
 		`SELECT u.id, u.name, u.slack_id, u.created_at, u.deleted_at, COUNT(c.id) AS computers,
@@ -33,9 +36,13 @@ interface Person {
 	deleted_at: number | null
 }
 
-/** lookup finds the person a reviewer asked for, by Slack user ID (`slack`) or by account number (`id`). */
-async function lookup(env: Env, params: URLSearchParams): Promise<Person> {
-	const id = params.get('id') ?? ''
+/**
+ * lookup finds the person a reviewer asked for, by Slack user ID (`slack`)
+ * or, with byNumber, by account number (`id`). Account numbers count up from
+ * 1, so someone who may only look people up is not let go through them.
+ */
+async function lookup(env: Env, params: URLSearchParams, byNumber = true): Promise<Person> {
+	const id = byNumber ? (params.get('id') ?? '') : ''
 	const slack = (params.get('slack') ?? '').trim()
 	const columns = 'SELECT id, name, slack_id, created_at, deleted_at FROM users'
 	let who: Person | null = null
@@ -78,7 +85,7 @@ export async function person(env: Env, params: URLSearchParams) {
 	const show = { flagged: 'AND flagged = 1', refused: `AND refusal != ''` }[params.get('show') ?? ''] ?? ''
 	// A computer that isn't one of theirs has no rows in their log.
 	const computer = params.get('computer') ?? ''
-	const [rows, counts, unchecked, theirComputers, days] = await Promise.all([
+	const [rows, counts, unchecked, theirComputers, days, projects, theirBans] = await Promise.all([
 		env.DB.prepare(`SELECT * FROM account_log WHERE user_id = ?1 AND id < ?2 AND (?3 = '' OR computer_id = ?3) ${show} ORDER BY id DESC LIMIT ${LOG_PAGE + 1}`)
 			.bind(who.id, before, computer)
 			.all<Row>(),
@@ -95,6 +102,8 @@ export async function person(env: Env, params: URLSearchParams) {
 			.first<{ seconds: number }>(),
 		computers(env, who.id),
 		personDays(env, who.id),
+		personProjects(env, who.id),
+		who.slack_id ? bans(env, who.slack_id) : [],
 	])
 
 	// One person can't be engaged for longer than a day lasts, on however many computers.
@@ -109,11 +118,40 @@ export async function person(env: Env, params: URLSearchParams) {
 	return {
 		person: who,
 		computers: theirComputers,
+		projects,
+		bans: theirBans,
 		counts,
 		unchecked_seconds: unchecked?.seconds ?? 0,
 		impossible_days: impossible,
 		log: page.map(explain),
 		// The ID to pass as `before` for the next page, when there is one.
 		more: rows.results.length > LOG_PAGE ? page.at(-1)!.id : null,
+	}
+}
+
+/**
+ * summary returns what a reviewer may see of one person, looked up by Slack
+ * ID: who they are and each project's total. It leaves out their days, their
+ * computers, their log, and the reports themselves.
+ */
+export async function summary(env: Env, params: URLSearchParams) {
+	const who = await lookup(env, params, false)
+	const [theirComputers, projects, flagged, theirBans] = await Promise.all([
+		computers(env, who.id),
+		personProjects(env, who.id),
+		env.DB.prepare('SELECT COUNT(*) AS n FROM account_log WHERE user_id = ? AND flagged = 1').bind(who.id).first<{ n: number }>(),
+		bans(env, who.slack_id),
+	])
+	const ban = theirBans.find((b) => b.active)
+	return {
+		limited: true,
+		person: { name: who.name, slack_id: who.slack_id, created_at: who.created_at, deleted_at: who.deleted_at },
+		engaged_seconds: theirComputers.reduce((sum, c) => sum + c.engaged_seconds, 0),
+		synced_at: theirComputers[0]?.synced_at ?? null,
+		// How many of their reports the server could not square with the one before. A neoadmin can read them.
+		flagged_reports: flagged?.n ?? 0,
+		ban: ban ? { reason: ban.reason, at: ban.at, until: ban.until } : null,
+		// A project's own name only. Its key can be a folder on their computer.
+		projects: projects.map(({ name, engaged_seconds }) => ({ name, engaged_seconds })),
 	}
 }

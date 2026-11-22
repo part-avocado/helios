@@ -166,8 +166,10 @@ changed after signing or that claims a block no log backs, and recomputes the
 hours from the logs itself. Submitting a project again is fine: time that an
 earlier submission of it already covered is credited once.
 
-Your stats on the website are visible to you and to admins. Submissions and
-chat logs are for admins only.
+Your stats on the website are visible to you and to reviewers: a reviewer
+sees your total for each project, and neoadmins and superadmins see
+everything you synced. Submissions and chat logs are for the review server's
+admins only.
 
 ### Testing time and Lapse
 
@@ -200,14 +202,38 @@ Secrets: `SESSION_SECRET` (any long random text), `HCA_CLIENT_ID`,
 they are set, the site says it is not set up yet. To deploy from your own
 computer instead, run `npx wrangler login`, then `npm run deploy`, in `worker/`.
 
-Admins get a Review page, linked from the top bar and the account menu, that
-lists everyone. From it they look a person up
-by Slack ID to see their dashboard, their computers, and a log of every
-report they sent. Each entry opens to show what the report held and which
-days and projects changed, and links to the report itself: every report is
-kept as it arrived, in an R2 bucket. The page also has each computer's
-history and the whole log as a JSON download. The log stays when a person
-deletes their account; the reports kept in full go.
+#### The review app
+
+Reviewing has its own app at `/review/`, apart from the rest of the site,
+with its own API under `/api/review/`. Reviewers get a Review link in the top
+bar. There are three levels:
+
+| Level | Who | What they can do |
+| --- | --- | --- |
+| 0, superadmin | the Slack IDs in `ADMINS` | Everything below, and add or remove neoadmins. |
+| 1, neoadmin | added by a superadmin | Read every account: computers, projects, and the log of every report, each kept as it arrived in the R2 bucket. Add and remove reviewers. Ban people. |
+| 2, reviewer | added by a neoadmin or superadmin | Look a person up by Slack ID and read their total for each project. Nothing else of theirs. |
+
+People are added on the app's Reviewers page by Slack ID, and can be added
+before they first sign in. No one can add, remove, or ban someone at their
+own level or above, so a neoadmin can't touch another neoadmin.
+
+A ban is for a number of days or until it is lifted, and always has a reason.
+While it holds, the site takes nothing new from the person (syncs, uploads,
+cloud events, submissions), and `teardrop sync` prints the reason. They can
+still sign in and see what they had. A banned reviewer can't review. Someone
+below the level of whoever issued a ban can't lift or replace it.
+
+Any reviewer can make API keys on the app's API keys page. A key acts as the
+person who made it, at whatever level they hold when it is used, and stops
+working when they are removed or banned. It is shown once; the site keeps
+only its hash.
+
+```sh
+curl -H "Authorization: Bearer tdr_..." "https://<your-site>/api/review/person?slack=U012ABCDEF"
+```
+
+The log stays when a person deletes their account; the reports kept in full go.
 Set `REVIEW_SERVER` in `wrangler.jsonc` to the address of the review server
 below and `teardrop submit` goes through the website, which then asks for a
 sync key. `npm test` runs the Worker's tests in the Workers runtime.

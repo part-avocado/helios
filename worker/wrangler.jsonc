@@ -12,8 +12,9 @@
 		"directory": "../site",
 		"binding": "ASSETS",
 		// These reach the Worker before the files in ../site: the API, sign-in,
-		// the pages that need an account, and the home page and docs, which show an
-		// account menu to signed-in visitors.
+		// the pages that need an account, the review app and its old addresses,
+		// and the home page and docs, which show an account menu to signed-in
+		// visitors.
 		"run_worker_first": [
 			"/api/*",
 			"/auth/*",
@@ -24,10 +25,10 @@
 			"/dashboard.html",
 			"/settings",
 			"/settings.html",
+			"/review",
+			"/review/*",
 			"/people",
-			"/people.html",
 			"/person",
-			"/person.html",
 			"/",
 			"/index.html",
 			"/docs",

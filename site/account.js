@@ -1,4 +1,4 @@
-// Shared by the pages that need an account: the dashboard, settings, and people.
+// Shared by the pages that need an account: the dashboard and settings.
 const $ = (id) => document.getElementById(id)
 const esc = (s) => String(s).replace(/[&<>\"']/g, (c) => `&#${c.charCodeAt(0)};`)
 const dur = (sec) => {

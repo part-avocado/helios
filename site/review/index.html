@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="robots" content="noindex">
+	<title>teardrop review</title>
+	<link rel="icon" href="/favicon.svg">
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spline+Sans:wght@400;500;600;700&family=Spline+Sans+Mono:wght@400;500&display=swap">
+	<link rel="stylesheet" href="/base.css">
+	<link rel="stylesheet" href="/style.css">
+	<link rel="stylesheet" href="/review/review.css">
+	<script src="/theme.js"></script>
+</head>
+<body>
+<header class="rv-top">
+	<a class="rv-brand" href="/review/"><img src="/favicon.svg" alt="">teardrop<b>Review</b></a>
+	<div class="rv-who" id="me"></div>
+	<button class="theme" type="button" data-theme-toggle aria-label="Switch between dark and light" title="Switch between dark and light"><svg class="sun" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1.5V3M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/></svg><svg class="moon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M13.5 9.5a5.5 5.5 0 0 1-7-7 5.5 5.5 0 1 0 7 7z"/></svg></button>
+	<a class="btn small" href="/dashboard">Back to teardrop</a>
+</header>
+<div class="rv-shell">
+	<nav class="rv-side" aria-label="Review">
+		<a href="#/" data-page="people">People</a>
+		<a href="#/team" data-page="team" data-min="1" hidden>Reviewers</a>
+		<a href="#/bans" data-page="bans" data-min="1" hidden>Bans</a>
+		<a href="#/keys" data-page="keys">API keys</a>
+	</nav>
+	<main class="rv-view" id="view"><p class="muted">Loading…</p></main>
+</div>
+
+<dialog class="modal" id="key-dialog" aria-labelledby="key-title">
+	<h2 id="key-title">Your new key</h2>
+	<p>Copy it now and keep it somewhere safe. It is not shown again. If you lose it, revoke it and make another.</p>
+	<div class="box"><div class="cmd plain"><code id="key-value"></code><button class="copy" type="button">Copy</button></div></div>
+	<form method="dialog" class="actions"><button class="btn primary small">Done</button></form>
+</dialog>
+<script src="/review/review.js"></script>
+</body>
+</html>

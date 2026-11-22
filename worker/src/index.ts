@@ -1,11 +1,14 @@
 // The teardrop website on Cloudflare Workers. The pages are the files in
 // ../site. This Worker adds accounts: sign-in with Hack Club Auth, each
-// person's synced reports in D1, and the API the pages and the CLI use.
-import { clearSession, finishSignIn, keyUser, rotateKey, sameOrigin, sessionUser, signOut, startSignIn, type User } from './auth.ts'
+// person's synced reports in D1, and the API the pages and the CLI use. The
+// review app, at /review/, is the files in ../site/review and the API under
+// /api/review/.
+import { clearSession, finishSignIn, keyUser, reviewKeyUser, rotateKey, sameOrigin, sessionUser, signOut, startSignIn, type User } from './auth.ts'
 import { cloudComputer, holdEvents, MAX_EVENTS_BYTES, readEvents } from './events.ts'
 import { json, jsonText, readText, redirect, Refusal } from './http.ts'
 import { computerReportJSON, computers, deleteUser, keptReportJSON, MAX_REPORT_BYTES, removeComputer, reportsJSON, storeReport } from './reports.ts'
-import { fullLog, people, person } from './review.ts'
+import { fullLog, people, person, summary } from './review.ts'
+import { addReviewer, banMessage, bans, createKey, issueBan, keys, liftBan, need, removeReviewer, revokeKey, team } from './staff.ts'
 
 export default {
 	async fetch(request, env): Promise<Response> {
@@ -32,11 +35,11 @@ function guard(res: Response): Response {
 	return out
 }
 
-/** Pages that need an account. The value is whether they are for admins only. */
-const PAGES: Record<string, boolean> = { dashboard: false, settings: false, people: true, person: true }
+/** Pages that need an account. */
+const PAGES = new Set(['dashboard', 'settings'])
 
-/** Addresses an admin might try for the Review page, which is people.html. */
-const REVIEW_ALIASES = new Set(['review', 'reviews', 'reviewer', 'admin'])
+/** Addresses the review app had before it moved to /review/, and ones a reviewer might try. */
+const REVIEW_ALIASES = new Set(['review', 'reviews', 'reviewer', 'admin', 'people', 'person'])
 
 /** Pages anyone can read. A signed-in visitor sees them with their account menu. */
 const PUBLIC = new Set(['', 'index', 'docs'])
@@ -94,16 +97,25 @@ async function route(request: Request, env: Env): Promise<Response> {
 		return signOut(request)
 	}
 
-	// The Review page decides who may open it, as for anyone who asks for it by name.
-	if (request.method === 'GET' && REVIEW_ALIASES.has(page)) return redirect('/people')
+	// The review app decides who may open it, as for anyone who asks for it by name.
+	if (request.method === 'GET' && REVIEW_ALIASES.has(page)) {
+		const who = page !== 'person' ? '' : (url.searchParams.get('slack') ?? (url.searchParams.has('id') ? `id:${url.searchParams.get('id')}` : ''))
+		return redirect('/review/' + (who ? `#/person/${encodeURIComponent(who)}` : ''))
+	}
+	if (path.startsWith('/api/review/')) return reviewAPI(request, env, url)
 
 	const user = await sessionUser(request, env)
 	if (request.method === 'GET' && page === 'login') {
 		return user ? redirect('/dashboard') : env.ASSETS.fetch(request)
 	}
-	if (request.method === 'GET' && page in PAGES) {
+	if (request.method === 'GET' && PAGES.has(page)) {
 		if (!user) return redirect(`/login?next=${encodeURIComponent(path + url.search)}`)
-		if (PAGES[page] && !user.admin) return redirect('/dashboard')
+		return servePage(request, env, user)
+	}
+	// The review app's page, styles, and script, for reviewers only.
+	if (request.method === 'GET' && path.startsWith('/review/')) {
+		if (!user) return redirect(`/login?next=${encodeURIComponent('/review/')}`)
+		if (user.level == null) return redirect('/dashboard')
 		return servePage(request, env, user)
 	}
 
@@ -115,13 +127,13 @@ async function route(request: Request, env: Env): Promise<Response> {
 		// The computer their cloud threads sync as is named as such, since it is no machine of theirs.
 		const cloud = (await cloudComputer(env, user)).id
 		const all = (await computers(env, user.id)).map((c) => ({ ...c, cloud: c.id === cloud }))
-		return json({ name: user.name, slack_id: user.slack_id, admin: user.admin, api_key: user.api_key, created_at: user.created_at, computers: all })
+		return json({ name: user.name, slack_id: user.slack_id, admin: user.admin, level: user.level, ban: user.ban, api_key: user.api_key, created_at: user.created_at, computers: all })
 	}
 	if (call === 'GET /api/report') {
-		// Admins can read anyone's reports; everyone else only their own.
+		// Neoadmins and superadmins can read anyone's reports; everyone else only their own.
 		const other = url.searchParams.get('user')
-		if (!other) return jsonText(`{"computers":${await reportsJSON(env, user.id)}}`)
-		if (!user.admin) throw new Refusal(403, 'Admins only.')
+		if (!other) return jsonText(`{"ban":${JSON.stringify(user.ban)},"computers":${await reportsJSON(env, user.id)}}`)
+		need(user, 1)
 		const person = /^\d+$/.test(other)
 			? await env.DB.prepare('SELECT id, name, slack_id FROM users WHERE id = ?').bind(Number(other)).first<{ id: number }>()
 			: null
@@ -129,6 +141,7 @@ async function route(request: Request, env: Env): Promise<Response> {
 		return jsonText(`{"person":${JSON.stringify(person)},"computers":${await reportsJSON(env, person.id)}}`)
 	}
 	if (call === 'POST /api/reports') {
+		if (user.ban) throw new Refusal(403, banMessage(user.ban))
 		return json({ computer: await storeReport(env, user, await readText(request, MAX_REPORT_BYTES), 'upload') })
 	}
 	if (call === 'GET /api/export') {
@@ -148,24 +161,6 @@ async function route(request: Request, env: Env): Promise<Response> {
 		if (!(await removeComputer(env, user.id, path.slice('/api/computers/'.length)))) throw new Refusal(404, 'No such computer.')
 		return json({})
 	}
-	if (path.startsWith('/api/admin/')) {
-		if (!user.admin) throw new Refusal(403, 'Admins only.')
-		if (call === 'GET /api/admin/people') return json({ people: await people(env) })
-		if (call === 'GET /api/admin/person') return json(await person(env, url.searchParams))
-		if (call === 'GET /api/admin/report') {
-			// A report in full, as it was signed: the one behind a log entry, or a computer's latest.
-			const entry = url.searchParams.get('entry')
-			const report = entry === null ? await computerReportJSON(env, url.searchParams.get('computer') ?? '') : await keptReportJSON(env, entry)
-			if (!report) throw new Refusal(404, entry === null ? 'No such computer.' : 'No report is kept for this entry.')
-			return jsonText(report)
-		}
-		if (call === 'GET /api/admin/log') {
-			const log = await fullLog(env, url.searchParams)
-			const res = json(log)
-			res.headers.set('Content-Disposition', `attachment; filename="teardrop-log-${log.person.id}.json"`)
-			return res
-		}
-	}
 	throw new Refusal(404, 'Not found')
 }
 
@@ -175,7 +170,82 @@ async function needKey(request: Request, env: Env, url: URL): Promise<User> {
 	if (!user) {
 		throw new Refusal(401, `This server needs your sync key. Sign in at ${url.origin}/settings and run the command it shows under Setup.`)
 	}
+	if (user.ban) throw new Refusal(403, banMessage(user.ban))
 	return user
+}
+
+/**
+ * reviewAPI answers the review app, and reviewers' own tools: it takes a
+ * signed-in reviewer's session or a review key, which acts as the reviewer
+ * who made it. What each level may do is in staff.ts.
+ */
+async function reviewAPI(request: Request, env: Env, url: URL): Promise<Response> {
+	const path = url.pathname.slice('/api/review'.length)
+	const call = `${request.method} ${path}`
+	const byKey = /^Bearer tdr_/.test(request.headers.get('Authorization') ?? '')
+	const actor = byKey ? await reviewKeyUser(request, env) : await sessionUser(request, env)
+	if (!actor) throw new Refusal(401, byKey ? 'That review key is not valid. It may have been revoked.' : 'Sign in first, or send a review key.')
+	if (!byKey && request.method !== 'GET') sameOrigin(request)
+	const level = need(actor, 2)
+	const body = async (): Promise<Record<string, unknown>> => {
+		const text = await readText(request, 16 << 10)
+		try {
+			const value = JSON.parse(text)
+			if (value && typeof value === 'object') return value
+		} catch {}
+		throw new Refusal(400, 'Send the details as a JSON object.')
+	}
+	const rest = (prefix: string) => {
+		try {
+			return decodeURIComponent(path.slice(prefix.length))
+		} catch {
+			throw new Refusal(400, 'That address is not valid.')
+		}
+	}
+
+	if (call === 'GET /me') return json({ name: actor.name, slack_id: actor.slack_id, level, by_key: byKey })
+	// A reviewer gets a person's totals per project. Those above get everything.
+	if (call === 'GET /person') return json(level === 2 ? await summary(env, url.searchParams) : await person(env, url.searchParams))
+
+	// A reviewer's own keys. A key can't make or revoke keys, so one that leaks can't keep itself alive.
+	if (path === '/keys' || path.startsWith('/keys/')) {
+		if (byKey) throw new Refusal(403, 'Keys are made and revoked while signed in, not with a key.')
+		if (call === 'GET /keys') return json({ keys: await keys(env, actor) })
+		if (call === 'POST /keys') return json(await createKey(env, actor, await body()))
+		if (request.method === 'DELETE' && path.startsWith('/keys/')) {
+			await revokeKey(env, actor, rest('/keys/'))
+			return json({})
+		}
+	}
+
+	need(actor, 1)
+	if (call === 'GET /people') return json({ people: await people(env) })
+	if (call === 'GET /report') {
+		// A report in full, as it was signed: the one behind a log entry, or a computer's latest.
+		const entry = url.searchParams.get('entry')
+		const report = entry === null ? await computerReportJSON(env, url.searchParams.get('computer') ?? '') : await keptReportJSON(env, entry)
+		if (!report) throw new Refusal(404, entry === null ? 'No such computer.' : 'No report is kept for this entry.')
+		return jsonText(report)
+	}
+	if (call === 'GET /log') {
+		const log = await fullLog(env, url.searchParams)
+		const res = json(log)
+		res.headers.set('Content-Disposition', `attachment; filename="teardrop-log-${log.person.id}.json"`)
+		return res
+	}
+	if (call === 'GET /team') return json(await team(env))
+	if (call === 'POST /team') return json(await addReviewer(env, actor, await body()))
+	if (request.method === 'DELETE' && path.startsWith('/team/')) {
+		await removeReviewer(env, actor, rest('/team/'))
+		return json({})
+	}
+	if (call === 'GET /bans') return json({ bans: await bans(env) })
+	if (call === 'POST /bans') return json(await issueBan(env, actor, await body()))
+	if (request.method === 'DELETE' && path.startsWith('/bans/')) {
+		await liftBan(env, actor, rest('/bans/'))
+		return json({})
+	}
+	throw new Refusal(404, 'Not found')
 }
 
 /**
@@ -190,7 +260,8 @@ async function servePage(request: Request, env: Env, user: User | null): Promise
 		.on('html', {
 			element(el) {
 				el.setAttribute('data-hosted', '')
-				if (user.admin) el.setAttribute('data-admin', '')
+				// Reviewers of any level get a link to the review app.
+				if (user.level != null) el.setAttribute('data-staff', '')
 			},
 		})
 		.on('#account-name, #account-name-full', {

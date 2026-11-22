@@ -29,7 +29,7 @@
 			<a href="dashboard.html">Dashboard</a>
 			<a href="settings.html">Settings</a>
 			<a href="settings.html#account">Account</a>
-			<a href="people.html" class="admin-only">Review</a>
+			<a href="/review/" class="staff-only">Review</a>
 			<form method="post" action="/logout"><button>Sign out</button></form>
 		</div>
 	</details>
@@ -60,6 +60,7 @@
 	<a href="#server">Sync and submit</a>
 	<a href="#run-server">Running a server</a>
 	<a href="#cloudflare">Deploy to Cloudflare</a>
+	<a href="#review-app">The review app</a>
 	<a href="#privacy">Privacy</a>
 	<a href="#troubleshooting">Troubleshooting</a>
 	<a href="#uninstall">Uninstall</a>
@@ -120,7 +121,7 @@
 	<p>The dashboard shows an activity heatmap, daily totals, projects, tools, and recent work blocks. There are two ways to open it.</p>
 	<p>The graphs are interactive. Hover a day, bar, or tool for the details. Click a day on the heatmap, or a bar, to list that day's work blocks (a week, on the yearly chart). Click a project in the table to see only that project; every number and chart follows it. Click again, or the chip at the top, to clear it.</p>
 	<h3 id="account">On the website, with an account</h3>
-	<p>The <a href="dashboard.html">dashboard on the website</a> adds up the hours from every computer you code on. Only you and your server's admins can see them.</p>
+	<p>The <a href="dashboard.html">dashboard on the website</a> adds up the hours from every computer you code on. Only you and your server's reviewers can see them.</p>
 	<ol>
 		<li>Open the <a href="dashboard.html">dashboard</a> and sign in with Hack Club. Your first sign-in creates your account.</li>
 		<li>Run the two commands it shows: one installs teardrop, the other connects that computer to your account.</li>
@@ -223,7 +224,7 @@
 	<pre><code>teardrop sync -server https://your-site -key tdk_…</code></pre>
 	<p>teardrop remembers the server and the key, so later it's just <code>teardrop sync</code>, and hooks sync in the background when a reply finishes or you stop one. Amp reports a stopped reply at once; Claude Code runs no hook then, so that sync happens at your next prompt or when the session closes. Codex has no hook, so its time goes up with the next of those syncs. The key can only upload stats. If the server answers that it needs your sync key, run the command from Settings again.</p>
 	<p><code>teardrop submit &lt;project&gt;</code> sends a project's hours for review together with the full chat logs behind them: your prompts, the agent's replies, and its code changes. It asks before uploading; <code>-o file</code> writes the submission so you can read it first. The server refuses a submission whose logs were changed after signing, or that claims a block no log backs, and recomputes the hours from the logs itself. You can submit a project again as it grows; time an earlier submission already covered is credited once. Add your Lapse sessions with <code>-lapse &lt;link&gt;,…</code>; time they also cover is taken off, since Hackatime already counts it.</p>
-	<p>Your stats on the website are visible to you and to admins. Deleting your account, under Settings, removes them; admins keep your Slack ID and a record of what your computers reported, without project names. Submissions and their chats are visible only to admins, who review them at <code>/admin</code> on the review server. To host either, see <a href="#run-server">Running a server</a>.</p>
+	<p>Your stats on the website are visible to you and to reviewers: a reviewer sees your total for each project, and neoadmins and superadmins see everything you synced. Deleting your account, under Settings, removes them; admins keep your Slack ID and a record of what your computers reported, without project names. Submissions and their chats are visible only to admins, who review them at <code>/admin</code> on the review server. To host either, see <a href="#run-server">Running a server</a>.</p>
 
 	<h2 id="run-server">Running a server</h2>
 	<p>There are two parts, and you can run either without the other:</p>
@@ -254,10 +255,23 @@ npm run dev</code></pre>
 		<tr><th>Setting</th><th>Meaning</th></tr>
 		<tr><td><code>SESSION_SECRET</code></td><td>Signs sign-in cookies. Changing it signs everyone out.</td></tr>
 		<tr><td><code>HCA_CLIENT_ID</code>, <code>HCA_CLIENT_SECRET</code></td><td>Your Hack Club Auth app.</td></tr>
-		<tr><td><code>ADMINS</code></td><td>Slack user IDs of the people who can review, separated by commas. They get a Review link in the top bar and the account menu, which lists everyone. From there an admin can look anyone up by Slack ID and read their computers and a log of every report they sent. Each log entry opens to show what the report held and which days and projects changed. Every report is kept as it arrived, so each entry also links to the report itself, with every work block. A computer's history and the whole log as a JSON download are on the same page.</td></tr>
+		<tr><td><code>ADMINS</code></td><td>Slack user IDs of the superadmins, separated by commas. They add everyone else who reviews, in <a href="#review-app">the review app</a>.</td></tr>
 		<tr><td><code>REVIEW_SERVER</code></td><td>Optional, in <code>wrangler.jsonc</code>. The address of your review server. With it set, <code>teardrop submit</code> works against the website's address, and submissions need a sync key.</td></tr>
 	</table>
 	<p>To change a secret later, edit it in the dashboard. For your own domain, add a <a href="https://developers.cloudflare.com/workers/configuration/routing/custom-domains/">custom domain</a> to the Worker and use it in the redirect URI. Cloudflare accepts uploads of up to 100 MB, so a larger submission has to go to the review server directly.</p>
+
+	<h3 id="review-app">The review app</h3>
+	<p>Reviewing has its own app at <code>/review/</code>, apart from the rest of the site. Reviewers get a Review link in the top bar. What a reviewer can do depends on their level:</p>
+	<table>
+		<tr><th>Level</th><th>Who</th><th>What they can do</th></tr>
+		<tr><td>Superadmin</td><td>The Slack IDs in <code>ADMINS</code>.</td><td>Everything below, and add or remove neoadmins.</td></tr>
+		<tr><td>Neoadmin</td><td>Added by a superadmin.</td><td>Read every account: its computers, its projects, and a log of every report it sent. Each log entry shows what the report held and which days and projects changed, and links to the report itself, kept as it arrived. Add and remove reviewers. Ban people.</td></tr>
+		<tr><td>Reviewer</td><td>Added by a neoadmin or superadmin.</td><td>Look a person up by Slack ID and read their total for each project. Nothing else of theirs.</td></tr>
+	</table>
+	<p>To add someone, open Reviewers in the app and paste their Slack ID. They can be added before they first sign in. No one can add, remove, or ban someone at their own level or above, so a neoadmin can't touch another neoadmin.</p>
+	<p>A ban lasts a number of days or until it is lifted, and always has a reason. While it holds, the site takes nothing new from the person: no syncs, uploads, cloud events, or submissions. <code>teardrop sync</code> prints the reason, and so does their dashboard, which they can still open. A banned reviewer can't review. Someone below the level of whoever issued a ban can't lift or replace it.</p>
+	<p>Any reviewer can make API keys, under API keys in the app, for a script or a bot. A key acts as the person who made it, at the level they hold when it is used, and stops working when they are removed or banned. The key is shown once, in a popup to copy it from; the site keeps only its hash. Send it as a bearer token:</p>
+	<pre>curl -H "Authorization: Bearer tdr_..." "https://your-site/api/review/person?slack=U012ABCDEF"</pre>
 
 	<h3 id="review-server">The review server</h3>
 	<p>The review server is the same <code>teardrop</code> binary. It keeps everything as files in one folder, so it needs a machine that stays on and a disk that lasts; Cloudflare Workers can't host it.</p>

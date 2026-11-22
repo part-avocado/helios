@@ -1,11 +1,14 @@
 // Who is asking: sign-in with Hack Club Auth, the session cookie it leaves,
-// and the sync keys that `teardrop sync` sends.
+// the sync keys that `teardrop sync` sends, and the keys reviewers make.
 import { cookie, fromBase64Url, randomToken, redirect, Refusal, setCookie, toBase64Url } from './http.ts'
 
 const SESSION_COOKIE = 'teardrop_session'
 const STATE_COOKIE = 'teardrop_state'
 const SESSION_SECONDS = 30 * 86400
 const STATE_SECONDS = 600
+
+/** A place in the review app: 0 for a superadmin, 1 for a neoadmin, 2 for a reviewer. See staff.ts. */
+export type Level = 0 | 1 | 2
 
 export interface User {
 	id: number
@@ -14,16 +17,41 @@ export interface User {
 	api_key: string
 	/** Unix milliseconds. */
 	created_at: number
-	/** Listed in ADMINS by Slack user ID. */
+	/** Listed in ADMINS by Slack user ID, which makes them a superadmin. */
 	admin: boolean
+	/** Their place in the review app, or null for someone with none. A banned person has none. */
+	level: Level | null
+	/** The ban on them that is in force, if there is one. */
+	ban: { reason: string; until: number | null } | null
 }
 
-type UserRow = Omit<User, 'admin'>
-const USER_COLUMNS = 'id, slack_id, name, api_key, created_at'
+type UserRow = Omit<User, 'admin' | 'level' | 'ban'> & { reviewer_level: number | null; ban: string | null }
 
-function withAdmin(env: Env, row: UserRow): User {
-	const admins = (env.ADMINS ?? '').split(/[\s,]+/).filter(Boolean)
-	return { ...row, admin: row.slack_id !== '' && admins.includes(row.slack_id) }
+/**
+ * Selects a User's columns, with the level the reviewers table gives them and
+ * the ban on them that is in force at ?1. A condition on users u follows it.
+ */
+const USER_QUERY = `SELECT u.id, u.slack_id, u.name, u.api_key, u.created_at,
+	(SELECT r.level FROM reviewers r WHERE r.slack_id = u.slack_id) AS reviewer_level,
+	(SELECT json_object('reason', b.reason, 'until', b.until) FROM bans b
+	 WHERE b.slack_id = u.slack_id AND b.lifted_at IS NULL AND (b.until IS NULL OR b.until > ?1) ORDER BY b.id DESC LIMIT 1) AS ban
+	FROM users u WHERE u.deleted_at IS NULL AND`
+
+/** superadmins lists the Slack IDs in ADMINS. */
+export function superadmins(env: Env): string[] {
+	return (env.ADMINS ?? '').split(/[\s,]+/).filter(Boolean)
+}
+
+/** load returns the first person that where picks out. It is SQL about users u, with ?2 standing for value. */
+async function load(env: Env, where: string, value: string | number): Promise<User | null> {
+	const row = await env.DB.prepare(`${USER_QUERY} ${where} ORDER BY u.id LIMIT 1`).bind(Date.now(), value).first<UserRow>()
+	if (!row) return null
+	const { reviewer_level, ban: stored, ...rest } = row
+	const admin = rest.slack_id !== '' && superadmins(env).includes(rest.slack_id)
+	// A superadmin can't be banned, so a ban from before they were one doesn't hold.
+	const ban = admin || !stored ? null : (JSON.parse(stored) as User['ban'])
+	const level = admin ? 0 : ban ? null : reviewer_level === 1 ? 1 : reviewer_level === 2 ? 2 : null
+	return { ...rest, admin, level, ban }
 }
 
 export const newKey = () => 'tdk_' + randomToken(24)
@@ -70,11 +98,11 @@ async function saveUser(env: Env, hcaID: string, slackID: string, name: string):
 	const row = await env.DB.prepare(
 		`INSERT INTO users (hca_id, slack_id, name, api_key, created_at) VALUES (?, ?, ?, ?, ?)
 		 ON CONFLICT (hca_id) DO UPDATE SET slack_id = excluded.slack_id, name = excluded.name, deleted_at = NULL
-		 RETURNING ${USER_COLUMNS}`,
+		 RETURNING id`,
 	)
 		.bind(hcaID, slackID, name, newKey(), Date.now())
-		.first<UserRow>()
-	return withAdmin(env, row!)
+		.first<{ id: number }>()
+	return (await load(env, 'u.id = ?2', row!.id))!
 }
 
 /** sessionUser returns who is signed in on request, or null. */
@@ -84,16 +112,34 @@ export async function sessionUser(request: Request, env: Env): Promise<User | nu
 	const value = await unsign(env, cookie(request, SESSION_COOKIE))
 	const [id, expires] = (value ?? '').split('.').map(Number)
 	if (!id || !expires || Date.now() / 1000 > expires) return null
-	const row = await env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ? AND deleted_at IS NULL`).bind(id).first<UserRow>()
-	return row && withAdmin(env, row)
+	return load(env, 'u.id = ?2', id)
 }
 
 /** keyUser returns whose sync key request carries, or null. */
 export async function keyUser(request: Request, env: Env): Promise<User | null> {
 	const key = /^Bearer (tdk_[A-Za-z0-9_-]+)$/.exec(request.headers.get('Authorization') ?? '')?.[1]
+	return key ? load(env, 'u.api_key = ?2', key) : null
+}
+
+/** keyHash is what the server keeps of a review key, which it can check a key against but not turn back into one. */
+export async function keyHash(key: string): Promise<string> {
+	const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key)))
+	return [...digest].map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+/**
+ * reviewKeyUser returns the reviewer whose review key request carries, or
+ * null. The key acts as that person does now, so it does nothing once they
+ * are removed or banned.
+ */
+export async function reviewKeyUser(request: Request, env: Env): Promise<User | null> {
+	const key = /^Bearer (tdr_[A-Za-z0-9_-]+)$/.exec(request.headers.get('Authorization') ?? '')?.[1]
 	if (!key) return null
-	const row = await env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE api_key = ? AND deleted_at IS NULL`).bind(key).first<UserRow>()
-	return row && withAdmin(env, row)
+	const row = await env.DB.prepare('SELECT id, slack_id FROM review_keys WHERE hash = ?').bind(await keyHash(key)).first<{ id: number; slack_id: string }>()
+	if (!row) return null
+	// When it was last used is noted at most once a minute.
+	await env.DB.prepare('UPDATE review_keys SET last_used_at = ?1 WHERE id = ?2 AND (last_used_at IS NULL OR last_used_at < ?1 - 60000)').bind(Date.now(), row.id).run()
+	return load(env, 'u.slack_id = ?2', row.slack_id)
 }
 
 /** rotateKey replaces the person's sync key, so the old one stops working. */

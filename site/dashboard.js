@@ -3,7 +3,7 @@
 // it is one signed report made live on this computer.
 const DAY = 86400000
 const hosted = 'hosted' in document.documentElement.dataset
-// Set when an admin opens someone else's stats from the Review page.
+// Set when a neoadmin or superadmin opens someone else's stats from the review app.
 const viewing = hosted ? new URLSearchParams(location.search).get('user') : null
 let report = null
 let days = 30
@@ -316,6 +316,9 @@ async function showSetup() {
 	$('status').textContent = ''
 }
 
+// banned says what a ban on this account means, with the reason the reviewer gave.
+const banned = (ban) => `this account is banned ${ban.until ? `until ${new Date(ban.until).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}` : 'until a reviewer lifts the ban'}, so nothing new is taken from it. The reason given: ${ban.reason}`
+
 async function loadHosted() {
 	let body
 	try {
@@ -325,7 +328,7 @@ async function loadHosted() {
 			document.querySelector('.nav .links .active')?.classList.remove('active')
 		}
 		if (!body.computers.length) {
-			if (viewing) notice('Nothing synced yet', 'This person has signed in, but no computer of theirs has synced. <a href="people.html">Back to people</a>')
+			if (viewing) notice('Nothing synced yet', 'This person has signed in, but no computer of theirs has synced. <a href="/review/">Back to review</a>')
 			else await showSetup()
 			setTimeout(loadHosted, 10000) // so the stats appear as soon as the first sync lands
 			return
@@ -340,7 +343,7 @@ async function loadHosted() {
 	const stale = Date.now() - last > 3 * DAY
 	const from = body.computers.length === 1 ? '1 computer' : `${body.computers.length} computers`
 	show(merge(body.computers), `<span class="dot${stale ? ' old' : ''}"></span>Synced ${esc(ago(last))} from ${from}` +
-		(viewing ? ` - <a href="person.html?id=${encodeURIComponent(viewing)}">review</a> - <a href="people.html">all people</a>` : stale ? ' - run <code>teardrop sync</code> to update' : ''))
+		(viewing ? ` - <a href="/review/#/person/id:${encodeURIComponent(viewing)}">review</a> - <a href="/review/">all people</a>` : body.ban ? ` - <b>syncing is paused</b>: ${esc(banned(body.ban))}` : stale ? ' - run <code>teardrop sync</code> to update' : ''))
 	setTimeout(loadHosted, 5 * 60000)
 }
 

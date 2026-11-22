@@ -1,0 +1,120 @@
+/* The review app: its own top bar and side menu, apart from the main site.
+   Colors and buttons come from /base.css, and panels, tables and lists from
+   /style.css. */
+.rv-top { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 24px; background: var(--panel); border-bottom: 1px solid var(--line); white-space: nowrap; }
+.rv-brand { display: flex; align-items: center; gap: 8px; font: 700 18px/1 var(--sans); letter-spacing: -0.02em; color: var(--text); }
+.rv-brand:hover { text-decoration: none; }
+.rv-brand img { width: 20px; height: 20px; }
+.rv-brand b { padding: 4px 8px; border-radius: 5px; background: var(--accent); color: var(--on-accent); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
+.rv-who { display: flex; align-items: center; gap: 10px; min-width: 0; margin-left: auto; font-size: 14px; color: var(--muted); }
+.rv-who span:first-child { overflow: hidden; text-overflow: ellipsis; }
+.rv-shell { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 32px; align-items: start; max-width: 1280px; margin: 0 auto; padding: 28px 24px 96px; }
+.rv-side { position: sticky; top: 84px; display: grid; gap: 2px; }
+.rv-side a { padding: 9px 12px; border-radius: 8px; font-size: 15px; color: var(--muted); }
+.rv-side a:hover { color: var(--text); text-decoration: none; }
+.rv-side a[aria-current="page"] { color: var(--text); background: var(--panel-2); }
+.rv-view > .panel + .panel, .rv-view > .panel + .fine { margin-top: 16px; }
+.rv-view .panel > p { margin: 0 0 14px; font-size: 14px; }
+.rv-view .panel > .list + h2, .rv-view .panel > .msg + h2 { margin-top: 26px; }
+.rv-view .list .item code { font-size: 12px; }
+
+/* A level, or a ban, beside a name */
+.badge { display: inline-block; padding: 1px 8px; border: 1px solid var(--line-2); border-radius: 5px; font-size: 12px; font-weight: 600; line-height: 1.6; color: var(--muted); white-space: nowrap; }
+.badge.l0 { border-color: var(--accent-line); background: var(--accent-soft); color: var(--accent); }
+.badge.l1 { border-color: var(--good-line); background: var(--good-soft); color: var(--good); }
+.badge.l2 { color: var(--text); }
+.badge.banned { border-color: var(--bad-line); background: var(--bad-soft); color: var(--bad); }
+
+/* A row of fields with its button, such as the one that adds a reviewer */
+.rv-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 12px; }
+.rv-form label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
+.rv-form label.grow { flex: 1; min-width: 200px; }
+.rv-form input, .rv-form select { width: 100%; height: 40px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font: 15px var(--sans); color: var(--text); }
+.rv-form input[name="slack_id"] { width: 170px; font-family: var(--mono); font-size: 14px; }
+.rv-form input:focus, .rv-form select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.rv-form + .msg { margin-top: 12px; }
+.rv-form + .msg + .list, .rv-form + .list { margin-top: 18px; }
+table.data.left td, table.data.left th { text-align: left; white-space: normal; }
+table.data.left td:first-child, table.data.left td:last-child { white-space: nowrap; }
+table.data.left td:last-child, table.data.left th:last-child { text-align: right; }
+table.data.api td { white-space: normal; }
+table.data.api td:first-child { white-space: nowrap; font: 12px var(--mono); }
+
+@media (max-width: 760px) {
+	.rv-top { padding: 0 14px; gap: 8px; }
+	.rv-who span:first-child, .rv-top .btn { display: none; }
+	.rv-shell { grid-template-columns: minmax(0, 1fr); gap: 16px; padding: 16px 14px 64px; }
+	.rv-side { position: static; display: flex; overflow-x: auto; scrollbar-width: none; }
+	.rv-side a { flex: none; padding: 8px 10px; font-size: 14px; }
+	.rv-form label, .rv-form input[name="slack_id"] { width: 100%; }
+}
+
+/* The list of people, and one person */
+table.people td:nth-child(-n+2), table.people th:nth-child(-n+2) { text-align: left; }
+table.people a.flag { display: inline-block; min-width: 22px; padding: 0 7px; border-radius: 5px; background: var(--bad-soft); color: var(--bad); font-weight: 600; text-align: center; }
+
+.lookup { display: flex; gap: 8px; margin-left: auto; }
+.lookup input { width: 260px; max-width: 100%; height: 40px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); font: 14px var(--mono); color: var(--text); }
+.lookup input::placeholder { font-family: var(--sans); color: var(--faint); }
+.lookup input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.review > a.back { display: inline-flex; align-items: center; gap: 6px; margin: 0 0 14px; font-size: 14px; color: var(--muted); }
+.review .status code { font-size: 13px; }
+.review .stat .value.bad { color: var(--bad); }
+.review .panels { grid-template-columns: 1fr 2fr; }
+.review .facts { margin-bottom: 16px; }
+.attention { margin-bottom: 16px; border-color: var(--bad-line); background: var(--bad-soft); }
+.attention ul { margin: 0; padding-left: 20px; font-size: 14px; }
+.log-head { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 12px; margin-bottom: 14px; }
+.log-head h2 { margin: 0; }
+.log-head .seg { margin-left: 0; }
+.log-head #download { margin-left: auto; }
+.review td.acts { white-space: nowrap; }
+.review td.acts > * { margin-left: 14px; font-size: 13px; color: var(--accent); }
+.review td.acts button.link:hover, .log button.link:hover code { text-decoration: underline; }
+.log p.held { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.log p.held a { color: var(--accent); white-space: nowrap; }
+.log h4 { margin: 14px 0 6px; font-size: 13px; font-weight: 600; }
+.log h4 small { margin-left: 6px; font-weight: 400; color: var(--faint); }
+.log .scrollbox { max-height: 300px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+table.data.mini { font-size: 13px; }
+table.data.mini th, table.data.mini td { padding: 6px 12px; }
+table.data.mini th { position: sticky; top: 0; background: var(--panel); box-shadow: 0 1px 0 var(--line); } /* a border would scroll away with the rows */
+table.data.mini td.up { color: var(--good); }
+table.data.mini td.down { color: var(--bad); }
+@media (max-width: 640px) {
+	table.data.mini th, table.data.mini td { padding: 6px 8px; }
+	table.data.mini td:first-child { white-space: normal; }
+}
+.log { list-style: none; margin: 0; padding: 0; }
+.log > li { padding: 12px 0 12px 14px; border-top: 1px solid var(--line); border-left: 3px solid transparent; font-size: 14px; }
+.log > li.none { padding-left: 0; }
+.log > li.flagged { border-left-color: var(--bad); }
+.log .line { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; }
+.log .mark { flex: none; width: 66px; font-size: 12px; font-weight: 600; color: var(--good); }
+.log .flagged .mark { color: var(--bad); }
+.log .refused:not(.flagged) .mark { color: var(--warn); }
+.log .removed .mark { color: var(--muted); }
+.log .num { font-variant-numeric: tabular-nums; }
+.log time { margin-left: auto; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.log p { margin: 4px 0 0 78px; line-height: 1.5; }
+.log p.finding { color: var(--bad); }
+.log p.remark { color: var(--muted); }
+.log details { margin: 6px 0 0 78px; font-size: 13px; }
+.log summary { display: inline-block; color: var(--faint); cursor: pointer; }
+.log summary:hover { color: var(--text); }
+.log dl { margin: 8px 0 2px; padding: 10px 14px; border-radius: 8px; background: var(--panel-2); font: 12px/1.7 var(--mono); overflow-x: auto; }
+.log dl div { display: flex; gap: 12px; white-space: nowrap; }
+.log dt { flex: none; width: 150px; color: var(--muted); }
+.log dd { margin: 0; }
+#more { margin-top: 14px; }
+@media (max-width: 900px) { .review .panels { grid-template-columns: 1fr; } }
+@media (max-width: 760px) {
+	.lookup { margin-left: 0; width: 100%; }
+	.lookup input { flex: 1; min-width: 0; width: auto; }
+	.log p, .log details { margin-left: 0; }
+	.log-head #download { margin-left: 0; }
+	.log time { margin-left: 0; width: 100%; }
+}
+.lookup.start { margin-left: 0; }
+.lookup.start input { flex: 1; max-width: 420px; }
+.review .stat .value { font-size: 22px; }

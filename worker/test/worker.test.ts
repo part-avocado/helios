@@ -84,7 +84,7 @@ async function signIn(person: string): Promise<string> {
 }
 
 async function me(cookie: string) {
-	return (await (await call('/api/me', { cookie })).json()) as { name: string; slack_id: string; admin: boolean; api_key: string; computers: { id: string; cloud: boolean }[] }
+	return (await (await call('/api/me', { cookie })).json()) as { name: string; slack_id: string; admin: boolean; level: number | null; ban: { reason: string; until: number | null } | null; api_key: string; computers: { id: string; cloud: boolean }[] }
 }
 
 async function reports(cookie: string, query = '') {
@@ -125,7 +125,7 @@ test('every answer says it may not be framed or have its type guessed', async ()
 })
 
 test('pages and data need an account', async () => {
-	for (const page of ['/dashboard', '/settings.html', '/people']) {
+	for (const page of ['/dashboard', '/settings.html', '/review/']) {
 		const res = await call(page)
 		assert.equal(res.status, 302, page)
 		assert.equal(res.headers.get('Location'), `/login?next=${encodeURIComponent(page)}`)
@@ -267,25 +267,27 @@ test('settings: upload, new key, and removing a computer', async () => {
 	assert.deepEqual((await me(cookie)).computers, [])
 })
 
-test('only admins see other people', async () => {
+test('only reviewers see other people, in the review app', async () => {
 	const member = await signIn('member')
 	const admin = await signIn('admin')
-	assert.equal((await me(admin)).admin, true)
+	assert.deepEqual([(await me(admin)).admin, (await me(admin)).level, (await me(member)).level], [true, 0, null])
 	await call('/api/reports', { method: 'POST', body: computer()({ engaged_seconds: 600, blocks: [] }), cookie: member, origin: SITE })
 
-	assert.equal((await call('/people', { cookie: member })).headers.get('Location'), '/dashboard')
-	assert.equal((await call('/api/admin/people', { cookie: member })).status, 403)
+	assert.equal((await call('/review/', { cookie: member })).headers.get('Location'), '/dashboard')
+	assert.equal((await call('/api/review/people', { cookie: member })).status, 403)
 	assert.equal((await call('/api/report?user=1', { cookie: member })).status, 403)
 
-	assert.match(await (await call('/people', { cookie: admin })).text(), /<html[^>]* data-admin/)
-	// Only an admin's pages are marked to show the Review links, and the
-	// addresses someone would guess for the page lead to it.
+	assert.match(await (await call('/review/', { cookie: admin })).text(), /<html[^>]* data-staff[\s\S]*<title>teardrop review</)
+	// Only a reviewer's pages are marked to show the Review links.
 	for (const page of ['/', '/dashboard', '/settings']) {
-		assert.match(await (await call(page, { cookie: admin })).text(), /<html[^>]* data-admin[\s\S]*class="admin-only">Review</, page)
-		assert.doesNotMatch(await (await call(page, { cookie: member })).text(), /<html[^>]* data-admin/, page)
+		assert.match(await (await call(page, { cookie: admin })).text(), /<html[^>]* data-staff[\s\S]*class="staff-only">Review</, page)
+		assert.doesNotMatch(await (await call(page, { cookie: member })).text(), /<html[^>]* data-staff/, page)
 	}
-	for (const guess of ['/review', '/admin', '/reviewer.html']) assert.equal((await call(guess, { cookie: admin })).headers.get('Location'), '/people', guess)
-	const { people } = (await (await call('/api/admin/people', { cookie: admin })).json()) as { people: { id: number; slack_id: string; engaged_seconds: number; computers: number }[] }
+	// The addresses the review pages had, and ones someone would guess, lead to the app.
+	for (const guess of ['/review', '/admin', '/reviewer.html', '/people', '/people.html']) assert.equal((await call(guess, { cookie: admin })).headers.get('Location'), '/review/', guess)
+	assert.equal((await call('/person?slack=UMEMBER', { cookie: admin })).headers.get('Location'), '/review/#/person/UMEMBER')
+	assert.equal((await call('/person.html?id=7', { cookie: admin })).headers.get('Location'), '/review/#/person/id%3A7')
+	const { people } = (await (await call('/api/review/people', { cookie: admin })).json()) as { people: { id: number; slack_id: string; engaged_seconds: number; computers: number }[] }
 	const row = people.find((p) => p.slack_id === 'UMEMBER')!
 	assert.deepEqual([row.engaged_seconds, row.computers], [600, 1])
 	assert.equal((await reports(admin, `?user=${row.id}`)).length, 1)
@@ -310,7 +312,7 @@ test('reviewers look a person up by Slack ID and read their log', async () => {
 	const cookie = await signIn('logged')
 	const { api_key: key } = await me(cookie)
 	const review = async (query = 'slack=ulogged') => {
-		const res = await call(`/api/admin/person?${query}`, { cookie: admin })
+		const res = await call(`/api/review/person?${query}`, { cookie: admin })
 		assert.equal(res.status, 200, await res.clone().text())
 		return (await res.json()) as Review
 	}
@@ -324,10 +326,10 @@ test('reviewers look a person up by Slack ID and read their log', async () => {
 	}
 
 	// Only admins, and only for people who exist.
-	assert.equal((await call('/api/admin/person?slack=ULOGGED', { cookie })).status, 403)
-	assert.equal((await call('/person?slack=ULOGGED', { cookie })).headers.get('Location'), '/dashboard')
-	assert.equal((await call('/person?slack=ULOGGED', { cookie: admin })).status, 200)
-	for (const query of ['slack=UNOBODY', 'id=999999', 'id=1e3', '']) assert.equal((await call(`/api/admin/person?${query}`, { cookie: admin })).status, 404, query)
+	assert.equal((await call('/api/review/person?slack=ULOGGED', { cookie })).status, 403)
+	assert.equal((await call('/review/', { cookie })).headers.get('Location'), '/dashboard')
+	assert.equal((await call('/review/', { cookie: admin })).status, 200)
+	for (const query of ['slack=UNOBODY', 'id=999999', 'id=1e3', '']) assert.equal((await call(`/api/review/person?${query}`, { cookie: admin })).status, 404, query)
 	assert.deepEqual([(await review()).person.slack_id, (await review()).log], ['ULOGGED', []])
 
 	// A first report has nothing to be compared with: noted, not flagged.
@@ -380,7 +382,7 @@ test('reviewers look a person up by Slack ID and read their log', async () => {
 	assert.equal((await review('slack=ULOGGED&show=flagged')).log.length, 4)
 	assert.deepEqual((await review('slack=ULOGGED&show=refused')).log.map((r) => r.flagged), [0, 1])
 	assert.deepEqual((await review(`id=${all.person.id}`)).counts, all.counts)
-	const { people } = (await (await call('/api/admin/people', { cookie: admin })).json()) as { people: { slack_id: string; flagged: number }[] }
+	const { people } = (await (await call('/api/review/people', { cookie: admin })).json()) as { people: { slack_id: string; flagged: number }[] }
 	assert.equal(people.find((p) => p.slack_id === 'ULOGGED')!.flagged, 4)
 
 	// Two computers that together claim more than a day holds.
@@ -414,7 +416,7 @@ test('reviewers look a person up by Slack ID and read their log', async () => {
 	assert.deepEqual([left.person.id, left.computers], [before.person.id, []])
 	assert.deepEqual(left.log.slice(0, 4).map((r) => r.event), ['delete', 'remove', 'remove', 'remove'])
 	assert.deepEqual(left.counts, { ...before.counts, entries: before.counts.entries + 4 })
-	const listed = ((await (await call('/api/admin/people', { cookie: admin })).json()) as { people: { slack_id: string; flagged: number; computers: number; deleted_at: number | null }[] }).people.find((p) => p.slack_id === 'ULOGGED')!
+	const listed = ((await (await call('/api/review/people', { cookie: admin })).json()) as { people: { slack_id: string; flagged: number; computers: number; deleted_at: number | null }[] }).people.find((p) => p.slack_id === 'ULOGGED')!
 	assert.deepEqual([listed.flagged, listed.computers, Boolean(listed.deleted_at)], [before.counts.flagged, 0, true])
 
 	// Signing in again reopens the same account: empty, with a new sync key
@@ -439,7 +441,7 @@ test('a log entry says what the report held and what changed, and a computer has
 	const { api_key: key } = await me(cookie)
 	const now = Date.now()
 	const review = async (query = '') => {
-		const res = await call(`/api/admin/person?slack=UDETAILED${query}`, { cookie: admin })
+		const res = await call(`/api/review/person?slack=UDETAILED${query}`, { cookie: admin })
 		assert.equal(res.status, 200, await res.clone().text())
 		return (await res.json()) as { counts: { entries: number }; log: (LogRow & { detail: Detail | null })[] }
 	}
@@ -511,16 +513,16 @@ test('a log entry says what the report held and what changed, and a computer has
 	assert.deepEqual((await review(`&computer=${other}`)).log[0]!.detail!.projects, [['game', 0, 600]])
 
 	// The latest report of a computer in full, and the whole log, for admins only.
-	const full = await call(`/api/admin/report?computer=${other}`, { cookie: admin })
+	const full = await call(`/api/review/report?computer=${other}`, { cookie: admin })
 	assert.equal(full.status, 200)
 	const stored = (await full.json()) as { id: string; signature: string; report: unknown }
 	assert.deepEqual([stored.id, stored.signature, stored.report], [other, JSON.parse(latest).key, JSON.parse(JSON.parse(latest).payload)])
-	assert.equal((await call('/api/admin/report?computer=td-000000000000', { cookie: admin })).status, 404)
-	const download = await call('/api/admin/log?slack=UDETAILED', { cookie: admin })
+	assert.equal((await call('/api/review/report?computer=td-000000000000', { cookie: admin })).status, 404)
+	const download = await call('/api/review/log?slack=UDETAILED', { cookie: admin })
 	assert.match(download.headers.get('Content-Disposition')!, /attachment; filename="teardrop-log-\d+\.json"/)
 	const whole = (await download.json()) as { log: (LogRow & { detail: Detail | null })[] }
 	assert.deepEqual([whole.log.length, whole.log.at(-1)!.detail!.projects], [5, [['site', 0, 3600], ['notes', 0, 600]]])
-	for (const path of [`/api/admin/report?computer=${other}`, '/api/admin/log?slack=UDETAILED']) assert.equal((await call(path, { cookie })).status, 403, path)
+	for (const path of [`/api/review/report?computer=${other}`, '/api/review/log?slack=UDETAILED']) assert.equal((await call(path, { cookie })).status, 403, path)
 
 	// Deleting the account takes the project names out of the log and leaves the rest.
 	assert.equal((await call('/api/account', { method: 'DELETE', cookie, origin: SITE })).status, 200)
@@ -537,11 +539,11 @@ test('every report is kept in full, refused ones too, until the account is delet
 	const now = Date.now()
 	const post = (body: string) => call('/api/v1/reports', { method: 'POST', body, key })
 	const review = async () => {
-		const res = await call('/api/admin/person?slack=UKEEPER', { cookie: admin })
+		const res = await call('/api/review/person?slack=UKEEPER', { cookie: admin })
 		return (await res.json()) as { person: { id: number }; log: (LogRow & { id: number; has_report: boolean })[] }
 	}
 	const kept = async (entry: number) => {
-		const res = await call(`/api/admin/report?entry=${entry}`, { cookie: admin })
+		const res = await call(`/api/review/report?entry=${entry}`, { cookie: admin })
 		return res.status === 200 ? ((await res.json()) as { entry: number; id: string; refusal: string; signature: string; report: unknown }) : res.status
 	}
 	const bucket = (await server.getWorker<{ REPORTS: { list(options: { prefix: string }): Promise<{ objects: { key: string }[] }> } }>().getEnv()).REPORTS
@@ -574,8 +576,8 @@ test('every report is kept in full, refused ones too, until the account is delet
 		assert.deepEqual([got.entry, got.id, got.refusal, got.signature, got.report], [entry, id, refusal, JSON.parse(sent).key, JSON.parse(JSON.parse(sent).payload)])
 	}
 	assert.match(log[1]!.refusal, /changed after it was made/)
-	assert.deepEqual([await kept(stray), await kept(999999), (await call('/api/admin/report?entry=1e3', { cookie: admin })).status], [404, 404, 404])
-	assert.equal((await call(`/api/admin/report?entry=${older}`, { cookie })).status, 403, 'not even their own')
+	assert.deepEqual([await kept(stray), await kept(999999), (await call('/api/review/report?entry=1e3', { cookie: admin })).status], [404, 404, 404])
+	assert.equal((await call(`/api/review/report?entry=${older}`, { cookie })).status, 403, 'not even their own')
 	assert.equal((await files(`${person.id}/${id}/`)).length, 3)
 
 	// Removing the computer leaves its reports with reviewers.
@@ -654,7 +656,7 @@ test('events from Amp\'s cloud are kept, and a cloud thread reads them back with
 		const report = { engaged_seconds, blocks: [block(now - 1000)], days: Object.entries(days).map(([date, engaged_seconds]) => ({ date, engaged_seconds })) }
 		const res = await call('/api/v1/reports', { method: 'POST', body: signed(report), key: rotated.api_key })
 		assert.equal(res.status, 200, await res.clone().text())
-		return ((await (await call(`/api/admin/person?slack=${slack_id}`, { cookie: admin })).json()) as Review).log[0]!
+		return ((await (await call(`/api/review/person?slack=${slack_id}`, { cookie: admin })).json()) as Review).log[0]!
 	}
 	const today = { [day(now)]: 7800 }
 	let row = await sync(laptop, 7800, today)
@@ -675,6 +677,139 @@ test('events from Amp\'s cloud are kept, and a cloud thread reads them back with
 	const newest = line(500, 'agent.end')
 	assert.equal(await send(newest, rotated.api_key), 1)
 	assert.deepEqual((await read(0, rotated.api_key)).lines, [prompt, later, newest])
+})
+
+test('reviewers have levels, which decide what they read, whom they add and ban, and what their keys do', async () => {
+	const superadmin = await signIn('admin')
+	const [neo, rev, member] = [await signIn('neo'), await signIn('rev'), await signIn('plain')]
+	const { api_key: memberKey } = await me(member)
+	const review = (path: string, cookie: string, method = 'GET', body?: object) =>
+		call(`/api/review${path}`, { method, cookie, origin: method === 'GET' ? undefined : SITE, body: body && JSON.stringify(body) })
+	const status = async (...args: Parameters<typeof review>) => (await review(...args)).status
+	const withKey = (path: string, key: string, method = 'GET', body?: object) => call(`/api/review${path}`, { method, key, body: body && JSON.stringify(body) })
+
+	// Only those in ADMINS start with a place.
+	assert.deepEqual([(await me(superadmin)).level, (await me(neo)).level, (await me(rev)).level], [0, null, null])
+	for (const who of [neo, rev, member]) assert.equal(await status('/me', who), 403)
+	assert.equal(await status('/me', ''), 401)
+
+	// A superadmin adds people by Slack ID, as pasted from Slack, even before they sign in.
+	assert.equal(await status('/team', superadmin, 'POST', { slack_id: ' <@uneo> ', level: 1, note: 'runs reviews' }), 200)
+	assert.equal(await status('/team', superadmin, 'POST', { slack_id: 'UNOTYET', level: 2 }), 200)
+	assert.equal(await status('/team', superadmin, 'POST', { slack_id: 'not an id', level: 2 }), 400)
+	assert.equal(await status('/team', superadmin, 'POST', { slack_id: 'UREV', level: 3 }), 400)
+	assert.equal(await status('/team', superadmin, 'POST', { slack_id: 'UADMIN', level: 2 }), 409, 'a superadmin is set in ADMINS')
+	assert.equal((await call('/api/review/team', { method: 'POST', cookie: superadmin, body: '{"slack_id":"UREV","level":2}' })).status, 403, 'not from this site')
+	assert.equal((await me(neo)).level, 1)
+
+	// A neoadmin adds and removes reviewers, and no one at their own level or above.
+	assert.equal(await status('/team', neo, 'POST', { slack_id: 'UREV', level: 2 }), 200)
+	assert.equal(await status('/team', neo, 'POST', { slack_id: 'UOTHERNEO', level: 1 }), 403)
+	assert.equal(await status('/team', superadmin, 'POST', { slack_id: 'UOTHERNEO', level: 1 }), 200)
+	assert.equal(await status('/team', neo, 'POST', { slack_id: 'UOTHERNEO', level: 2 }), 403, 'demoting another neoadmin')
+	for (const above of ['UOTHERNEO', 'UNEO', 'UADMIN']) assert.equal(await status(`/team/${above}`, neo, 'DELETE'), 403, above)
+	assert.deepEqual([await status('/team/UNOTYET', neo, 'DELETE'), await status('/team/UNOTYET', neo, 'DELETE')], [200, 404])
+	// A reviewer adds no one, and a member has no place at all.
+	for (const who of [rev, member]) assert.equal(await status('/team', who, 'POST', { slack_id: 'UPLAIN', level: 2 }), 403)
+	type Team = { superadmins: { slack_id: string }[]; reviewers: { slack_id: string; level: number; name: string | null; banned: number }[]; log: { action: string; slack_id: string; by_slack_id: string }[] }
+	let team = (await (await review('/team', neo)).json()) as Team
+	assert.deepEqual(team.superadmins.map((s) => s.slack_id), ['UADMIN', 'UOTHER'])
+	assert.deepEqual(team.reviewers.map((r) => `${r.slack_id} ${r.level}`).sort(), ['UNEO 1', 'UOTHERNEO 1', 'UREV 2'])
+
+	// A reviewer reads a person's total for each project and nothing else. A neoadmin reads everything.
+	const laptop = computer()
+	const report = (engaged_seconds: number) => ({
+		engaged_seconds,
+		blocks: [block(Date.now() - 1000)],
+		projects: [{ project: { key: '/home/kid/site', name: 'site' }, engaged_seconds: engaged_seconds - 1800 }, { project: { key: 'game', name: 'game' }, engaged_seconds: 1800 }],
+	})
+	const sync = async (engaged: number) => (await call('/api/v1/reports', { method: 'POST', body: laptop(report(engaged)), key: memberKey })).status
+	assert.equal(await sync(5400), 200)
+	const seen = (await (await review('/person?slack=uplain', rev)).json()) as { limited: boolean; projects: object[]; ban: { reason: string } | null }
+	assert.deepEqual(Object.keys(seen).sort(), ['ban', 'engaged_seconds', 'flagged_reports', 'limited', 'person', 'projects', 'synced_at'])
+	assert.deepEqual([seen.limited, seen.projects], [true, [{ name: 'site', engaged_seconds: 3600 }, { name: 'game', engaged_seconds: 1800 }]])
+	assert.doesNotMatch(JSON.stringify(seen), /home\/kid|td-[0-9a-f]|"id"/)
+	const full = (await (await review('/person?slack=UPLAIN', neo)).json()) as Review & { projects: { key: string }[]; bans: object[] }
+	assert.deepEqual([full.log.length, full.computers.length, full.projects[0]!.key, full.bans], [1, 1, '/home/kid/site', []])
+	// Account numbers count up, so a reviewer can't go through people by them.
+	assert.deepEqual([await status(`/person?id=${full.person.id}`, rev), await status(`/person?id=${full.person.id}`, neo)], [404, 200])
+	for (const path of ['/people', '/team', '/bans', '/log?slack=UPLAIN', `/report?computer=${full.computers[0]!.id}`]) {
+		assert.deepEqual([await status(path, rev), await status(path, neo)], [403, 200], path)
+	}
+	assert.deepEqual([(await call(`/api/report?user=${full.person.id}`, { cookie: rev })).status, (await call(`/api/report?user=${full.person.id}`, { cookie: neo })).status], [403, 200])
+	// The app's page and script are for reviewers of any level.
+	assert.match(await (await call('/dashboard', { cookie: rev })).text(), /<html[^>]* data-staff[\s\S]*class="staff-only">Review</)
+	assert.match(await (await call('/review/review.js', { cookie: rev })).text(), /api\/review/)
+	assert.equal((await call('/review/review.js', { cookie: member })).headers.get('Location'), '/dashboard')
+
+	// A reviewer makes keys, which act as they do. The key is shown once and not kept.
+	assert.equal(await status('/keys', rev, 'POST', { name: ' ' }), 400)
+	assert.equal(await status('/keys', member, 'POST', { name: 'bot' }), 403)
+	const made = (await (await review('/keys', rev, 'POST', { name: 'bot' })).json()) as { id: number; key: string }
+	assert.match(made.key, /^tdr_[A-Za-z0-9_-]{32}$/)
+	const listed = (await (await review('/keys', rev)).json()) as { keys: { name: string; hint: string; key?: string; hash?: string }[] }
+	assert.deepEqual(listed.keys.map((k) => [k.name, k.hint, k.key, k.hash]), [['bot', made.key.slice(0, 9), undefined, undefined]])
+	assert.deepEqual(await (await withKey('/me', made.key)).json(), { name: '<b>rev</b>', slack_id: 'UREV', level: 2, by_key: true })
+	assert.equal(((await (await withKey('/person?slack=UPLAIN', made.key)).json()) as { limited: boolean }).limited, true)
+	assert.equal((await withKey('/people', made.key)).status, 403, 'a reviewer\'s key reads no more than they do')
+	assert.equal((await withKey('/keys', made.key, 'POST', { name: 'more' })).status, 403, 'a key makes no keys')
+	assert.deepEqual([(await withKey('/me', 'tdr_not-a-key')).status, (await withKey('/me', memberKey)).status], [401, 401], 'a sync key is not a review key')
+	assert.equal(await status(`/keys/${made.id}`, neo, 'DELETE'), 404, 'someone else\'s key')
+	const neoKey = ((await (await review('/keys', neo, 'POST', { name: 'ci' })).json()) as { key: string }).key
+	assert.equal((await withKey('/people', neoKey)).status, 200)
+	// A key follows its maker's level.
+	assert.equal(await status('/team', superadmin, 'POST', { slack_id: 'UREV', level: 1 }), 200)
+	assert.equal((await withKey('/people', made.key)).status, 200)
+	assert.equal(await status('/team', superadmin, 'POST', { slack_id: 'UREV', level: 2 }), 200)
+	assert.equal((await withKey('/people', made.key)).status, 403)
+
+	// Bans: for a time or until lifted, on people below the one who bans.
+	const ban = (cookie: string, body: object) => review('/bans', cookie, 'POST', body)
+	assert.equal((await ban(rev, { slack_id: 'UPLAIN', reason: 'no', days: 1 })).status, 403, 'a reviewer bans no one')
+	assert.equal((await ban(neo, { slack_id: 'UPLAIN', reason: ' ', days: 1 })).status, 400, 'a ban needs a reason')
+	assert.equal((await ban(neo, { slack_id: 'UPLAIN', reason: 'x', days: -1 })).status, 400)
+	for (const above of ['UOTHERNEO', 'UNEO', 'UADMIN']) assert.equal((await ban(neo, { slack_id: above, reason: 'x' })).status, 403, above)
+	assert.equal((await ban(superadmin, { slack_id: 'UOTHER', reason: 'x' })).status, 403, 'another superadmin')
+	const temp = (await (await ban(neo, { slack_id: 'UPLAIN', reason: 'Edited reports', days: 7 })).json()) as { id: number; until: number }
+	assert.ok(Math.abs(temp.until - (Date.now() + 7 * DAY)) < 60_000)
+	// Nothing new is taken from them, and they are told why.
+	const refused = await call('/api/v1/reports', { method: 'POST', body: laptop(report(6000)), key: memberKey })
+	assert.equal(refused.status, 403)
+	assert.match(await refused.text(), /banned until \d{4}-\d\d-\d\d \d\d:\d\d UTC.*Edited reports/)
+	assert.equal((await call('/api/v1/events', { method: 'POST', body: '', key: memberKey })).status, 403)
+	assert.equal((await call('/api/reports', { method: 'POST', body: laptop(report(6000)), cookie: member, origin: SITE })).status, 403)
+	// They can still sign in and see what they had.
+	const banned = await me(member)
+	assert.deepEqual([banned.ban?.reason, banned.ban?.until], ['Edited reports', temp.until])
+	const theirs = (await (await call('/api/report', { cookie: member })).json()) as { ban: { reason: string }; computers: object[] }
+	assert.deepEqual([theirs.ban.reason, theirs.computers.length], ['Edited reports', 1])
+	assert.equal(((await (await review('/person?slack=UPLAIN', rev)).json()) as typeof seen).ban?.reason, 'Edited reports')
+	// Lifting it, and one that runs out.
+	assert.deepEqual([await status(`/bans/${temp.id}`, rev, 'DELETE'), await status(`/bans/${temp.id}`, neo, 'DELETE'), await status(`/bans/${temp.id}`, neo, 'DELETE')], [403, 200, 404])
+	assert.deepEqual([(await me(member)).ban, await sync(6000)], [null, 200])
+	const short = (await (await ban(neo, { slack_id: 'UPLAIN', reason: 'again', days: 1 })).json()) as { id: number }
+	assert.equal((await me(member)).ban?.reason, 'again')
+	const env = await server.getWorker<{ DB: { prepare(sql: string): { run(): Promise<unknown> } } }>().getEnv()
+	await env.DB.prepare(`UPDATE bans SET until = ${Date.now() - 1000} WHERE id = ${short.id}`).run()
+	assert.equal((await me(member)).ban, null)
+
+	// A banned reviewer can't review, and neither can their key. A neoadmin can't undo a superadmin's ban.
+	const forever = (await (await ban(superadmin, { slack_id: 'UREV', reason: 'Left the team' })).json()) as { id: number; until: number | null }
+	assert.equal(forever.until, null)
+	assert.deepEqual([await status('/me', rev), (await withKey('/me', made.key)).status, (await call('/review/', { cookie: rev })).headers.get('Location')], [403, 403, '/dashboard'])
+	assert.deepEqual([await status(`/bans/${forever.id}`, neo, 'DELETE'), (await ban(neo, { slack_id: 'UREV', reason: 'shorter', days: 1 })).status], [403, 403])
+	team = (await (await review('/team', neo)).json()) as Team
+	assert.equal(team.reviewers.find((r) => r.slack_id === 'UREV')!.banned, 1)
+	assert.equal(await status(`/bans/${forever.id}`, superadmin, 'DELETE'), 200)
+	assert.equal(await status('/me', rev), 200)
+
+	// Removing a reviewer ends their keys too. Every change is on record.
+	assert.equal(await status('/team/UREV', neo, 'DELETE'), 200)
+	assert.deepEqual([await status('/me', rev), (await withKey('/me', made.key)).status], [403, 401])
+	team = (await (await review('/team', superadmin)).json()) as Team
+	for (const [action, slack, by] of [['add', 'UNEO', 'UADMIN'], ['change', 'UREV', 'UADMIN'], ['ban', 'UPLAIN', 'UNEO'], ['unban', 'UREV', 'UADMIN'], ['remove', 'UREV', 'UNEO']]) {
+		assert.ok(team.log.some((l) => l.action === action && l.slack_id === slack && l.by_slack_id === by), `${action} ${slack} by ${by}`)
+	}
 })
 
 test('project submissions go on to the review server', async () => {

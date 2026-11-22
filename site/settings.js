@@ -39,14 +39,19 @@ async function load() {
 	$('me-name').textContent = me.name || 'Not set'
 	$('me-slack').textContent = me.slack_id || 'No Slack account linked'
 	$('me-since').textContent = new Intl.DateTimeFormat(undefined, { dateStyle: 'long' }).format(me.created_at)
-	$('me-role').textContent = me.admin ? 'Admin' : 'Member'
+	$('me-role').textContent = (['Superadmin', 'Neoadmin', 'Reviewer'][me.level] ?? 'Member') + (me.ban ? `. Banned ${me.ban.until ? `until ${new Date(me.ban.until).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}` : 'until a reviewer lifts the ban'}: ${me.ban.reason}` : '')
 }
 
 $('new-key').addEventListener('click', async () => {
 	if (!confirm('Make a new sync key? Your computers stop syncing until you run the new connect command on each of them.')) return
 	try {
-		renderSetup($('setup-steps'), (await change('/api/key', 'POST')).api_key)
-		say($('key-msg'), 'New key made. The connect command above now uses it.', true)
+		const key = (await change('/api/key', 'POST')).api_key
+		renderSetup($('setup-steps'), key)
+		// The new key in a popup, to copy to wherever the old one was.
+		$('new-key-value').textContent = key
+		$('new-key-connect').textContent = `teardrop sync -server ${location.origin} -key ${key}`
+		$('key-dialog').showModal()
+		say($('key-msg'), 'New key made. The steps above now use it.', true)
 	} catch (e) {
 		say($('key-msg'), e.message, false)
 	}
