@@ -14,7 +14,6 @@ import { createTestHarness, unstable_splitSqlQuery } from 'wrangler'
 const SITE = 'http://teardrop.example'
 const DAY = 86400_000
 
-const submissions: string[] = []
 // A sign-in code "code-ada" belongs to the person "ada", whose Slack ID is "UADA".
 const fake = createServer(async (req, res) => {
 	let body = ''
@@ -29,10 +28,6 @@ const fake = createServer(async (req, res) => {
 		const sub = req.headers.authorization!.replace('Bearer token-', '')
 		return reply({ sub, slack_id: 'U' + sub.toUpperCase(), name: `<b>${sub}</b>` })
 	}
-	if (req.url === '/api/v1/submissions') {
-		submissions.push(body)
-		return reply({ id: 'sub-0123456789abcdef' })
-	}
 	res.writeHead(404).end()
 })
 
@@ -45,7 +40,7 @@ before(async () => {
 		workers: [
 			{
 				configPath: new URL('../wrangler.jsonc', import.meta.url),
-				vars: { HCA_URL: fakeURL, REVIEW_SERVER: fakeURL, DEV_LOGIN: 'UDEV' },
+				vars: { HCA_URL: fakeURL, DEV_LOGIN: 'UDEV' },
 				secrets: { SESSION_SECRET: 'test-session-secret', HCA_CLIENT_ID: 'hca-id', HCA_CLIENT_SECRET: 'hca-secret', ADMINS: 'UADMIN, UOTHER' },
 			},
 		],
@@ -1059,13 +1054,46 @@ test('another site gets a read key when a person signs in there with teardrop', 
 	assert.equal((await allow(cookie, 'allow')).status, 403)
 })
 
-test('project submissions go on to the review server', async () => {
-	const { api_key: key } = await me(await signIn('submitter'))
-	const body = JSON.stringify({ signed: { v: 1 }, logs: ['x'.repeat(200_000)] })
-	assert.equal((await call('/api/v1/submissions', { method: 'POST', body })).status, 401)
-	const res = await call('/api/v1/submissions', { method: 'POST', body, key })
-	assert.deepEqual(await res.json(), { id: 'sub-0123456789abcdef' })
-	assert.deepEqual(submissions, [body])
+test('a submission credits only witnessed time, and only once', async () => {
+	const cookie = await signIn('submitter')
+	const { api_key: key } = await me(cookie)
+	const now = Date.now()
+	const line = (t: number, event: string, extra: object = {}) => JSON.stringify({ t: new Date(t).toISOString(), tool: 'claude-code', event, session: 'p1', project: 'github.com/kid/game', ...extra })
+	const post = (lines: string[]) => call('/api/v1/events', { method: 'POST', key, body: lines.join('\n') })
+	const submitIt = (as = key) => call('/api/v1/submissions', { method: 'POST', key: as, body: JSON.stringify({ project: 'github.com/kid/game' }) })
+	// Witnessed, sent within 5 minutes: 2 minutes watching, 2 writing. Backdated by 3 hours: 2 and 2, not credited.
+	await post([line(now - 290_000, 'UserPromptSubmit', { human: true, judged: 6, real: 6 }), line(now - 170_000, 'Stop'), line(now - 50_000, 'UserPromptSubmit', { human: true, judged: 5, real: 5 })])
+	const old = now - 3 * 3600_000
+	await post([line(old, 'UserPromptSubmit', { human: true, session: 'p0' }), line(old + 120_000, 'Stop', { session: 'p0' }), line(old + 240_000, 'UserPromptSubmit', { human: true, session: 'p0' })])
+	assert.equal((await call('/api/v1/submissions', { method: 'POST', body: '{}' })).status, 401)
+	const oldClient = await call('/api/v1/submissions', { method: 'POST', key, body: JSON.stringify({ signed: { v: 1 }, logs: ['x'] }) })
+	assert.equal(oldClient.status, 400)
+	assert.match(await oldClient.text(), /teardrop update/)
+	const first = (await (await submitIt()).json()) as { id: string; witnessed_seconds: number; unwitnessed_seconds: number; credited_seconds: number; prompts: number }
+	assert.deepEqual([first.witnessed_seconds, first.unwitnessed_seconds, first.credited_seconds, first.prompts], [240, 240, 240, 4])
+	// A second submission credits only what is new: 30 more witnessed seconds.
+	await post([line(now - 20_000, 'Stop', { session: 'p1' })])
+	const second = (await (await submitIt()).json()) as { credited_seconds: number; earlier_overlap_seconds: number }
+	assert.deepEqual([second.credited_seconds, second.earlier_overlap_seconds], [30, 240])
+
+	// Review: every level reads it; a reviewer sees no project key and no computer IDs.
+	const admin = await signIn('admin')
+	const page = (await (await call(`/api/review/submissions/${first.id}`, { cookie: admin })).json()) as { records: { computer: string; late_ms: number }[]; flags: unknown[] }
+	assert.equal(page.records.length, 7)
+	assert.ok(page.records.some((r) => r.late_ms > 3600_000), 'how late each record arrived is shown')
+	assert.deepEqual(page.flags, [])
+	// Accepting unwitnessed time: a neoadmin or superadmin, with a note, capped at what is unwitnessed.
+	const accept = (as: string, body: object) => call(`/api/review/submissions/${first.id}/accept`, { method: 'POST', cookie: as, origin: SITE, body: JSON.stringify(body) })
+	assert.equal((await accept(admin, { seconds: 999 })).status, 400)
+	assert.equal((await accept(admin, { seconds: 999, note: 'Offline on a train; commits match.' })).status, 200)
+	const list = (await (await call('/api/review/submissions', { cookie: admin })).json()) as { submissions: { id: string; accepted_seconds: number; project_key?: string }[] }
+	assert.equal(list.submissions.find((s) => s.id === first.id)!.accepted_seconds, 240)
+	const env = await server.getWorker<{ DB: { prepare(sql: string): { first<T>(): Promise<T | null> } } }>().getEnv()
+	assert.ok(await env.DB.prepare(`SELECT 1 FROM staff_log WHERE action = 'accept'`).first())
+
+	// A banned account can't submit.
+	assert.equal((await call('/api/review/bans', { method: 'POST', cookie: admin, origin: SITE, body: JSON.stringify({ slack_id: 'USUBMITTER', reason: 'test' }) })).status, 200)
+	assert.equal((await submitIt()).status, 403)
 })
 
 test('the site keeps every prompt record in R2 and credits only time it saw arrive', async () => {

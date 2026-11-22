@@ -669,6 +669,75 @@ async function banList() {
 	</div>`
 }
 
+// ---- Submissions
+
+async function submissionList() {
+	const { submissions } = await api('/submissions')
+	const rows = submissions.map((x) => `<tr>
+		<td><a href="#/submission/${esc(x.id)}">${esc(x.project_name)}</a></td>
+		<td>${me.level < 2 ? `<a href="#/person/id:${x.user_id}">${esc(x.name)}</a>` : esc(x.handle ? '@' + x.handle : '')}</td>
+		<td>${esc(ago(x.received_at))}</td>
+		<td>${dur(x.witnessed_seconds)}</td><td>${dur(x.unwitnessed_seconds)}</td>
+		<td><b>${dur(x.credited_seconds + x.accepted_seconds)}</b></td>
+		<td>${x.imported ? 'imported' : esc(x.state)}</td></tr>`)
+	return head('Submissions') + `<div class="panel">
+		<p class="muted">A submission is made on the site from the records it already holds. Only time whose records reached the site within 5 minutes of when they happened is credited, less what earlier submissions of the project covered. A neoadmin can accept unwitnessed time by hand, with a note.</p>
+		<div class="table-scroll"><table class="data left">
+			<tr><th>Project</th><th>Person</th><th>Received</th><th>Witnessed</th><th>Unwitnessed</th><th>Credited</th><th>State</th></tr>
+			${rows.join('') || '<tr><td colspan="7" class="muted">No submissions yet.</td></tr>'}
+		</table></div>
+	</div>`
+}
+
+async function submissionPage(id) {
+	const d = await api('/submissions/' + encodeURIComponent(id))
+	const s = d.submission
+	const recs = d.records
+	const t0 = recs[0]?.t ?? s.received_at, t1 = Math.max(recs.at(-1)?.t ?? t0, t0 + 1)
+	const x = (t) => (((t - t0) / (t1 - t0)) * 100).toFixed(3)
+	const bars = (list, cls) => list.map(([a, b]) => `<span class="sub-span ${cls}" style="left:${x(a)}%;width:${Math.max(0.2, x(b) - x(a))}%"></span>`).join('')
+	const marks = recs.map((r) => `<span class="sub-mark${r.human ? ' human' : ''}${r.late_ms > 300000 ? ' late' : ''}" style="left:${x(r.t)}%" title="${esc(exact(r.t))} ${esc(r.tool)} ${esc(r.event)}"></span>`).join('')
+	const late = (ms) => (ms <= 300000 ? `${Math.max(0, Math.round(ms / 1000))}s` : `<b>${dur(Math.round(ms / 1000))}</b>`)
+	const rows = recs.map((r) => `<tr><td>${esc(exact(r.t))}</td><td>${late(r.late_ms)}</td><td>${esc(r.tool)}</td><td>${esc(r.event)}</td><td>${esc(r.computer)}</td>
+		<td>${r.human ? `${r.real ?? 0}/${r.judged ?? 0} words${r.low ? ', low effort' : ''}` : ''}</td><td>${r.in || r.out ? `${num(r.in ?? 0)} / ${num(r.out ?? 0)}` : ''}</td><td>${r.added || r.removed ? `+${r.added ?? 0} −${r.removed ?? 0}` : ''}</td></tr>`)
+	const flags = d.flags.map((f) => `<li>${esc(f.text)}</li>`).join('')
+	return head(esc(s.project_name), `<span class="status">${esc(s.id)}</span>`) + `
+	<div class="panel">
+		<div class="sub-stats">
+			<div><span class="muted">Witnessed</span><b>${dur(s.witnessed_seconds)}</b></div>
+			<div><span class="muted">Unwitnessed</span><b>${dur(s.unwitnessed_seconds)}</b></div>
+			<div><span class="muted">In earlier submissions</span><b>${dur(s.earlier_overlap_seconds)}</b></div>
+			<div><span class="muted">Credited</span><b>${dur(s.credited_seconds)}</b></div>
+			<div><span class="muted">Accepted by hand</span><b>${dur(s.accepted_seconds)}</b></div>
+			<div><span class="muted">Prompts</span><b>${num(s.prompts)}</b></div>
+		</div>
+		${me.level < 2 ? `<p class="muted">By <a href="#/person/id:${s.user_id}">${esc(s.name)}</a>, ${esc(s.project_key)}, received ${esc(when(s.received_at))}.</p>` : `<p class="muted">Received ${esc(when(s.received_at))}.</p>`}
+		${s.note ? `<p>Accepted by ${esc(s.decided_by)}: ${esc(s.note)}</p>` : ''}
+	</div>
+	${flags ? `<div class="panel"><h2>Look at first</h2><ul>${flags}</ul></div>` : ''}
+	<div class="panel">
+		<h2>Timeline</h2>
+		<div class="sub-line">${bars(d.unwitnessed, 'unwitnessed')}${bars(d.witnessed, 'witnessed')}${marks}</div>
+		<p class="muted fine">${esc(exact(t0))} to ${esc(exact(t1))}. Green is witnessed time, amber unwitnessed. Tall marks are prompts; red marks reached the site more than 5 minutes late.</p>
+	</div>
+	${me.level < 2 && s.unwitnessed_seconds > 0 ? `<div class="panel" data-area>
+		<h2>Accept unwitnessed time</h2>
+		<form class="row-form" data-form="accept" data-id="${esc(s.id)}">
+			<input name="seconds" type="number" min="0" max="${s.unwitnessed_seconds}" value="${s.accepted_seconds || s.unwitnessed_seconds}" aria-label="Seconds to accept" required>
+			<input name="note" placeholder="Why, such as matching commits" required>
+			<button class="btn">Accept</button>
+		</form>
+		<p class="msg" hidden></p>
+	</div>` : ''}
+	<div class="panel">
+		<h2>Every record</h2>
+		<div class="table-scroll"><table class="data left">
+			<tr><th>When</th><th>Arrived after</th><th>Tool</th><th>Event</th><th>Computer</th><th>Prompt</th><th>Tokens in / out</th><th>Lines</th></tr>
+			${rows.join('')}
+		</table></div>
+	</div>`
+}
+
 // ---- API keys
 
 async function keyList() {
@@ -713,7 +782,7 @@ async function keyList() {
 
 // ---- Getting around
 
-const ROUTES = { home, people, person, team, bans: banList, keys: keyList }
+const ROUTES = { home, people, person, team, bans: banList, keys: keyList, submissions: submissionList, submission: submissionPage }
 let turn = 0
 
 // route draws the page the address names, such as #/person/U012ABCDEF. An
@@ -722,9 +791,9 @@ async function route() {
 	const mine = ++turn
 	const [name = '', ...rest] = location.hash.replace(/^#\/?/, '').split('/')
 	const arg = decodeURIComponent(rest.join('/'))
-	const page = !(name in ROUTES) || (name === 'people' && me.level === 2) || (name === 'person' && !arg) ? 'home' : name
+	const page = !(name in ROUTES) || (name === 'people' && me.level === 2) || ((name === 'person' || name === 'submission') && !arg) ? 'home' : name
 	// A person is under People for those who have the list, and under Home for a reviewer.
-	const marked = page !== 'person' ? page : me.level === 2 ? 'home' : 'people'
+	const marked = page === 'submission' ? 'submissions' : page !== 'person' ? page : me.level === 2 ? 'home' : 'people'
 	for (const a of document.querySelectorAll('.rv-nav a')) {
 		if (a.dataset.page === marked) a.setAttribute('aria-current', 'page')
 		else a.removeAttribute('aria-current')
@@ -771,6 +840,7 @@ view.addEventListener('submit', (e) => {
 	}
 	if (kind === 'add') act(form, () => send('POST', '/team', fields))
 	if (kind === 'ban') act(form, () => send('POST', '/bans', fields))
+	if (kind === 'accept') act(form, () => send('POST', `/submissions/${encodeURIComponent(form.dataset.id)}/accept`, { seconds: Number(fields.seconds), note: fields.note }))
 	if (kind === 'key') {
 		act(form, async () => {
 			const made = await send('POST', '/keys', fields)

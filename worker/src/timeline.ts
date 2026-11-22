@@ -181,3 +181,31 @@ export function totals(recs: Rec[], from: number, to: number): Totals {
 	for (const [project, list] of byProject) Object.assign(t.projects[project]!, union(list))
 	return t
 }
+
+/** A day with more witnessed time than this, across a person's computers, is worth a look. */
+const LONG_DAY = 16 * 3600
+
+/** Reasons a reviewer should look at a submission first. */
+export interface Flag {
+	kind: 'long-day' | 'steady-gaps' | 'no-turn-ends' | 'no-tokens'
+	text: string
+}
+
+/** flags looks for what a script that sends records live would leave behind. */
+export function flags(recs: (Rec & { event: string })[], dayTotals: { day: string; witnessed_seconds: number }[]): Flag[] {
+	const out: Flag[] = []
+	const long = dayTotals.filter((d) => d.witnessed_seconds > LONG_DAY)
+	if (long.length) out.push({ kind: 'long-day', text: `More than 16 witnessed hours in a day across their computers, on ${long.map((d) => d.day).join(', ')}.` })
+	const prompts = recs.filter((r) => r.human).sort((a, b) => a.t - b.t)
+	const gaps = prompts.slice(1).map((r, i) => r.t - prompts[i]!.t).filter((g) => g < 30 * 60_000)
+	if (gaps.length >= 10) {
+		const mean = gaps.reduce((n, g) => n + g, 0) / gaps.length
+		const sd = Math.sqrt(gaps.reduce((n, g) => n + (g - mean) ** 2, 0) / gaps.length)
+		if (sd / mean < 0.05) out.push({ kind: 'steady-gaps', text: `The gaps between ${gaps.length + 1} prompts barely vary (about ${Math.round(mean / 1000)} seconds each).` })
+	}
+	if (prompts.length >= 5 && !recs.some((r) => !r.human)) out.push({ kind: 'no-turn-ends', text: `${prompts.length} prompts and no turn ends: the agent never answered.` })
+	// Amp's plugins report tokens with every turn end.
+	const silent = recs.filter((r) => !r.human && r.tool === 'amp' && r.event === 'agent.end' && !r.in && !r.out)
+	if (silent.length >= 3) out.push({ kind: 'no-tokens', text: `${silent.length} Amp turns ended with no tokens, which Amp always reports.` })
+	return out
+}

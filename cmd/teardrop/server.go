@@ -395,3 +395,33 @@ func (s *server) getSubmission(w http.ResponseWriter, r *http.Request) {
 	meta, _ := json.Marshal(rec)
 	writeJSON(w, map[string]json.RawMessage{"record": meta, "submission": body})
 }
+
+// The format of submissions from teardrop v0.6 and before, which uploaded
+// chat logs. The review server still reads the ones it stored.
+
+// submittedLog names one log in a submission; the signature covers its hash,
+// so the log can't be swapped after signing.
+type submittedLog struct {
+	Tool   string `json:"tool"` // claude-code, codex, or journal
+	ID     string `json:"id"`
+	SHA256 string `json:"sha256"`
+}
+
+type submissionPayload struct {
+	Kind        string           `json:"kind"` // "submission"
+	Account     string           `json:"account"`
+	GeneratedAt time.Time        `json:"generated_at"`
+	ExpiresAt   time.Time        `json:"expires_at"`
+	Since       string           `json:"since"`
+	Teardrop    string           `json:"teardrop_version"`
+	Project     timeline.Project `json:"project"`
+	Report      timeline.Report  `json:"report"` // this project's blocks and total only
+	Logs        []submittedLog   `json:"logs"`
+}
+
+// Submission is a project's signed hours plus the full logs behind them:
+// prompts, replies, and code changes, for reviewers.
+type Submission struct {
+	Signed SignedReport `json:"signed"`
+	Logs   [][]byte     `json:"logs"` // contents of the logs Payload lists, in order
+}

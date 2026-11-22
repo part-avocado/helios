@@ -67,8 +67,8 @@ Syncs and exports carry a verification key: an Ed25519 signature by this
 install's account key over the numbers, the time it was made, and a 7-day
 expiry. The website refuses reports that were edited, have no key, or have
 expired. The account key lives on your machine, so a file alone can't prove its numbers
-are real. For hours that count, use `teardrop submit` (below): the server
-checks the hours against the chat logs behind them.
+are real. For hours that count, use `teardrop submit` (below): the site
+credits only time whose records reached it as it happened.
 
 **ENGAGED** counts the time you spend working with your AI tools: writing
 prompts, reading replies, and steering the agent. An agent left running on
@@ -161,13 +161,13 @@ dashboard adds up every computer you
 connect. Settings lists them, makes a new key, and takes a
 `teardrop export` file from a computer that can't reach the site.
 
-`teardrop submit <project>` submits a project's hours for review together
-with the full chat logs behind them: your prompts, the agent's replies, and
-its code changes. It asks first, and `-o file` writes the submission so you
-can read it before sending. The server refuses a submission whose logs were
-changed after signing or that claims a block no log backs, and recomputes the
-hours from the logs itself. Submitting a project again is fine: time that an
-earlier submission of it already covered is credited once.
+`teardrop submit <project>`, or the review app, submits a project's hours.
+Nothing is uploaded: the site makes the submission from the per-prompt
+records your hooks already sent it. Only time whose records reached the site
+within 5 minutes of when they happened is credited ("witnessed"); time that
+arrived late, such as history from before the hooks were set up, is listed
+but not credited unless a neoadmin accepts it with a note. Submitting a
+project again is fine: time an earlier submission covered is credited once.
 
 Every account has a public profile at `/@handle`, which anyone can open
 without signing in: the handle, the month they joined, hours in the past
@@ -369,9 +369,9 @@ teardrop reads timestamps, token counts, line counts, and working
 directories. Prompt text is scored in memory and dropped; it is never stored
 or printed, and `sync` never uploads it. In Amp's cloud, the cloud plugin
 sends your site each prompt's time, thread, folder, repository, and word
-counts, without its text, and the site keeps them for a year so your cloud
-threads can count them. Your chat logs leave your machine
-only when you run `teardrop submit` and confirm.
+counts, without its text. Every harness's hooks send the same kind of record
+for each prompt and turn end, which the site keeps in R2 for good. Chat logs
+and prompt text never leave your machine.
 
 ## License
 

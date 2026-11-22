@@ -57,9 +57,6 @@
 	],
 	"vars": {
 		"HCA_URL": "https://auth.hackclub.com",
-		// Optional. The Go review server that takes `teardrop submit`, such as
-		// https://teardrop-review.fly.dev. Submissions are passed on to it.
-		"REVIEW_SERVER": "",
 		// Local testing only: signs every visitor in as this Slack user ID. Set
 		// it in .dev.vars. It is ignored on any address but localhost.
 		"DEV_LOGIN": ""

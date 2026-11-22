@@ -1,11 +1,8 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"crypto/ed25519"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -19,7 +16,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/part-avocado/teardrop/internal/sources"
 	"github.com/part-avocado/teardrop/internal/timeline"
 )
 
@@ -33,33 +29,6 @@ const (
 	// upload alone may take five minutes.
 	syncLockStale = 10 * time.Minute
 )
-
-// submittedLog names one log in a submission; the signature covers its hash,
-// so the log can't be swapped after signing.
-type submittedLog struct {
-	Tool   string `json:"tool"` // claude-code, codex, or journal
-	ID     string `json:"id"`
-	SHA256 string `json:"sha256"`
-}
-
-type submissionPayload struct {
-	Kind        string           `json:"kind"` // "submission"
-	Account     string           `json:"account"`
-	GeneratedAt time.Time        `json:"generated_at"`
-	ExpiresAt   time.Time        `json:"expires_at"`
-	Since       string           `json:"since"`
-	Teardrop    string           `json:"teardrop_version"`
-	Project     timeline.Project `json:"project"`
-	Report      timeline.Report  `json:"report"` // this project's blocks and total only
-	Logs        []submittedLog   `json:"logs"`
-}
-
-// Submission is a project's signed hours plus the full logs behind them:
-// prompts, replies, and code changes, for reviewers.
-type Submission struct {
-	Signed SignedReport `json:"signed"`
-	Logs   [][]byte     `json:"logs"` // contents of the logs Payload lists, in order
-}
 
 // serverURL returns the central server: -server (remembered for later
 // runs), else $TEARDROP_SERVER, else the remembered one.
@@ -265,13 +234,14 @@ func due(stamp string, every time.Duration) bool {
 	return true
 }
 
-// runSubmit uploads one project's hours with the full chat logs behind them.
+// runSubmit asks the site to submit one project. The site makes the
+// submission from the records it already holds, so nothing is uploaded: no
+// logs, no prompts. The project is named by key or name, as this computer
+// knows it.
 func runSubmit(args []string) {
 	fs := flag.NewFlagSet("submit", flag.ExitOnError)
-	since := fs.String("since", "365d", "only count events newer than this")
-	out := fs.String("o", "", "write the submission to this file instead of uploading it")
+	since := fs.String("since", "365d", "where to look for the project's name")
 	server := fs.String("server", "", "central server URL, remembered for later runs")
-	yes := fs.Bool("yes", false, "upload without asking")
 	claudeDir := fs.String("claude-dir", "", "Claude Code config directories, comma-separated")
 	codexDir := fs.String("codex-dir", "", "Codex home directories, comma-separated")
 	fs.Usage = func() {
@@ -283,48 +253,38 @@ func runSubmit(args []string) {
 		fs.Usage()
 		os.Exit(2)
 	}
-	window, err := parseSince(*since)
-	check(err)
-
-	now := time.Now()
-	raws, _ := loadAll(*claudeDir, *codexDir)
-	rep, sessions := buildReport(raws, now.Add(-window), timeline.DefaultRules)
-	key, err := pickProject(rep, projects[0])
-	check(err)
-	sub, err := makeSubmission(key, rep, sessions, *since, now)
-	check(err)
-	b, err := json.Marshal(sub)
-	check(err)
-
-	var p submissionPayload
-	json.Unmarshal([]byte(sub.Signed.Payload), &p)
-	fmt.Fprintf(os.Stderr, "%s: %s engaged in %s, backed by %s (%.1f MB).\n", p.Project.Name,
-		dur(time.Duration(p.Report.Engaged)), plural(len(p.Report.Blocks), "block"), plural(len(p.Logs), "chat log"), float64(len(b))/1e6)
-	if *out != "" {
-		check(os.WriteFile(*out, append(b, '\n'), 0o600))
-		fmt.Fprintf(os.Stderr, "Wrote %s. It holds your full prompts, the agent's replies, and its code changes.\n", *out)
-		return
+	key := projects[0]
+	if window, err := parseSince(*since); err == nil {
+		raws, _ := loadAll(*claudeDir, *codexDir)
+		rep, _ := buildReport(raws, time.Now().Add(-window), timeline.DefaultRules)
+		if k, err := pickProject(rep, projects[0]); err == nil {
+			key = k
+		}
 	}
 	srv, err := serverURL(*server)
 	check(err)
-	if !*yes {
-		fmt.Fprintf(os.Stderr, "This uploads those chat logs to %s for review: your full prompts, the agent's replies,\n"+
-			"and its code changes, including anything secret you pasted into a chat. Upload? [y/N] ", srv)
-		ans, _ := bufio.NewReader(os.Stdin).ReadString('\n')
-		if a := strings.ToLower(strings.TrimSpace(ans)); a != "y" && a != "yes" {
-			fmt.Fprintln(os.Stderr, "Nothing was uploaded. Use -o to write the file and read it first.")
-			os.Exit(1)
-		}
-	}
 	k, err := syncKey("", srv)
 	check(err)
-	res, err := post(srv, k, "/api/v1/submissions", b)
+	body, _ := json.Marshal(map[string]string{"project": key})
+	res, err := post(srv, k, "/api/v1/submissions", body)
 	check(err)
 	var r struct {
-		ID string `json:"id"`
+		ID         string `json:"id"`
+		Witnessed  int64  `json:"witnessed_seconds"`
+		Unwitness  int64  `json:"unwitnessed_seconds"`
+		Credited   int64  `json:"credited_seconds"`
+		Overlapped int64  `json:"earlier_overlap_seconds"`
 	}
-	json.Unmarshal(res, &r)
-	fmt.Printf("Submitted as %s.\n", r.ID)
+	check(json.Unmarshal(res, &r))
+	fmt.Printf("Submitted %s as %s.\n", key, r.ID)
+	fmt.Printf("  %s witnessed by the site, %s credited", dur(time.Duration(r.Witnessed)*time.Second), dur(time.Duration(r.Credited)*time.Second))
+	if r.Overlapped > 0 {
+		fmt.Printf(" (%s was in earlier submissions)", dur(time.Duration(r.Overlapped)*time.Second))
+	}
+	fmt.Println(".")
+	if r.Unwitness > 0 {
+		fmt.Printf("  %s reached the site late, such as from before teardrop's hooks were set up, and is not credited unless a reviewer accepts it.\n", dur(time.Duration(r.Unwitness)*time.Second))
+	}
 }
 
 // parseAnywhere parses flags that come before or after the other arguments,
@@ -357,50 +317,4 @@ func pickProject(rep timeline.Report, arg string) (string, error) {
 		return "", fmt.Errorf("no project %q in this window; projects: %s", arg, strings.Join(names, ", "))
 	}
 	return "", fmt.Errorf("%q names several projects; use one of: %s", arg, strings.Join(keys, ", "))
-}
-
-// makeSubmission signs project key's part of rep together with the logs of
-// its sessions.
-func makeSubmission(key string, rep timeline.Report, sessions []timeline.Session, since string, now time.Time) (Submission, error) {
-	var mine timeline.Report
-	for _, b := range rep.Blocks {
-		if b.Project.Key == key {
-			mine.Blocks = append(mine.Blocks, b)
-		}
-	}
-	var project timeline.Project
-	for _, p := range rep.Projects {
-		if p.Project.Key == key {
-			mine.Projects, mine.Engaged, project = []timeline.ProjectTotal{p}, p.Engaged, p.Project
-		}
-	}
-	var sub Submission
-	var logs []submittedLog
-	seen := map[string]bool{}
-	for _, s := range sessions {
-		if s.Project.Key != key || seen[s.Path] {
-			continue
-		}
-		seen[s.Path] = true
-		tool := s.Tool
-		var data []byte
-		var err error
-		if strings.Contains(s.Path, ".jsonl#") { // read from the hook journal, not a transcript
-			tool, data = "journal", sources.JournalLines(dataDir(), s.Tool, s.ID)
-		} else if data, err = sources.ReadLog(s.Path); err != nil {
-			return sub, fmt.Errorf("reading %s: %w", s.Path, err)
-		}
-		sum := sha256.Sum256(data)
-		logs = append(logs, submittedLog{Tool: tool, ID: s.ID, SHA256: hex.EncodeToString(sum[:])})
-		sub.Logs = append(sub.Logs, data)
-	}
-	signed, err := signPayload(func(account string) any {
-		return submissionPayload{
-			Kind: "submission", Account: account,
-			GeneratedAt: now.UTC(), ExpiresAt: now.UTC().Add(keyLifetime),
-			Since: since, Teardrop: version, Project: project, Report: mine, Logs: logs,
-		}
-	})
-	sub.Signed = signed
-	return sub, err
 }

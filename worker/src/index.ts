@@ -7,6 +7,7 @@ import { clearSession, finishSignIn, keyUser, reviewKeyUser, rotateKey, sameOrig
 import { cloudComputer, holdEvents, MAX_EVENTS_BYTES, readEvents } from './events.ts'
 import { json, jsonText, readText, redirect, Refusal } from './http.ts'
 import { relayRecords } from './records.ts'
+import { accept, listSubmissions, submission, submit } from './submissions.ts'
 export { UserHub } from './hub.ts'
 import { ownProfile, updateProfile, visibleOwner } from './profile.ts'
 import { createUserKey, publicAPI, revokeUserKey, userKeys } from './public.ts'
@@ -40,6 +41,15 @@ function guard(res: Response): Response {
 	out.headers.set('X-Content-Type-Options', 'nosniff')
 	out.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
 	return out
+}
+
+/** jsonBody reads a small JSON object from a request. */
+async function jsonBody(request: Request): Promise<Record<string, unknown>> {
+	try {
+		const value = JSON.parse(await readText(request, 16 << 10))
+		if (value && typeof value === 'object') return value
+	} catch {}
+	throw new Refusal(400, 'Send the details as a JSON object.')
 }
 
 /** liveView hands a live request to the person's hub, which answers a WebSocket or the state as JSON. */
@@ -104,15 +114,10 @@ async function route(request: Request, env: Env): Promise<Response> {
 	// teardrop v0.5.2 on a person's computer asks for cloud events to count
 	// there. It takes "not found" to mean there are none for it, which is so.
 	if (call === 'GET /api/v1/events') throw new Refusal(404, 'Cloud threads are counted in the cloud now.')
+	// A submission is made from the records the site holds; nothing is uploaded with it.
 	if (call === 'POST /api/v1/submissions') {
-		await needKey(request, env, url)
-		if (!env.REVIEW_SERVER) throw new Refusal(501, 'This server does not take project submissions.')
-		// Chat logs are large, so the upload is passed on as it arrives.
-		return fetch(`${env.REVIEW_SERVER.replace(/\/+$/, '')}/api/v1/submissions`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: request.body,
-		})
+		const user = await needKey(request, env, url)
+		return json(await submit(env, user, await jsonBody(request)))
 	}
 
 	// Signing in and out.
@@ -182,6 +187,10 @@ async function route(request: Request, env: Env): Promise<Response> {
 			: null
 		if (!person) throw new Refusal(404, 'No such person.')
 		return jsonText(`{"person":${JSON.stringify(person)},"computers":${await reportsJSON(env, person.id)}}`)
+	}
+	if (call === 'POST /api/submissions') {
+		if (user.ban) throw new Refusal(403, banMessage())
+		return json(await submit(env, user, await jsonBody(request)))
 	}
 	if (call === 'POST /api/reports') {
 		if (user.ban) throw new Refusal(403, banMessage())
@@ -279,6 +288,14 @@ async function reviewAPI(request: Request, env: Env, url: URL): Promise<Response
 	}
 
 	if (call === 'GET /me') return json({ name: actor.name, slack_id: actor.slack_id, level, by_key: byKey })
+	// Submissions, which every level reviews; a reviewer sees project names only.
+	if (call === 'GET /submissions') return json({ submissions: await listSubmissions(env, level) })
+	if (request.method === 'GET' && path.startsWith('/submissions/')) return json(await submission(env, rest('/submissions/'), level))
+	if (request.method === 'POST' && /^\/submissions\/[^/]+\/accept$/.test(path)) {
+		need(actor, 1)
+		await accept(env, actor, path.split('/')[2]!, await body())
+		return json({})
+	}
 	// A reviewer gets a person's totals per project. Those above get everything.
 	if (call === 'GET /person') return json(level === 2 ? await summary(env, url.searchParams) : await person(env, actor, url.searchParams))
 

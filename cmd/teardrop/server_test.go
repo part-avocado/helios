@@ -2,7 +2,11 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"github.com/part-avocado/teardrop/internal/sources"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -220,4 +224,50 @@ func TestHCALogin(t *testing.T) {
 	if res.StatusCode != 400 {
 		t.Errorf("forged state: %d", res.StatusCode)
 	}
+}
+
+// makeSubmission signs project key's part of rep together with the logs of
+// its sessions.
+func makeSubmission(key string, rep timeline.Report, sessions []timeline.Session, since string, now time.Time) (Submission, error) {
+	var mine timeline.Report
+	for _, b := range rep.Blocks {
+		if b.Project.Key == key {
+			mine.Blocks = append(mine.Blocks, b)
+		}
+	}
+	var project timeline.Project
+	for _, p := range rep.Projects {
+		if p.Project.Key == key {
+			mine.Projects, mine.Engaged, project = []timeline.ProjectTotal{p}, p.Engaged, p.Project
+		}
+	}
+	var sub Submission
+	var logs []submittedLog
+	seen := map[string]bool{}
+	for _, s := range sessions {
+		if s.Project.Key != key || seen[s.Path] {
+			continue
+		}
+		seen[s.Path] = true
+		tool := s.Tool
+		var data []byte
+		var err error
+		if strings.Contains(s.Path, ".jsonl#") { // read from the hook journal, not a transcript
+			tool, data = "journal", sources.JournalLines(dataDir(), s.Tool, s.ID)
+		} else if data, err = sources.ReadLog(s.Path); err != nil {
+			return sub, fmt.Errorf("reading %s: %w", s.Path, err)
+		}
+		sum := sha256.Sum256(data)
+		logs = append(logs, submittedLog{Tool: tool, ID: s.ID, SHA256: hex.EncodeToString(sum[:])})
+		sub.Logs = append(sub.Logs, data)
+	}
+	signed, err := signPayload(func(account string) any {
+		return submissionPayload{
+			Kind: "submission", Account: account,
+			GeneratedAt: now.UTC(), ExpiresAt: now.UTC().Add(keyLifetime),
+			Since: since, Teardrop: version, Project: project, Report: mine, Logs: logs,
+		}
+	})
+	sub.Signed = signed
+	return sub, err
 }
