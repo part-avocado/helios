@@ -1068,6 +1068,44 @@ test('project submissions go on to the review server', async () => {
 	assert.deepEqual(submissions, [body])
 })
 
+test('the site keeps every prompt record in R2 and credits only time it saw arrive', async () => {
+	const cookie = await signIn('recorder')
+	const { api_key: key } = await me(cookie)
+	const now = Date.now()
+	const at = (ms: number) => new Date(ms).toISOString()
+	const line = (t: number, event: string, extra: object = {}) => JSON.stringify({ t: at(t), tool: 'cursor', event, session: 's1', project: 'github.com/kid/site', ...extra })
+	const post = (lines: string[]) => call('/api/v1/events', { method: 'POST', key, body: lines.join('\n') })
+	// Live: a prompt, the agent's reply 160 seconds later, and the next prompt two minutes after that.
+	const live = [line(now - 280_000, 'prompt', { human: true, sim: '18446744073709551615', judged: 6, real: 6 }), line(now - 120_000, 'turn_end', { in: 900, out: 40 }), line(now - 1000, 'prompt', { human: true, judged: 4, real: 4 })]
+	let res = await post(live)
+	assert.deepEqual([res.status, await res.json()], [200, { stored: 0, records: 3 }])
+	assert.deepEqual(await (await post(live)).json(), { stored: 0, records: 0 }, 'a record sent twice is kept once')
+	// Backdated: a session from three hours ago, sent now, is kept but not witnessed.
+	const old = now - 3 * 3600_000
+	await post([line(old, 'prompt', { human: true, session: 's2' }), line(old + 120_000, 'turn_end', { session: 's2' }), line(old + 240_000, 'prompt', { human: true, session: 's2' })])
+	assert.equal((await post([line(now + 3600_000, 'prompt', { human: true })])).status, 200)
+	assert.equal((await call('/api/v1/events', { method: 'POST', body: live[0] })).status, 401)
+
+	const worker = server.getWorker<{
+		HUB: { idFromName(name: string): unknown; get(id: unknown): unknown }
+		DB: { prepare(sql: string): { bind(...v: unknown[]): { first<T>(): Promise<T | null>; all(): Promise<{ results: unknown[] }> } } }
+		REPORTS: { get(key: string): Promise<{ body: ReadableStream } | null> }
+	}>()
+	const env = await worker.getEnv()
+	const id = (await env.DB.prepare('SELECT id FROM users WHERE slack_id = ?').bind('URECORDER').first<{ id: number }>())!.id
+	const hub = env.HUB.get(env.HUB.idFromName(String(id))) as unknown as { flush(): Promise<string[]> }
+	const days = await hub.flush()
+	assert.ok(days.length >= 1)
+	const rows = (await env.DB.prepare(`SELECT day, witnessed_seconds, unwitnessed_seconds, prompts, tokens_in FROM prompt_days WHERE user_id = ? AND computer_id = '' ORDER BY day`).bind(id).all()).results as { witnessed_seconds: number; unwitnessed_seconds: number; prompts: number; tokens_in: number }[]
+	const sum = (k: 'witnessed_seconds' | 'unwitnessed_seconds' | 'prompts' | 'tokens_in') => rows.reduce((n, r) => n + r[k], 0)
+	// Live: 160s watching the agent, then 119s writing the next prompt. Backdated: 120s + 120s.
+	assert.deepEqual([sum('witnessed_seconds'), sum('unwitnessed_seconds'), sum('prompts'), sum('tokens_in')], [279, 240, 4, 900])
+	const obj = await env.REPORTS.get(`${id}/prompts/${days[0]!.slice(0, 4)}/${days[0]!.slice(5)}.ndjson.gz`)
+	const text = await new Response(obj!.body.pipeThrough(new DecompressionStream('gzip'))).text()
+	assert.match(text, /"sim":"18446744073709551615"/, 'the fingerprint is never rounded')
+	assert.doesNotMatch(text, /prompt text/)
+})
+
 test('home and docs work for anyone, and show the account menu once signed in', async () => {
 	for (const page of ['/', '/docs']) {
 		const plain = await call(page)

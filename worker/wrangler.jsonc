@@ -68,6 +68,11 @@
 	// listed here, so a first deploy works before they exist. Set them in the
 	// dashboard, under the Worker's Settings, Variables and Secrets. For local
 	// runs they come from .dev.vars.
+	// One UserHub per account takes its prompt records as they happen (src/hub.ts).
+	"durable_objects": {
+		"bindings": [{ "name": "HUB", "class_name": "UserHub" }]
+	},
+	"migrations": [{ "tag": "v1", "new_sqlite_classes": ["UserHub"] }],
 	"observability": {
 		"enabled": true,
 		"traces": { "enabled": true }

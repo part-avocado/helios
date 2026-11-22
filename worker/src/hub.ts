@@ -1,0 +1,182 @@
+// UserHub: one Durable Object per account, which takes every prompt and turn
+// record the person's harnesses send, as they happen. It stamps when each one
+// arrived, drops repeats, and keeps a working copy of the days that are not
+// sealed. Within FLUSH of a record arriving it writes each changed day to R2,
+// where records are kept for good, one compressed file per person per day,
+// and puts that day's totals in D1 (prompt_days). A day is sealed SEAL after
+// it ends; a record for a sealed day reads the day back from R2 first.
+// Records never hold prompt or reply text.
+import { DurableObject } from 'cloudflare:workers'
+import { RULES, type Rec, totals } from './timeline.ts'
+
+const FLUSH = 10 * 60_000
+const SEAL = 48 * 3600_000
+const DAY = 86400_000
+/** How far ahead of this clock a record may say it happened. */
+const CLOCK_SKEW = 5 * 60_000
+/** The longest one record's line may be. */
+const MAX_LINE = 2000
+
+/** A record as a client sends it, one JSON object per line. */
+interface Line {
+	t?: unknown
+	tool?: unknown
+	event?: unknown
+	session?: unknown
+	human?: unknown
+	judged?: unknown
+	real?: unknown
+	low?: unknown
+	in?: unknown
+	out?: unknown
+	added?: unknown
+	removed?: unknown
+	cwd?: unknown
+	git?: unknown
+	project?: unknown
+}
+
+const count = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.min(Math.round(v), 1e12) : 0)
+const text = (v: unknown, max: number) => (typeof v === 'string' ? v.slice(0, max) : '')
+
+/** dayOf returns the calendar day a time falls on, at a UTC offset in minutes. */
+export const dayOf = (t: number, offset: number) => new Date(t + offset * 60_000).toISOString().slice(0, 10)
+
+/** The R2 name of one person's records of one day. */
+export const dayKey = (userID: number, day: string) => `${userID}/prompts/${day.slice(0, 4)}/${day.slice(5)}.ndjson.gz`
+
+export class UserHub extends DurableObject<Env> {
+	constructor(ctx: DurableObjectState, env: Env) {
+		super(ctx, env)
+		this.schema()
+	}
+
+	private schema() {
+		const ctx = this.ctx
+		ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS recs (
+			computer TEXT NOT NULL, tool TEXT NOT NULL, session TEXT NOT NULL, event TEXT NOT NULL, t INTEGER NOT NULL,
+			arrived INTEGER NOT NULL, day TEXT NOT NULL, rec TEXT NOT NULL,
+			PRIMARY KEY (computer, tool, session, event, t))`)
+		ctx.storage.sql.exec('CREATE INDEX IF NOT EXISTS recs_day ON recs (day)')
+		// Days with records not yet in R2, and days read back from R2 for a late record.
+		ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS dirty (day TEXT PRIMARY KEY)')
+		ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS loaded (day TEXT PRIMARY KEY)')
+		ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)')
+	}
+
+	/**
+	 * add keeps the records in lines, sent from computer, whose clock is
+	 * offset minutes ahead of UTC. It returns how many were new. Lines that
+	 * are not a record are left out.
+	 */
+	async add(userID: number, computer: string, offset: number, lines: string[]): Promise<{ stored: number; records: Rec[] }> {
+		const sql = this.ctx.storage.sql
+		sql.exec(`INSERT OR REPLACE INTO meta (k, v) VALUES ('user', ?)`, String(userID))
+		const now = Date.now()
+		const kept: Rec[] = []
+		for (const line of lines) {
+			if (!line.trim() || line.length > MAX_LINE) continue
+			let ev: Line
+			try {
+				ev = JSON.parse(line)
+			} catch {
+				continue
+			}
+			const t = typeof ev?.t === 'string' ? Date.parse(ev.t) : NaN
+			const tool = text(ev.tool, 32), session = text(ev.session, 200), event = text(ev.event, 64)
+			if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(tool) || !session || !event || !(t <= now + CLOCK_SKEW) || !(t > 0)) continue
+			// The fingerprint is a 64-bit number: read from the text, so it is never rounded.
+			const sim = /"sim":\s*"?(\d{1,20})/.exec(line)?.[1]
+			const rec: Rec = {
+				t, arrived: now, tool, session, human: ev.human === true,
+				project: text(ev.project, 500) || text(ev.git, 500) || text(ev.cwd, 500),
+				...(ev.human === true ? { judged: count(ev.judged), real: count(ev.real), low: ev.low === true, ...(sim && sim !== '0' ? { sim } : {}) } : {}),
+				...(count(ev.in) || count(ev.out) ? { in: count(ev.in), out: count(ev.out) } : {}),
+				...(count(ev.added) || count(ev.removed) ? { added: count(ev.added), removed: count(ev.removed) } : {}),
+			}
+			const day = dayOf(t, offset)
+			if (now - (Date.parse(day) + DAY - offset * 60_000) > SEAL) await this.load(userID, day)
+			const done = sql.exec(`INSERT OR IGNORE INTO recs (computer, tool, session, event, t, arrived, day, rec) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+				computer, tool, session, event, t, now, day, JSON.stringify({ ...rec, computer, event, offset }))
+			if (done.rowsWritten) {
+				sql.exec('INSERT OR IGNORE INTO dirty (day) VALUES (?)', day)
+				kept.push(rec)
+			}
+		}
+		if (kept.length && (await this.ctx.storage.getAlarm()) == null) await this.ctx.storage.setAlarm(now + FLUSH)
+		return { stored: kept.length, records: kept }
+	}
+
+	/** load reads a sealed day's records back from R2 into the working copy, once. */
+	private async load(userID: number, day: string) {
+		const sql = this.ctx.storage.sql
+		if (sql.exec('SELECT 1 FROM loaded WHERE day = ?', day).toArray().length) return
+		sql.exec('INSERT INTO loaded (day) VALUES (?)', day)
+		const obj = await this.env.REPORTS.get(dayKey(userID, day))
+		if (!obj) return
+		const body = await new Response(obj.body.pipeThrough(new DecompressionStream('gzip'))).text()
+		for (const line of body.split('\n')) {
+			if (!line) continue
+			const r = JSON.parse(line) as Rec & { computer: string; event: string }
+			sql.exec(`INSERT OR IGNORE INTO recs (computer, tool, session, event, t, arrived, day, rec) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, r.computer, r.tool, r.session, r.event, r.t, r.arrived, day, line)
+		}
+	}
+
+	async alarm() {
+		await this.flush()
+	}
+
+	/**
+	 * flush writes every changed day to R2 and its totals to D1, then forgets
+	 * the working copy of sealed days. It returns the days it wrote.
+	 */
+	async flush(): Promise<string[]> {
+		const sql = this.ctx.storage.sql
+		const user = Number(sql.exec(`SELECT v FROM meta WHERE k = 'user'`).toArray()[0]?.v)
+		const days = sql.exec('SELECT day FROM dirty ORDER BY day').toArray().map((r) => String(r.day))
+		if (!user) return []
+		for (const day of days) {
+			const lines = sql.exec('SELECT rec FROM recs WHERE day = ? ORDER BY t, computer, tool, session, event', day).toArray().map((r) => String(r.rec))
+			const body = lines.join('\n') + '\n'
+			const gzip = await new Response(new Blob([body]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer()
+			await this.env.REPORTS.put(dayKey(user, day), gzip)
+			const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(body)))].map((b) => b.toString(16).padStart(2, '0')).join('')
+			const recs = lines.map((l) => JSON.parse(l) as Rec & { computer: string; offset: number })
+			const offset = recs[0]?.offset ?? 0
+			const from = Date.parse(day) - offset * 60_000
+			const rows: [string, Rec[]][] = [['', recs]]
+			for (const c of new Set(recs.map((r) => r.computer))) rows.push([c, recs.filter((r) => r.computer === c)])
+			const now = Date.now()
+			await this.env.DB.batch(
+				rows.map(([computer, list]) => {
+					const s = totals(list, from, from + DAY)
+					const projects = Object.fromEntries(Object.entries(s.projects).map(([k, p]) => [k, [Math.round(p.witnessed / 1000), Math.round(p.unwitnessed / 1000), p.prompts]]))
+					return this.env.DB.prepare(
+						`INSERT INTO prompt_days (user_id, computer_id, day, witnessed_seconds, unwitnessed_seconds, prompts, tokens_in, tokens_out, lines_added, lines_removed, projects, sha256, rules, updated_at)
+						 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+						 ON CONFLICT (user_id, computer_id, day) DO UPDATE SET witnessed_seconds = ?4, unwitnessed_seconds = ?5, prompts = ?6, tokens_in = ?7,
+							tokens_out = ?8, lines_added = ?9, lines_removed = ?10, projects = ?11, sha256 = ?12, rules = ?13, updated_at = ?14`,
+					).bind(user, computer, day, Math.round(s.witnessed / 1000), Math.round(s.unwitnessed / 1000), s.prompts, s.tokens_in, s.tokens_out, s.lines_added, s.lines_removed, JSON.stringify(projects), computer ? '' : hash, RULES, now)
+				}),
+			)
+			sql.exec('DELETE FROM dirty WHERE day = ?', day)
+		}
+		// Sealed days live in R2 alone from here on.
+		const sealed = dayOf(Date.now() - SEAL - DAY, 0)
+		sql.exec('DELETE FROM recs WHERE day < ? AND day NOT IN (SELECT day FROM dirty)', sealed)
+		sql.exec('DELETE FROM loaded WHERE day NOT IN (SELECT DISTINCT day FROM recs)')
+		return days
+	}
+
+	/** records returns the working copy's records from one time on, for live views and submissions of recent days. */
+	async records(from: number): Promise<(Rec & { computer: string })[]> {
+		return this.ctx.storage.sql.exec('SELECT rec FROM recs WHERE t >= ? ORDER BY t', from).toArray().map((r) => JSON.parse(String(r.rec)))
+	}
+
+	/** forget empties the hub, when its person deletes their account. */
+	async forget() {
+		await this.ctx.storage.deleteAlarm()
+		await this.ctx.storage.deleteAll()
+		this.schema()
+	}
+}

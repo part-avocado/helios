@@ -6,6 +6,8 @@
 import { clearSession, finishSignIn, keyUser, reviewKeyUser, rotateKey, sameOrigin, sessionUser, signOut, startSignIn, type User, userByID } from './auth.ts'
 import { cloudComputer, holdEvents, MAX_EVENTS_BYTES, readEvents } from './events.ts'
 import { json, jsonText, readText, redirect, Refusal } from './http.ts'
+import { relayRecords } from './records.ts'
+export { UserHub } from './hub.ts'
 import { ownProfile, updateProfile, visibleOwner } from './profile.ts'
 import { createUserKey, publicAPI, revokeUserKey, userKeys } from './public.ts'
 import { computerReportJSON, computers, deleteUser, keptReportJSON, MAX_REPORT_BYTES, removeComputer, reportsJSON, storeReport } from './reports.ts'
@@ -81,7 +83,9 @@ async function route(request: Request, env: Env): Promise<Response> {
 	if (call === 'POST /api/v1/events') {
 		const user = await needKey(request, env, url)
 		const body = await readText(request, MAX_EVENTS_BYTES)
-		return json({ stored: await holdEvents(env, user, body) })
+		// Amp cloud events are also kept the old way, for cloud plugins that still count them themselves.
+		const [records, stored] = await Promise.all([relayRecords(env, user, request, body), holdEvents(env, user, body)])
+		return json({ stored, records })
 	}
 	if (call === 'GET /api/v1/cloud') return json(await readEvents(env, await needKey(request, env, url), url.searchParams))
 	// teardrop v0.5.2 on a person's computer asks for cloud events to count

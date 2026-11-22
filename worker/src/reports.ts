@@ -12,11 +12,6 @@ export const MAX_REPORT_BYTES = 16 << 20
 const CLOCK_SKEW = 5 * 60_000
 /** How long a report's key stays valid. */
 const KEY_LIFETIME = 7 * 86400_000
-/**
- * D1 stores at most 2 MB in one value. A character is at most 3 bytes in
- * UTF-8, so pieces of this many characters always fit.
- */
-const CHUNK_CHARS = 600_000
 
 interface Payload {
 	kind?: string
@@ -113,9 +108,10 @@ async function store(env: Env, user: User, body: string, entry: Entry): Promise<
 
 	const taken = new FlaggedRefusal(409, 'This computer already syncs to another account. Remove it there, under Settings, then Computers, and sync again.')
 	const stale = new Refusal(409, 'The server already has a newer report from this computer.')
-	const existing = await env.DB.prepare('SELECT user_id, public_key, generated_at, engaged_seconds, teardrop_version, since, days, projects FROM computers WHERE id = ?')
+	const existing = await env.DB.prepare('SELECT user_id, public_key, generated_at, engaged_seconds, teardrop_version, since, days, projects, report_key FROM computers WHERE id = ?')
 		.bind(id)
-		.first<{ user_id: number; public_key: string; generated_at: number; engaged_seconds: number; teardrop_version: string; since: string; days: string; projects: string }>()
+		.first<{ user_id: number; public_key: string; generated_at: number; engaged_seconds: number; teardrop_version: string; since: string; days: string; projects: string; report_key: string | null }>()
+	const existingKey = existing?.report_key ?? null
 	if (existing && (existing.user_id !== user.id || existing.public_key !== p.account)) throw taken
 	if (existing && existing.generated_at >= generated) throw stale
 
@@ -141,35 +137,31 @@ async function store(env: Env, user: User, body: string, entry: Entry): Promise<
 	entry.detail = JSON.stringify(detail)
 	entry.flagged = Number(findings(entry).length > 0)
 
-	const chunks: string[] = []
-	for (let at = 0; at < signed.payload.length; ) {
-		let end = Math.min(signed.payload.length, at + CHUNK_CHARS)
-		// Don't cut a character that takes two UTF-16 units in half.
-		if (end < signed.payload.length && (signed.payload.charCodeAt(end - 1) & 0xfc00) === 0xd800) end--
-		chunks.push(signed.payload.slice(at, end))
-		at = end
-	}
-	// One transaction. The pieces are only replaced if the first statement
-	// took effect, which it doesn't when another upload got in first.
-	const applied = 'EXISTS (SELECT 1 FROM computers WHERE id = ?1 AND signature = ?2)'
+	// The latest report lives in R2 alone, under a name of its own, so an
+	// upload that loses the race below leaves the winner's file in place.
+	const latestKey = `${user.id}/latest/${id}-${signed.key.slice(0, 16)}.json.gz`
+	await env.REPORTS.put(latestKey, await new Response(new Blob([signed.payload]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer())
 	const results = await env.DB.batch([
 		env.DB.prepare(
-			`INSERT INTO computers (id, user_id, public_key, signature, generated_at, synced_at, teardrop_version, engaged_seconds, since, days, projects, blocks)
-			 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+			`INSERT INTO computers (id, user_id, public_key, signature, generated_at, synced_at, teardrop_version, engaged_seconds, since, days, projects, blocks, report_key)
+			 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
 			 ON CONFLICT (id) DO UPDATE SET signature = excluded.signature, generated_at = excluded.generated_at,
 				synced_at = excluded.synced_at, teardrop_version = excluded.teardrop_version, engaged_seconds = excluded.engaged_seconds,
-				since = excluded.since, days = excluded.days, projects = excluded.projects, blocks = excluded.blocks
+				since = excluded.since, days = excluded.days, projects = excluded.projects, blocks = excluded.blocks, report_key = excluded.report_key
 			 WHERE computers.user_id = excluded.user_id AND computers.public_key = excluded.public_key
 				AND computers.generated_at < excluded.generated_at`,
-		).bind(id, user.id, p.account, signed.key, generated, now, version, engaged, since, JSON.stringify(days), JSON.stringify(projects), JSON.stringify(blockTable(p.report))),
-		env.DB.prepare(`DELETE FROM report_chunks WHERE computer_id = ?1 AND ${applied}`).bind(id, signed.key),
-		...chunks.map((data, seq) =>
-			env.DB.prepare(`INSERT INTO report_chunks (computer_id, seq, data) SELECT ?1, ?3, ?4 WHERE ${applied}`).bind(id, signed.key, seq, data),
-		),
+		).bind(id, user.id, p.account, signed.key, generated, now, version, engaged, since, JSON.stringify(days), JSON.stringify(projects), JSON.stringify(blockTable(p.report)), latestKey),
+		// Pieces from before reports moved to R2 are no longer read.
+		env.DB.prepare(`DELETE FROM report_chunks WHERE computer_id = ?1 AND EXISTS (SELECT 1 FROM computers WHERE id = ?1 AND signature = ?2)`).bind(id, signed.key),
 		...logEntry(env, user.id, entry, 'EXISTS (SELECT 1 FROM computers WHERE id = ? AND signature = ?)', id, signed.key),
 	])
 	await forgetDropped(env, results)
-	if (!results[0]?.meta.changes) throw stale
+	if (!results[0]?.meta.changes) {
+		await env.REPORTS.delete(latestKey)
+		throw stale
+	}
+	// The report this one replaced.
+	if (existingKey && existingKey !== latestKey) await env.REPORTS.delete(existingKey).catch(() => {})
 	return id
 }
 
@@ -224,20 +216,28 @@ export async function keptReportJSON(env: Env, entryID: string): Promise<string 
  * payloads are spliced in as they are, without parsing them.
  */
 export async function reportsJSON(env: Env, userID: number): Promise<string> {
-	const { results } = await env.DB.prepare(
-		`SELECT c.id, c.synced_at, r.data FROM computers c JOIN report_chunks r ON r.computer_id = c.id
-		 WHERE c.user_id = ? ORDER BY c.id, r.seq`,
-	)
-		.bind(userID)
-		.all<{ id: string; synced_at: number; data: string }>()
-	const computers = new Map<string, { synced_at: number; data: string[] }>()
-	for (const row of results) {
-		const c = computers.get(row.id) ?? { synced_at: row.synced_at, data: [] }
-		c.data.push(row.data)
-		computers.set(row.id, c)
+	const { results } = await env.DB.prepare('SELECT id, synced_at FROM computers WHERE user_id = ? ORDER BY id').bind(userID).all<{ id: string; synced_at: number }>()
+	const items: string[] = []
+	for (const c of results) {
+		const payload = await latestPayload(env, c.id)
+		if (payload) items.push(`{"id":${JSON.stringify(c.id)},"synced_at":${c.synced_at},"report":${payload}}`)
 	}
-	const items = [...computers].map(([id, c]) => `{"id":${JSON.stringify(id)},"synced_at":${c.synced_at},"report":${c.data.join('')}}`)
 	return `[${items.join(',')}]`
+}
+
+/**
+ * latestPayload returns the signed payload of a computer's latest report, as
+ * text: from R2, or from report_chunks for a computer that last synced before
+ * reports moved there. null for none.
+ */
+async function latestPayload(env: Env, computerID: string): Promise<string | null> {
+	const row = await env.DB.prepare('SELECT report_key FROM computers WHERE id = ?').bind(computerID).first<{ report_key: string | null }>()
+	if (row?.report_key) {
+		const obj = await env.REPORTS.get(row.report_key)
+		return obj ? new Response(obj.body.pipeThrough(new DecompressionStream('gzip'))).text() : null
+	}
+	const { results } = await env.DB.prepare('SELECT data FROM report_chunks WHERE computer_id = ? ORDER BY seq').bind(computerID).all<{ data: string }>()
+	return results.length ? results.map((r) => r.data).join('') : null
 }
 
 /**
@@ -246,16 +246,11 @@ export async function reportsJSON(env: Env, userID: number): Promise<string> {
  * the server doesn't know. It is for admins.
  */
 export async function computerReportJSON(env: Env, computerID: string): Promise<string | null> {
-	const { results } = await env.DB.prepare(
-		`SELECT c.user_id, c.synced_at, c.signature, r.data FROM computers c JOIN report_chunks r ON r.computer_id = c.id
-		 WHERE c.id = ? ORDER BY r.seq`,
-	)
-		.bind(computerID)
-		.all<{ user_id: number; synced_at: number; signature: string; data: string }>()
-	const first = results[0]
-	if (!first) return null
+	const first = await env.DB.prepare('SELECT user_id, synced_at, signature FROM computers WHERE id = ?').bind(computerID).first<{ user_id: number; synced_at: number; signature: string }>()
+	const payload = first && (await latestPayload(env, computerID))
+	if (!first || !payload) return null
 	const about = JSON.stringify({ id: computerID, user_id: first.user_id, synced_at: first.synced_at, signature: first.signature })
-	return `${about.slice(0, -1)},"report":${results.map((r) => r.data).join('')}}`
+	return `${about.slice(0, -1)},"report":${payload}}`
 }
 
 export interface Computer {
@@ -366,8 +361,7 @@ export async function projectBlocks(env: Env, userID: number): Promise<{ key: st
 
 /** fillBlocks reads the blocks out of one computer's stored report and keeps them. */
 async function fillBlocks(env: Env, computerID: string): Promise<StoredBlocks> {
-	const { results } = await env.DB.prepare('SELECT data FROM report_chunks WHERE computer_id = ? ORDER BY seq').bind(computerID).all<{ data: string }>()
-	const table = blockTable(parseStored<{ report?: ReportBody }>(results.map((r) => r.data).join(''))?.report)
+	const table = blockTable(parseStored<{ report?: ReportBody }>((await latestPayload(env, computerID)) ?? '')?.report)
 	// Only if no newer report filled it in meanwhile.
 	await env.DB.prepare(`UPDATE computers SET blocks = ? WHERE id = ? AND blocks = ''`).bind(JSON.stringify(table), computerID).run()
 	return table
@@ -387,6 +381,8 @@ export async function computers(env: Env, userID: number): Promise<Computer[]> {
  * and notes that in their log. The reports kept for reviewers stay.
  */
 export async function removeComputer(env: Env, userID: number, id: string): Promise<boolean> {
+	const latest = await env.DB.prepare('SELECT report_key FROM computers WHERE id = ? AND user_id = ?').bind(id, userID).first<{ report_key: string | null }>()
+	if (latest?.report_key) await env.REPORTS.delete(latest.report_key)
 	// Deleting the computer deletes its report pieces with it (ON DELETE CASCADE).
 	const results = await env.DB.batch([
 		...logRemoval(env, userID, id),
@@ -418,7 +414,10 @@ export async function deleteUser(env: Env, userID: number): Promise<void> {
 		env.DB.prepare('DELETE FROM project_settings WHERE user_id = ?').bind(userID),
 		env.DB.prepare(`UPDATE users SET name = '', handle = NULL, profile_public = 1, api_key = ?, deleted_at = ? WHERE id = ?`).bind(newKey(), Date.now(), userID),
 	])
-	// Everything kept for this person, including what no log row names any more.
+	// Their working copy of recent records, and their day totals.
+	await env.HUB.get(env.HUB.idFromName(String(userID))).forget()
+	await env.DB.prepare('DELETE FROM prompt_days WHERE user_id = ?').bind(userID).run()
+	// Everything kept for this person, including their records and what no log row names any more.
 	let cursor: string | undefined
 	do {
 		const page = await env.REPORTS.list({ prefix: `${userID}/`, cursor })
