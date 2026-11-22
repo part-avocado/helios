@@ -3,25 +3,27 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>teardrop: time tracking for coding with AI</title>
-	<meta name="description" content="teardrop turns your Claude Code, Codex, and Amp sessions into honest hours. Free and open source.">
+	<title>teardrop: see how much time you spend coding with AI</title>
+	<meta name="description" content="teardrop adds up the time you actually spend working with Claude Code, Codex, and Amp. Free and open source.">
 	<link rel="icon" href="favicon.svg">
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Geist+Mono&display=swap">
+	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spline+Sans:wght@400;500;600;700&family=Spline+Sans+Mono:wght@400;500&display=swap">
+	<link rel="stylesheet" href="base.css">
 	<link rel="stylesheet" href="home.css">
-	<link rel="stylesheet" href="nav.css">
+	<script src="theme.js"></script>
 </head>
 <body>
 <nav class="nav" aria-label="Main">
 	<a class="brand" href="index.html"><img src="favicon.svg" alt="">teardrop</a>
 	<div class="links">
-		<a href="#product" class="opt">Product</a>
-		<a href="#how" class="opt">How it works</a>
+		<a href="#what-counts" class="opt">What counts</a>
+		<a href="#questions" class="opt">Questions</a>
 		<a href="docs.html">Docs</a>
 		<a href="https://github.com/part-avocado/teardrop" class="opt">GitHub</a>
 	</div>
-	<a class="pill dark small local-only" href="dashboard.html">Dashboard</a>
+	<button class="theme" type="button" data-theme-toggle aria-label="Switch between dark and light" title="Switch between dark and light"><svg class="sun" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1.5V3M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/></svg><svg class="moon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M13.5 9.5a5.5 5.5 0 0 1-7-7 5.5 5.5 0 1 0 7 7z"/></svg></button>
+	<a class="btn primary small local-only" href="dashboard.html">Dashboard</a>
 	<details class="account hosted-only">
 		<summary aria-label="Account menu"><span class="avatar" id="account-initial" aria-hidden="true"></span><span class="who" id="account-name"></span><svg class="chev" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
 		<div class="menu">
@@ -37,44 +39,24 @@
 
 <main>
 <header class="hero"><div class="wrap">
-	<a class="badge" href="docs.html#report"><b>New</b>Watch your hours update live with teardrop -l <svg class="arrow" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
-	<h1 class="display">Track the time you <span class="soft">actually spend</span> building with AI.</h1>
-	<p class="lead">teardrop turns your Claude Code, Codex, and Amp sessions into honest hours. No timers to start, nothing to remember.</p>
-	<div class="actions">
-		<a class="pill dark" href="#install">Install teardrop</a>
-		<a class="textlink" href="dashboard.html">See the dashboard <svg class="arrow" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
-	</div>
-	<div class="meta"><span>Free and open source</span><span aria-hidden="true">-</span><span>macOS, Linux, and Windows</span><span aria-hidden="true">-</span><span>No admin rights needed</span></div>
-
-	<div class="install" id="install" data-tabs>
-		<div class="tabs" role="tablist">
-			<button data-tab="mac" role="tab">macOS</button>
-			<button data-tab="linux" role="tab">Linux</button>
-			<button data-tab="windows" role="tab">Windows</button>
+	<div>
+		<h1>See how much time you actually spend coding with AI.</h1>
+		<p class="lead">teardrop reads the logs Claude Code and Codex already write, and a small plugin does the same for Amp. It adds up the time you were really there. No timers to start, nothing to keep running.</p>
+		<div class="install" id="install" data-tabs>
+			<div class="tabs" role="tablist">
+				<button data-tab="mac" role="tab">macOS</button>
+				<button data-tab="linux" role="tab">Linux</button>
+				<button data-tab="windows" role="tab">Windows</button>
+			</div>
+			<div class="tab-panel" data-tab="mac"><div class="cmd"><code>curl -fsSL https://raw.githubusercontent.com/part-avocado/teardrop/main/install.sh | sh</code><button class="copy" type="button">Copy</button></div></div>
+			<div class="tab-panel" data-tab="linux"><div class="cmd"><code>curl -fsSL https://raw.githubusercontent.com/part-avocado/teardrop/main/install.sh | sh</code><button class="copy" type="button">Copy</button></div></div>
+			<div class="tab-panel" data-tab="windows"><div class="cmd ps"><code>irm https://raw.githubusercontent.com/part-avocado/teardrop/main/install.ps1 | iex</code><button class="copy" type="button">Copy</button></div></div>
+			<p class="note">Checks the download's checksum, adds teardrop to your PATH, and runs <code>teardrop setup</code>. No admin rights needed.</p>
 		</div>
-		<div class="tab-panel" data-tab="mac"><div class="cmd"><code>curl -fsSL https://raw.githubusercontent.com/part-avocado/teardrop/main/install.sh | sh</code><button class="copy">Copy</button></div></div>
-		<div class="tab-panel" data-tab="linux"><div class="cmd"><code>curl -fsSL https://raw.githubusercontent.com/part-avocado/teardrop/main/install.sh | sh</code><button class="copy">Copy</button></div></div>
-		<div class="tab-panel" data-tab="windows"><div class="cmd ps"><code>irm https://raw.githubusercontent.com/part-avocado/teardrop/main/install.ps1 | iex</code><button class="copy">Copy</button></div></div>
-		<p class="note">Checks the download's checksum, adds teardrop to your PATH, and runs <code>teardrop setup</code>.</p>
+		<p class="under">Free and open source. Made for <a href="https://hackclub.com">Hack Club</a>. New here? <a href="docs.html#quick-start">Read the quick start</a>.</p>
 	</div>
-</div></header>
-
-<section class="showcase scene fade-top" aria-label="Example report">
-	<svg class="hills" viewBox="0 0 1440 400" preserveAspectRatio="none" aria-hidden="true">
-		<defs>
-			<linearGradient id="h1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9fc58a"/><stop offset="1" stop-color="#5f8f52"/></linearGradient>
-			<linearGradient id="h2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6f9e5c"/><stop offset="1" stop-color="#3f6b3a"/></linearGradient>
-			<linearGradient id="h3" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b9cfe0"/><stop offset="1" stop-color="#9bb6c9"/></linearGradient>
-		</defs>
-		<path d="M0 180 C 200 90 360 150 520 110 S 860 40 1040 120 S 1320 90 1440 140 V400 H0Z" fill="url(#h3)" opacity=".8"/>
-		<path d="M0 250 C 240 170 420 240 640 200 S 1000 150 1200 220 S 1380 210 1440 230 V400 H0Z" fill="url(#h1)"/>
-		<path d="M0 320 C 180 270 400 330 620 300 S 980 260 1180 310 S 1380 300 1440 320 V400 H0Z" fill="url(#h2)"/>
-	</svg>
-	<div class="wrap">
-		<div class="window">
-			<div class="inner">
-				<div class="bar"><i></i><i></i><i></i><span>~ teardrop</span></div>
-<pre class="term"><span class="d">$</span> teardrop
+	<div>
+<pre class="term" aria-label="Example teardrop report"><span class="d">$</span> teardrop
 WHEN           PROJECT  ENGAGED  SPAN    PROMPTS  TOOLS
 <span class="h">Fri Nov 20</span>
   09:00-09:41  cs2-web  38m      41m     9        claude-code
@@ -86,108 +68,61 @@ cs2-web  1h49m    3h02m         30
 notes    14m      1h40m         3
 
 <span class="g">Total engaged: 2h03m</span> across 2 projects and 5 sessions</pre>
-			</div>
-		</div>
+		<p class="caption">Run <code>teardrop</code> and this is what you get. An example day, not real data.</p>
 	</div>
-	<div class="ground"></div>
-</section>
+</div></header>
 
-<section class="tools" id="tools">
-	<p>Works with the AI tools you already use</p>
-	<div class="marquee" aria-label="Supported tools: Claude Code, Codex CLI and IDE, Amp. Planned: VS Code and Copilot, Cursor, web chats.">
-		<div class="track" aria-hidden="true">
-			<span>Claude Code</span><span>Codex CLI &amp; IDE</span><span>Amp</span><span class="soon">VS Code &amp; Copilot</span><span class="soon">Cursor</span><span class="soon">Web chats</span>
-			<span>Claude Code</span><span>Codex CLI &amp; IDE</span><span>Amp</span><span class="soon">VS Code &amp; Copilot</span><span class="soon">Cursor</span><span class="soon">Web chats</span>
-		</div>
-	</div>
-</section>
+<section class="works"><div class="wrap">
+	Works today with <b>Claude Code</b>, <b>Codex</b> (the CLI and the IDE extension), and <b>Amp</b>. VS Code with Copilot and Cursor are planned, not built yet.
+</div></section>
 
-<section class="product" id="product"><div class="wrap">
-	<p class="eyebrow">Product</p>
-	<h2 class="display">Hours that mean something, <span class="soft">not hours a window was open.</span></h2>
-	<p class="lead">teardrop counts the time you were actually involved with your agent, so the number you submit is one you can stand behind.</p>
-	<div class="features">
-		<article class="feature">
-			<div class="num">01 / 04</div>
-			<h3>Nothing to start or stop</h3>
-			<p>teardrop works quietly in the background. Code the way you always do; your hours are there when you look.</p>
-			<div class="art chips"><span>Claude Code</span><span>Codex</span><span>Amp</span></div>
-		</article>
-		<article class="feature">
-			<div class="num">02 / 04</div>
-			<h3>A dashboard that's always live</h3>
-			<p>Run <code>teardrop dashboard</code> for a heatmap, daily totals, streaks, and your top projects, refreshed as you work.</p>
-			<div class="art heat" id="heat" aria-hidden="true"></div>
-		</article>
-		<article class="feature">
-			<div class="num">03 / 04</div>
-			<h3>Ready for review</h3>
-			<p>Submit a project's hours to your Hack Club server in one command. Reviewers see exactly what they need, and your numbers can't be edited along the way.</p>
-			<div class="art receipt" aria-hidden="true">
-				<div><span>cs2-web - claimed</span><span>12h40m</span></div>
-				<div><span>verified on the server</span><span>12h40m</span></div>
-				<div class="total"><span>credited</span><span>12h40m</span></div>
-			</div>
-		</article>
-		<article class="feature">
-			<div class="num">04 / 04</div>
-			<h3>Testing goes in Lapse</h3>
-			<p>Time spent testing your build outside the chat isn't counted here. Record it with <a href="https://lapse.hackclub.com" style="text-decoration:underline">Lapse</a>, and nothing gets counted twice.</p>
-			<div class="art lapse"><b>Lapse</b><span>Clicking through your app or writing up feedback? Start a timelapse.</span></div>
-		</article>
+<section class="band" id="what-counts"><div class="wrap">
+	<h2>Only the time you were actually there counts.</h2>
+	<p class="lead">Writing prompts, reading replies, steering the agent: that's engaged time. A terminal left open overnight isn't.</p>
+	<div class="cards">
+		<div class="card"><h3>An agent on its own earns nothing</h3><p>Kick off a long task and go get lunch. The clock stops when you do.</p></div>
+		<div class="card"><h3>Two sessions on one project count once</h3><p>Running agents side by side doesn't double your hours.</p></div>
+		<div class="card"><h3>Junk prompts get skipped</h3><p>Prompts that don't reflect real work aren't counted. Your report lists them as SKIPPED, so you can see what was left out.</p></div>
+		<div class="card"><h3>Your prompt text is never stored</h3><p>teardrop keeps times and counts. Your chat logs leave your computer only if you run <code>teardrop submit</code> and confirm.</p></div>
 	</div>
 </div></section>
 
-<section class="how scene" id="how">
-	<svg class="hills" viewBox="0 0 1440 400" preserveAspectRatio="none" aria-hidden="true">
-		<path d="M0 260 C 260 200 480 280 720 240 S 1160 190 1440 250 V400 H0Z" fill="#86ad6c" opacity=".55"/>
-		<path d="M0 330 C 300 290 520 350 760 320 S 1200 290 1440 330 V400 H0Z" fill="#5d8a4c" opacity=".6"/>
-	</svg>
-	<div class="wrap">
-		<p class="eyebrow">How it works</p>
-		<h2 class="display">Set up in <span class="soft">a minute.</span></h2>
-		<p class="lead">Three steps. Nothing to keep running, and nothing changes in your AI tools without asking.</p>
-		<div class="steps">
-			<div class="step"><span class="n">1</span><h3>Install</h3><p>Run the one-line installer. It picks the right build for your computer, even an old 32-bit Windows laptop.</p><div class="foot"><b>1</b>command</div></div>
-			<div class="step"><span class="n">2</span><h3>Run setup</h3><p><code>teardrop setup</code> finds Claude Code, Codex, and Amp and keeps your history from being deleted.</p><div class="foot"><b>3</b>tools found automatically</div></div>
-			<div class="step"><span class="n">3</span><h3>Code as usual</h3><p>Run <code>teardrop</code> for a timeline, or <code>teardrop dashboard</code> for live charts.</p><div class="foot"><b>0</b>timers to remember</div></div>
-		</div>
-	</div>
-</section>
+<section class="start" id="start"><div class="wrap">
+	<h2>Getting started</h2>
+	<ol class="how">
+		<li><h3>Install</h3><p>Paste <a href="#install">the command above</a> into a terminal. It picks the right build for your computer.</p></li>
+		<li><h3>Answer setup's questions</h3><p>The installer runs <code>teardrop setup</code>. It lists the tools it found and changes nothing without asking.</p></li>
+		<li><h3>Code as usual</h3><p>Run <code>teardrop</code> for your timeline, <code>teardrop -l</code> to keep it on screen, or <code>teardrop dashboard</code> for charts in your browser.</p></li>
+	</ol>
+</div></section>
 
-<section class="cta"><div class="wrap">
-	<h2 class="display">Start counting the hours <span class="soft">that count.</span></h2>
-	<div class="actions">
-		<a class="pill dark" href="#install">Install teardrop</a>
-		<a class="textlink" href="docs.html#quick-start">Read the quick start <svg class="arrow" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+<section class="faq" id="questions"><div class="wrap">
+	<h2>Questions people ask</h2>
+	<div class="grid">
+		<div><h3>Is it really free?</h3><p>Yep. teardrop is open source under AGPLv3, and there is no paid plan.</p></div>
+		<div><h3>Do I need an account?</h3><p>Nope. <code>teardrop</code> and <code>teardrop dashboard</code> run from your own computer. Sign in only if you want every computer's hours in one place.</p></div>
+		<div><h3>Does it read my prompts?</h3><p>It scores each prompt in memory to tell real work from noise, then keeps only the counts. The text is never stored, printed, or synced. <a href="docs.html#privacy">More on privacy</a>.</p></div>
+		<div><h3>What about time I spend testing?</h3><p>Clicking through your app or writing up feedback isn't counted here. Record that with <a href="https://lapse.hackclub.com">Lapse</a>. Reviewers take off any overlap, so nothing counts twice.</p></div>
+		<div><h3>Can someone just edit their numbers?</h3><p>Every sync and export is signed, and the website refuses a report that was edited. A signature alone can't prove the hours are real, so for hours that count, <code>teardrop submit</code> lets the server check them against the chat logs behind them.</p></div>
+		<div><h3>I use Cursor or Copilot. Does it work?</h3><p>Not yet. A VS Code extension is planned. <a href="https://github.com/part-avocado/teardrop">Follow along on GitHub</a>.</p></div>
 	</div>
-	<div class="checks"><span><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Free forever</span><span><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Open source, AGPLv3</span><span><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Made for Hack Club</span></div>
+</div></section>
+
+<section class="close"><div class="wrap">
+	<h2>Go see where your hours went.</h2>
+	<p>One command to install. Nothing to remember after that.</p>
+	<div class="actions">
+		<a class="btn" href="#install">Install teardrop</a>
+		<a class="btn plain" href="docs.html#quick-start">Read the quick start</a>
+	</div>
 </div></section>
 </main>
 
 <footer><div class="wrap">
-	<div class="cols">
-		<div><p class="tag"><img src="favicon.svg" alt="">teardrop</p><p style="margin:0;color:var(--ink-2);font-size:14px">Honest hours for coding with AI.</p></div>
-		<div><h4>Product</h4><ul><li><a href="#product">Features</a></li><li><a href="#how">How it works</a></li><li><a href="dashboard.html">Dashboard</a></li></ul></div>
-		<div><h4>Docs</h4><ul><li><a href="docs.html#quick-start">Quick start</a></li><li><a href="docs.html#commands">Commands</a></li><li><a href="docs.html#privacy">Privacy</a></li></ul></div>
-		<div><h4>Project</h4><ul><li><a href="https://github.com/part-avocado/teardrop">GitHub</a></li><li><a href="https://github.com/part-avocado/teardrop/releases">Releases</a></li><li><a href="https://github.com/part-avocado/teardrop/issues">Report a problem</a></li></ul></div>
-	</div>
-	<div class="wordmark" aria-hidden="true">teardrop</div>
-	<div class="bottom"><span>teardrop - AGPLv3 - made for <a href="https://hackclub.com">Hack Club</a></span><span><a href="docs.html#privacy">Privacy</a> - <a href="https://github.com/part-avocado/teardrop/blob/main/LICENSE">License</a></span></div>
+	<span>teardrop - AGPLv3 - made by <a href="https://github.com/part-avocado">part-avocado</a> for <a href="https://hackclub.com">Hack Club</a></span>
+	<span><a href="docs.html">Docs</a> - <a href="docs.html#privacy">Privacy</a> - <a href="https://github.com/part-avocado/teardrop">GitHub</a> - <a href="https://github.com/part-avocado/teardrop/issues">Report a problem</a></span>
 </div></footer>
 
 <script src="site.js"></script>
-<script>
-// Decorative activity heatmap for the dashboard card.
-const heat = document.getElementById('heat')
-let seed = 11
-const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
-for (let i = 0; i < 26 * 5; i++) {
-	const r = rnd() * (0.4 + (i % 26) / 40)
-	const c = document.createElement('i')
-	c.className = r > 0.95 ? 'd' : r > 0.75 ? 'c' : r > 0.5 ? 'b' : r > 0.3 ? 'a' : ''
-	heat.append(c)
-}
-</script>
 </body>
 </html>

@@ -185,7 +185,6 @@ function renderHeatmap(now, scoped) {
 	}
 	const end = startOfDay(now)
 	const start = new Date(end.getFullYear(), end.getMonth(), end.getDate() - 364 - end.getDay())
-	const colors = ['#efede7', '#c9e3fb', '#8cc0f0', '#4c97e4', '#1f64c4']
 	const level = (s) => (s <= 0 ? 0 : s < 1800 ? 1 : s < 3600 ? 2 : s < 3 * 3600 ? 3 : 4)
 	const cell = 13, gap = 3
 	let rects = '', months = '', lastMonth = -1, col = 0
@@ -194,13 +193,15 @@ function renderHeatmap(now, scoped) {
 		if (row === 0 && d > start) col++
 		if (row === 0 && d.getMonth() !== lastMonth) {
 			lastMonth = d.getMonth()
-			months += `<text x="${30 + col * (cell + gap)}" y="10" fill="#8b8b94" font-size="11">${d.toLocaleString(undefined, { month: 'short' })}</text>`
+			months += `<text x="${30 + col * (cell + gap)}" y="10">${d.toLocaleString(undefined, { month: 'short' })}</text>`
 		}
 		const s = perDay.get(dayKey(d)) || 0
-		const click = s > 0 ? ` class="has${picked(d, 1) ? ' sel' : ''}" data-ts="${d.getTime()}" data-span="1"` : ''
-		rects += `<rect x="${30 + col * (cell + gap)}" y="${18 + row * (cell + gap)}" width="${cell}" height="${cell}" rx="2" fill="${colors[level(s)]}"${click}${tipAttrs(fmtDate.format(d), s ? dur(s) : 'No activity', s ? 'Click to see this day' : '')}/>`
+		// The level's class colors the day, so the chart follows the dark or light theme.
+		const cls = `l${level(s)}${s > 0 ? ' has' : ''}${s > 0 && picked(d, 1) ? ' sel' : ''}`
+		const click = s > 0 ? ` data-ts="${d.getTime()}" data-span="1"` : ''
+		rects += `<rect class="${cls}" x="${30 + col * (cell + gap)}" y="${18 + row * (cell + gap)}" width="${cell}" height="${cell}" rx="2"${click}${tipAttrs(fmtDate.format(d), s ? dur(s) : 'No activity', s ? 'Click to see this day' : '')}/>`
 	}
-	const labels = ['Mon', 'Wed', 'Fri'].map((t, i) => `<text x="0" y="${18 + (i * 2 + 1) * (cell + gap) + 10}" fill="#8b8b94" font-size="11">${t}</text>`).join('')
+	const labels = ['Mon', 'Wed', 'Fri'].map((t, i) => `<text x="0" y="${18 + (i * 2 + 1) * (cell + gap) + 10}">${t}</text>`).join('')
 	const w = 30 + (col + 1) * (cell + gap)
 	$('heatmap').innerHTML = `<svg width="${w}" height="${18 + 7 * (cell + gap)}" role="img" aria-label="Engaged time per day over the last year">${months}${labels}${rects}</svg>`
 	// The first time, start on the latest weeks, which is what the eye wants on a narrow screen.

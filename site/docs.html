@@ -7,19 +7,21 @@
 	<link rel="icon" href="favicon.svg">
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Geist+Mono&display=swap">
+	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spline+Sans:wght@400;500;600;700&family=Spline+Sans+Mono:wght@400;500&display=swap">
+	<link rel="stylesheet" href="base.css">
 	<link rel="stylesheet" href="style.css">
-	<link rel="stylesheet" href="nav.css">
+	<script src="theme.js"></script>
 </head>
 <body>
 <nav class="nav" aria-label="Main">
 	<a class="brand" href="index.html"><img src="favicon.svg" alt="">teardrop</a>
 	<div class="links">
-		<a href="index.html#product" class="opt">Product</a>
+		<a href="index.html#what-counts" class="opt">What counts</a>
 		<a href="docs.html" class="active">Docs</a>
 		<a href="https://github.com/part-avocado/teardrop" class="opt">GitHub</a>
 	</div>
-	<a class="pill local-only" href="dashboard.html">Dashboard</a>
+	<button class="theme" type="button" data-theme-toggle aria-label="Switch between dark and light" title="Switch between dark and light"><svg class="sun" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1.5V3M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/></svg><svg class="moon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M13.5 9.5a5.5 5.5 0 0 1-7-7 5.5 5.5 0 1 0 7 7z"/></svg></button>
+	<a class="btn primary small local-only" href="dashboard.html">Dashboard</a>
 	<details class="account hosted-only">
 		<summary aria-label="Account menu"><span class="avatar" id="account-initial" aria-hidden="true"></span><span class="who" id="account-name"></span><svg class="chev" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
 		<div class="menu">
@@ -175,7 +177,7 @@
 	<p>The dashboard's setup steps include a prompt to paste into Amp or Claude Code, with your server and sync key already filled in. The agent installs teardrop, runs <code>teardrop setup -yes</code> to add the hooks and the plugin without stopping to ask, connects the computer, and shows you the result. <code>-yes</code> is the part an agent can't do on its own, since setup otherwise asks before changing any settings. Because the prompt holds your sync key, make a new key under Settings, Setup if you'd rather not leave it in that thread.</p>
 
 	<h2 id="other-tools">Other tools</h2>
-	<p>A VS Code extension (for Copilot, Cursor, and hand-written code) and a browser extension (for web chats like ChatGPT) are planned. Follow progress on <a href="https://github.com/part-avocado/teardrop">GitHub</a>.</p>
+	<p>A VS Code extension (for Copilot, Cursor, and hand-written code) is planned. Follow progress on <a href="https://github.com/part-avocado/teardrop">GitHub</a>.</p>
 
 	<h2 id="lines">Lines of code</h2>
 	<p>For each project the report shows the lines agents changed (<strong>AGENT LINES</strong>), how many of the added lines later turned up in your commits (<strong>KEPT</strong>), and the lines your own commits added (<strong>COMMITTED</strong>). The code itself is not kept.</p>

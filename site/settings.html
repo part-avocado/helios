@@ -7,9 +7,10 @@
 	<link rel="icon" href="favicon.svg">
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Geist+Mono&display=swap">
+	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spline+Sans:wght@400;500;600;700&family=Spline+Sans+Mono:wght@400;500&display=swap">
+	<link rel="stylesheet" href="base.css">
 	<link rel="stylesheet" href="style.css">
-	<link rel="stylesheet" href="nav.css">
+	<script src="theme.js"></script>
 </head>
 <body>
 <nav class="nav" aria-label="Main">
@@ -20,6 +21,7 @@
 		<a href="people.html" class="admin-only">Review</a>
 		<a href="docs.html" class="docs-link">Docs</a>
 	</div>
+	<button class="theme" type="button" data-theme-toggle aria-label="Switch between dark and light" title="Switch between dark and light"><svg class="sun" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1.5V3M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/></svg><svg class="moon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M13.5 9.5a5.5 5.5 0 0 1-7-7 5.5 5.5 0 1 0 7 7z"/></svg></button>
 	<details class="account hosted-only">
 		<summary aria-label="Account menu"><span class="avatar" id="account-initial" aria-hidden="true"></span><span class="who" id="account-name"></span><svg class="chev" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
 		<div class="menu">
