@@ -288,6 +288,12 @@ async function showSetup() {
 	$('status').textContent = ''
 }
 
+let hostedTimer = 0
+const again = (ms) => {
+	clearTimeout(hostedTimer)
+	hostedTimer = setTimeout(loadHosted, ms)
+}
+
 async function loadHosted() {
 	let body
 	try {
@@ -301,13 +307,13 @@ async function loadHosted() {
 			if (viewing) notice('Nothing synced yet', 'This person has signed in, but no computer of theirs has synced. <a href="/review/">Back to review</a>')
 			else if (body.ban) notice('Nothing synced', 'This account was banned before anything synced, so there is nothing to show.')
 			else await showSetup()
-			setTimeout(loadHosted, 10000) // so the stats appear as soon as the first sync lands
+			again(10000) // so the stats appear as soon as the first sync lands
 			return
 		}
 	} catch (e) {
 		if (report) $('status').textContent = 'Could not reach the server. Trying again.'
 		else notice(viewing ? 'Could not load these stats' : 'Could not load your stats', esc(e.message))
-		setTimeout(loadHosted, 15000)
+		again(15000)
 		return
 	}
 	const last = Math.max(...body.computers.map((c) => c.synced_at))
@@ -315,7 +321,7 @@ async function loadHosted() {
 	const from = body.computers.length === 1 ? '1 computer' : `${body.computers.length} computers`
 	show(merge(body.computers), `<span class="dot${stale ? ' old' : ''}"></span>Synced ${esc(ago(last))} from ${from}` +
 		(viewing ? ` - <a href="/review/#/person/id:${encodeURIComponent(viewing)}">review</a> - <a href="/review/#/people">all people</a>` : body.ban ? ' - <b>syncing is paused</b>' : stale ? ' - run <code>teardrop sync</code> to update' : ''))
-	setTimeout(loadHosted, 5 * 60000)
+	again(5 * 60000)
 }
 
 // poll reads the live report that `teardrop dashboard` serves on this computer.
@@ -392,5 +398,18 @@ $('profile-note-ok').addEventListener('click', () => {
 })
 if (hosted && !viewing) profileNote().catch(() => {})
 
-if (hosted) loadHosted()
-else poll()
+// Live: each prompt and turn end shows within seconds. When a turn ends, its
+// sync follows shortly, so the stats are read again then.
+let wasWorking = false
+function onLive(s) {
+	const text = liveText(s, true)
+	$('live-now').hidden = !text
+	$('live-now').innerHTML = text
+	if (wasWorking && s.working?.kind === 'agent') again(20000)
+	wasWorking = !!s.working
+}
+
+if (hosted) {
+	loadHosted()
+	if (!viewing) liveFeed('/api/live', '/api/live/ws', onLive)
+} else poll()

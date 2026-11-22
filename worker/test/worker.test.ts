@@ -1151,3 +1151,37 @@ test('exporting and deleting your own data', async () => {
 	assert.equal((await env.DB.prepare("SELECT COUNT(*) AS n FROM computers WHERE user_id NOT IN (SELECT id FROM users)").first()).n, 0)
 	assert.equal((await env.DB.prepare('SELECT COUNT(*) AS n FROM report_chunks WHERE computer_id NOT IN (SELECT id FROM computers)').first()).n, 0)
 })
+
+test('a dashboard hears of each record at once, and a profile never learns the project', async () => {
+	const cookie = await signIn('livewire')
+	const { api_key: key, handle } = await me(cookie)
+	const other = await signIn('bystander')
+	const line = (t: number, event: string, extra: object = {}) => JSON.stringify({ t: new Date(t).toISOString(), tool: 'codex', event, session: 'l1', project: 'github.com/kid/secret', ...extra })
+	const open = async (path: string, as = '') => {
+		const res = await server.fetch(SITE + path, { headers: { Upgrade: 'websocket', Origin: SITE, Cookie: as } })
+		assert.equal(res.status, 101, path)
+		const ws = (res as unknown as { webSocket: WebSocket & { accept(): void } }).webSocket
+		ws.accept()
+		const got: { working: { tool: string; project?: string; since: number } | null; today: { prompts: number } }[] = []
+		ws.addEventListener('message', (e) => got.push(JSON.parse(String(e.data))))
+		return { ws, got }
+	}
+	const mine = await open('/api/live/ws', cookie)
+	const theirs = await open('/api/live/ws', other)
+	const visitor = await open(`/api/public/v1/users/${handle}/live`)
+	await new Promise((r) => setTimeout(r, 200))
+	const before = [mine.got.length, theirs.got.length, visitor.got.length]
+	assert.equal((await call('/api/v1/events', { method: 'POST', key, body: line(Date.now() - 1000, 'prompt', { human: true, judged: 5, real: 5 }) })).status, 200)
+	await new Promise((r) => setTimeout(r, 300))
+	assert.equal(mine.got.length, before[0]! + 1, 'the owner heard of the prompt')
+	assert.equal(theirs.got.length, before[1], "another person's socket heard nothing")
+	assert.deepEqual([mine.got.at(-1)!.working, mine.got.at(-1)!.today.prompts], [{ tool: 'codex', project: 'github.com/kid/secret', since: mine.got.at(-1)!.working!.since, kind: 'prompt' }, 1])
+	assert.equal(visitor.got.at(-1)!.working!.tool, 'codex')
+	assert.doesNotMatch(JSON.stringify(visitor.got), /secret/, 'a profile socket never carries the project')
+	// Without a socket, the same state once, for the first paint and the 30-second fallback.
+	const state = (await (await call('/api/live', { cookie })).json()) as { working: { project: string } }
+	assert.equal(state.working.project, 'github.com/kid/secret')
+	assert.equal((await call('/api/live/ws', { cookie, origin: SITE })).status, 426)
+	assert.equal((await server.fetch(SITE + '/api/live/ws', { headers: { Upgrade: 'websocket', Origin: 'https://evil.example', Cookie: cookie } })).status, 403)
+	for (const s of [mine, theirs, visitor]) s.ws.close()
+})

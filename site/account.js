@@ -14,6 +14,54 @@ const dur = (sec) => {
 	return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`
 }
 
+// liveFeed follows a person's live state: whether they are at it now, and
+// today's witnessed time. It holds a WebSocket open to wsPath, which the site
+// pushes to as each prompt or turn end arrives, and without one asks path
+// every 30 seconds while the tab is visible. onState gets each state.
+function liveFeed(path, wsPath, onState) {
+	let socket = null, timer = 0, retry = 1000
+	const ask = async () => {
+		clearTimeout(timer)
+		if (!socket && document.visibilityState === 'visible') {
+			try {
+				const res = await fetch(path, { cache: 'no-store' })
+				if (res.ok) onState(await res.json())
+			} catch {}
+		}
+		timer = setTimeout(ask, 30000)
+	}
+	const open = () => {
+		let ws
+		try {
+			ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${wsPath}`)
+		} catch {
+			return ask()
+		}
+		ws.onopen = () => { socket = ws; retry = 1000 }
+		ws.onmessage = (e) => { try { onState(JSON.parse(e.data)) } catch {} }
+		ws.onclose = () => {
+			socket = null
+			ask()
+			setTimeout(open, retry = Math.min(retry * 2, 60000))
+		}
+	}
+	document.addEventListener('visibilitychange', () => {
+		if (document.visibilityState !== 'visible') return
+		if (socket) socket.send('state')
+		else ask()
+	})
+	open()
+	ask()
+}
+
+// liveText says what a live state shows, as HTML.
+function liveText(s, withProject) {
+	const today = s.today && s.today.witnessed_seconds ? ` - ${dur(s.today.witnessed_seconds)} witnessed today` : ''
+	if (!s.working) return today ? `Today: ${today.slice(3)}` : ''
+	const where = withProject && s.working.project ? ` in <b>${esc(s.working.project.split('/').pop())}</b>` : ''
+	return `<span class="dot live"></span>Working now${where} with ${esc(s.working.tool)}${today}`
+}
+
 // ago says how long before now a time was, such as "3 minutes ago".
 function ago(ms) {
 	const fmt = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })

@@ -59,5 +59,14 @@ async function load() {
 }
 
 initTips($('content'))
-if (handle) load()
+if (handle) {
+	load()
+	// Whether they are at it now: the tool only, never the project.
+	const live = `/api/public/v1/users/${encodeURIComponent(handle)}/live`
+	liveFeed(live, live, (s) => {
+		const text = liveText(s, false)
+		$('live-now').hidden = !text
+		$('live-now').innerHTML = text
+	})
+}
 else notice('No such profile', 'A profile address looks like /@handle.')

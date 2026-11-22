@@ -18,7 +18,9 @@ import { addReviewer, banMessage, bans, createKey, issueBan, keys, liftBan, need
 export default {
 	async fetch(request, env): Promise<Response> {
 		try {
-			return guard(await route(request, env))
+			const res = await route(request, env)
+			// A WebSocket's answer goes back as the hub made it.
+			return res.status === 101 ? res : guard(res)
 		} catch (e) {
 			if (e instanceof Refusal) return guard(new Response(e.message + '\n', { status: e.status, headers: { 'Cache-Control': 'no-store' } }))
 			console.error(JSON.stringify({ message: 'request failed', path: new URL(request.url).pathname, error: String(e), stack: (e as Error)?.stack }))
@@ -38,6 +40,17 @@ function guard(res: Response): Response {
 	out.headers.set('X-Content-Type-Options', 'nosniff')
 	out.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
 	return out
+}
+
+/** liveView hands a live request to the person's hub, which answers a WebSocket or the state as JSON. */
+async function liveView(env: Env, userID: number, request: Request, tag: 'owner' | 'public'): Promise<Response> {
+	const hub = env.HUB.get(env.HUB.idFromName(String(userID)))
+	const headers = new Headers({ 'X-Live': tag })
+	if (request.headers.get('Upgrade') === 'websocket') headers.set('Upgrade', 'websocket')
+	else if (new URL(request.url).pathname.endsWith('/ws')) throw new Refusal(426, 'Open this as a WebSocket.')
+	const res = await hub.fetch('https://hub/live', { headers })
+	if (res.webSocket) return res
+	return new Response(res.body, { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } })
 }
 
 /** Pages that need an account. */
@@ -119,6 +132,13 @@ async function route(request: Request, env: Env): Promise<Response> {
 		return redirect('/review/' + (who ? `#/person/${encodeURIComponent(who)}` : ''))
 	}
 	if (path.startsWith('/api/review/')) return reviewAPI(request, env, url)
+	// A profile's live view: whether its owner is at it now, never which project.
+	const liveProfile = request.method === 'GET' ? /^\/api\/public\/v1\/users\/([^/]+)\/live$/.exec(path) : null
+	if (liveProfile) {
+		const owner = await visibleOwner(env, decodeURIComponent(liveProfile[1]!))
+		if (!owner) throw new Refusal(404, 'No such profile.')
+		return liveView(env, owner.id, request, 'public')
+	}
 	// What a person reads about themselves with a read key, from anywhere.
 	if (path.startsWith('/api/public/v1/')) return publicAPI(request, env, url)
 
@@ -146,6 +166,11 @@ async function route(request: Request, env: Env): Promise<Response> {
 		const cloud = (await cloudComputer(env, user)).id
 		const all = (await computers(env, user.id)).map((c) => ({ ...c, cloud: c.id === cloud }))
 		return json({ name: user.name, slack_id: user.slack_id, handle: user.handle, profile_public: user.profile_public, admin: user.admin, level: user.level, ban: ownBan(user), api_key: user.api_key, created_at: user.created_at, computers: all })
+	}
+	// Their own live view: a WebSocket that hears of each record as it arrives, or its state once.
+	if (call === 'GET /api/live/ws' || call === 'GET /api/live') {
+		if (call === 'GET /api/live/ws') sameOrigin(request)
+		return liveView(env, user.id, request, 'owner')
 	}
 	if (call === 'GET /api/report') {
 		// Neoadmins and superadmins can read anyone's reports; everyone else only their own.

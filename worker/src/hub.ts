@@ -7,7 +7,7 @@
 // it ends; a record for a sealed day reads the day back from R2 first.
 // Records never hold prompt or reply text.
 import { DurableObject } from 'cloudflare:workers'
-import { RULES, type Rec, totals } from './timeline.ts'
+import { RULES, type Rec, totals, WATCH } from './timeline.ts'
 
 const FLUSH = 10 * 60_000
 const SEAL = 48 * 3600_000
@@ -44,6 +44,12 @@ export const dayOf = (t: number, offset: number) => new Date(t + offset * 60_000
 
 /** The R2 name of one person's records of one day. */
 export const dayKey = (userID: number, day: string) => `${userID}/prompts/${day.slice(0, 4)}/${day.slice(5)}.ndjson.gz`
+
+/** What an open dashboard or profile shows live: whether the person is at it now, and today's totals. */
+export interface Live {
+	working: { tool: string; project?: string; since: number; kind: 'prompt' | 'agent' } | null
+	today: { day: string; witnessed_seconds: number; unwitnessed_seconds: number; prompts: number }
+}
 
 export class UserHub extends DurableObject<Env> {
 	constructor(ctx: DurableObjectState, env: Env) {
@@ -104,6 +110,8 @@ export class UserHub extends DurableObject<Env> {
 			}
 		}
 		if (kept.length && (await this.ctx.storage.getAlarm()) == null) await this.ctx.storage.setAlarm(now + FLUSH)
+		// Open dashboards hear of it at once; a send never waits on the socket.
+		if (kept.length) this.broadcast()
 		return { stored: kept.length, records: kept }
 	}
 
@@ -171,6 +179,67 @@ export class UserHub extends DurableObject<Env> {
 	/** records returns the working copy's records from one time on, for live views and submissions of recent days. */
 	async records(from: number): Promise<(Rec & { computer: string })[]> {
 		return this.ctx.storage.sql.exec('SELECT rec FROM recs WHERE t >= ? ORDER BY t', from).toArray().map((r) => JSON.parse(String(r.rec)))
+	}
+
+	/**
+	 * live works out what a dashboard shows from the working copy: the latest
+	 * record, if it is recent, and today's totals on the person's latest clock.
+	 */
+	live(now = Date.now()): Live {
+		const recs = this.ctx.storage.sql.exec('SELECT rec FROM recs WHERE t >= ? ORDER BY t', now - 2 * DAY).toArray().map((r) => JSON.parse(String(r.rec)) as Rec & { offset: number })
+		const last = recs.at(-1)
+		const offset = last?.offset ?? 0
+		const day = dayOf(now, offset)
+		const from = Date.parse(day) - offset * 60_000
+		const s = totals(recs.filter((r) => r.t >= from - WATCH), from, from + DAY)
+		return {
+			working: last && now - last.t < WATCH ? { tool: last.tool, project: last.project, since: last.t, kind: last.human ? 'prompt' : 'agent' } : null,
+			today: { day, witnessed_seconds: Math.round(s.witnessed / 1000), unwitnessed_seconds: Math.round(s.unwitnessed / 1000), prompts: s.prompts },
+		}
+	}
+
+	/** view is what one kind of socket is sent: a profile's visitors never learn the project. */
+	private view(tag: string): Live {
+		const l = this.live()
+		return tag === 'owner' || !l.working ? l : { ...l, working: { tool: l.working.tool, since: l.working.since, kind: l.working.kind } }
+	}
+
+	private broadcast() {
+		for (const tag of ['owner', 'public']) {
+			const sockets = this.ctx.getWebSockets(tag)
+			if (!sockets.length) continue
+			const msg = JSON.stringify(this.view(tag))
+			for (const ws of sockets) {
+				try {
+					ws.send(msg)
+				} catch {}
+			}
+		}
+	}
+
+	/**
+	 * fetch takes a WebSocket for a live view. The Worker has checked who may
+	 * have one, and says which with X-Live: owner, or public for a profile.
+	 * Sockets hibernate between messages, so an idle one costs nothing.
+	 */
+	async fetch(request: Request): Promise<Response> {
+		if (request.headers.get('Upgrade') !== 'websocket') return Response.json(this.view(request.headers.get('X-Live') ?? 'public'))
+		const tag = request.headers.get('X-Live') === 'owner' ? 'owner' : 'public'
+		const [client, server] = Object.values(new WebSocketPair())
+		this.ctx.acceptWebSocket(server!, [tag])
+		server!.send(JSON.stringify(this.view(tag)))
+		return new Response(null, { status: 101, webSocket: client })
+	}
+
+	webSocketMessage(ws: WebSocket) {
+		// Anything a page sends asks for the current state, such as after it wakes.
+		ws.send(JSON.stringify(this.view(this.ctx.getTags(ws)[0] ?? 'public')))
+	}
+
+	webSocketClose(ws: WebSocket, code: number) {
+		try {
+			ws.close(code)
+		} catch {}
 	}
 
 	/** forget empties the hub, when its person deletes their account. */
