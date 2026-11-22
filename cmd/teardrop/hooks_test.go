@@ -6,6 +6,9 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/part-avocado/teardrop/internal/sources"
 )
 
 // commands lists each event's hook commands, in order.
@@ -110,5 +113,61 @@ func TestParseSetupArgs(t *testing.T) {
 	}
 	if _, _, _, err := parse("cursor"); err == nil {
 		t.Error("an unknown tool was accepted instead of refused")
+	}
+}
+
+func TestTurnLeftOpen(t *testing.T) {
+	dir := t.TempDir()
+	at := time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
+	add := func(session, event string, minute int) {
+		ev := sources.JournalEvent{Time: at.Add(time.Duration(minute) * time.Minute), Tool: "claude-code", Event: event, Session: session, Human: event == "UserPromptSubmit"}
+		if err := sources.AppendJournal(dir, ev); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if turnLeftOpen(dir, "claude-code", "interrupted", at) {
+		t.Error("a session with no events was taken to have an open turn")
+	}
+	// Claude Code runs no hook when a reply is interrupted, so the prompt is
+	// the last the journal holds of that turn.
+	add("interrupted", "UserPromptSubmit", 0)
+	add("finished", "UserPromptSubmit", 1)
+	add("finished", "Stop", 2)
+	later := at.Add(3 * time.Minute)
+	if !turnLeftOpen(dir, "claude-code", "interrupted", later) {
+		t.Error("a prompt with no Stop after it was not taken as an open turn")
+	}
+	if turnLeftOpen(dir, "claude-code", "finished", later) {
+		t.Error("a turn that ended with Stop was taken as open")
+	}
+	if turnLeftOpen(dir, "amp", "interrupted", later) {
+		t.Error("another tool's session of the same name was taken as this one")
+	}
+	if !turnEnds["claude-code"]["Stop"] || !turnEnds["amp"]["agent.end"] || turnEnds["claude-code"]["UserPromptSubmit"] {
+		t.Errorf("turn ends: %v", turnEnds)
+	}
+}
+
+func TestJournalKeepsAmpTokens(t *testing.T) {
+	dir := t.TempDir()
+	at := time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
+	for _, ev := range []sources.JournalEvent{
+		{Time: at, Tool: "amp", Event: "agent.start", Session: "T-1", Human: true, Judged: 6, Real: 6, Sim: 1},
+		{Time: at.Add(2 * time.Minute), Tool: "amp", Event: "agent.end", Session: "T-1", In: 41000, Out: 900},
+		{Time: at.Add(3 * time.Minute), Tool: "amp", Event: "agent.end", Session: "T-2", In: -5, Out: 7},
+	} {
+		if err := sources.AppendJournal(dir, ev); err != nil {
+			t.Fatal(err)
+		}
+	}
+	raws, _ := sources.ReadJournal(dir)
+	if len(raws) != 2 || len(raws[0].Events) != 2 {
+		t.Fatalf("read %d sessions: %+v", len(raws), raws)
+	}
+	if prompt, end := raws[0].Events[0], raws[0].Events[1]; prompt.In != 0 || end.In != 41000 || end.Out != 900 {
+		t.Errorf("tokens of the turn: prompt %d in, end %d in and %d out; want 0, 41000 and 900", prompt.In, end.In, end.Out)
+	}
+	if end := raws[1].Events[0]; end.In != 0 || end.Out != 7 {
+		t.Errorf("a count below zero was kept: %d in, %d out", end.In, end.Out)
 	}
 }

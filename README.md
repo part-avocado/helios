@@ -151,7 +151,10 @@ teardrop sync -server https://your-site -key tdk_...
 `sync` uploads your signed counts: time blocks, prompt and skipped-prompt
 counts, tokens, and line counts. It never uploads text. teardrop remembers
 the server and the key (which can only upload stats), so hooks sync in the
-background every 15 minutes. The dashboard adds up every computer you
+background when a reply finishes in Claude Code or Amp, or when you stop
+one. Amp reports a stopped reply at once. Claude Code runs no hook then, so
+that sync happens at your next prompt or when the session closes. The
+dashboard adds up every computer you
 connect. Settings lists them, makes a new key, and takes a
 `teardrop export` file from a computer that can't reach the site.
 

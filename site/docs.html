@@ -124,7 +124,7 @@
 	<ol>
 		<li>Open the <a href="dashboard.html">dashboard</a> and sign in with Hack Club. Your first sign-in creates your account.</li>
 		<li>Run the two commands it shows: one installs teardrop, the other connects that computer to your account.</li>
-		<li>Keep working. The page fills in as soon as the first sync arrives, and teardrop syncs again every 15 minutes while you use Claude Code or Amp. Run <code>teardrop sync</code> to update it right away.</li>
+		<li>Keep working. The page fills in as soon as the first sync arrives, and teardrop syncs again each time a reply finishes in Claude Code or Amp, or you stop one. Run <code>teardrop sync</code> to update it right away.</li>
 	</ol>
 	<p><a href="settings.html">Settings</a> has the rest:</p>
 	<table>
@@ -152,7 +152,7 @@
 	<div class="callout important"><p class="callout-title"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M0 1.75C0 .784.784 0 1.75 0h12.5C15.216 0 16 .784 16 1.75v9.5A1.75 1.75 0 0 1 14.25 13H8.06l-2.573 2.573A1.458 1.458 0 0 1 3 14.543V13H1.75A1.75 1.75 0 0 1 0 11.25Zm1.75-.25a.25.25 0 0 0-.25.25v9.5c0 .138.112.25.25.25h2a.75.75 0 0 1 .75.75v2.19l2.72-2.72a.749.749 0 0 1 .53-.22h6.5a.25.25 0 0 0 .25-.25v-9.5a.25.25 0 0 0-.25-.25Zm7 2.25v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 9a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"/></svg>Important</p><p><strong>Testing doesn't count.</strong> Time spent testing your build outside the agent chat, such as clicking through the app or writing up feedback before you send it, isn't counted by teardrop. Record it with <a href="https://lapse.hackclub.com">Lapse</a>. Lapse time is counted on Hackatime, and reviewers take any overlap with teardrop off so nothing counts twice.</p></div>
 
 	<h2 id="tokens">Tokens</h2>
-	<p>Token counts come from the usage records Claude Code and Codex save with each response. A Claude Code response that's written several times, or copied into a resumed session, counts once. Codex counts are taken from the increase in its running totals.</p>
+	<p>Token counts come from the usage records Claude Code and Codex save with each response. A Claude Code response that's written several times, or copied into a resumed session, counts once. Codex counts are taken from the increase in its running totals. Amp counts come from the usage Amp hands the teardrop plugin when a turn ends, so they start with teardrop v0.6.0: Amp turns recorded before that show no tokens.</p>
 
 	<h2 id="claude-code">Claude Code</h2>
 	<p>teardrop reads transcripts from <code>$CLAUDE_CONFIG_DIR</code> (which may list several folders), <code>~/.claude</code>, and <code>~/.config/claude</code>. It tells your prompts apart from tool results, compaction summaries, background notices, and subagent messages.</p>
@@ -221,7 +221,7 @@
 	<h2 id="server">Sync and submit</h2>
 	<p><code>teardrop sync</code> uploads your signed counts to your account: time blocks, prompt and skipped-prompt counts, tokens, and line counts. It never uploads text. The first time, copy the command from <a href="settings.html">Settings</a> on the website. It looks like this:</p>
 	<pre><code>teardrop sync -server https://your-site -key tdk_…</code></pre>
-	<p>teardrop remembers the server and the key, so later it's just <code>teardrop sync</code>, and hooks sync in the background every 15 minutes. The key can only upload stats. If the server answers that it needs your sync key, run the command from Settings again.</p>
+	<p>teardrop remembers the server and the key, so later it's just <code>teardrop sync</code>, and hooks sync in the background when a reply finishes or you stop one. Amp reports a stopped reply at once; Claude Code runs no hook then, so that sync happens at your next prompt or when the session closes. Codex has no hook, so its time goes up with the next of those syncs. The key can only upload stats. If the server answers that it needs your sync key, run the command from Settings again.</p>
 	<p><code>teardrop submit &lt;project&gt;</code> sends a project's hours for review together with the full chat logs behind them: your prompts, the agent's replies, and its code changes. It asks before uploading; <code>-o file</code> writes the submission so you can read it first. The server refuses a submission whose logs were changed after signing, or that claims a block no log backs, and recomputes the hours from the logs itself. You can submit a project again as it grows; time an earlier submission already covered is credited once. Add your Lapse sessions with <code>-lapse &lt;link&gt;,…</code>; time they also cover is taken off, since Hackatime already counts it.</p>
 	<p>Your stats on the website are visible to you and to admins. Deleting your account, under Settings, removes them; admins keep your Slack ID and a record of what your computers reported, without project names. Submissions and their chats are visible only to admins, who review them at <code>/admin</code> on the review server. To host either, see <a href="#run-server">Running a server</a>.</p>
 

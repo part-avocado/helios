@@ -30,6 +30,24 @@ var humanEvents = map[string]string{
 	"amp":         "agent.start",      // the Amp plugin
 }
 
+// turnEnds names, per tool, the hook events after which no more of a turn
+// is coming: the reply finished, or was interrupted, or the session closed.
+// Amp reports an interrupted turn as agent.end. Claude Code runs no hook when
+// a reply is interrupted or fails, so there runHook notices it at the next
+// prompt (see turnLeftOpen).
+var turnEnds = map[string]map[string]bool{
+	"claude-code": {"Stop": true, "SessionEnd": true},
+	"amp":         {"agent.end": true},
+}
+
+// turnLeftOpen reports whether the last thing the journal holds for a session
+// is a prompt. When the next event is a prompt too, the turn between them
+// ended without a hook saying so: it was interrupted, or it failed.
+func turnLeftOpen(dir, tool, session string, now time.Time) bool {
+	last, found := sources.LastJournalEvent(dir, now, tool, session)
+	return found && last.Human
+}
+
 // runHook records one hook event from stdin. It must never get in the tool's
 // way: it prints nothing to stdout (on Claude Code's UserPromptSubmit that
 // would reach the model), always exits 0, and keeps no prompt text.
@@ -51,6 +69,9 @@ func runHook(args []string) {
 		Event     string `json:"hook_event_name"`
 		Prompt    string `json:"prompt"`
 		Time      string `json:"time"` // when it happened, if the plugin hands it over late
+		// What the model read and wrote in the turn that this event ends, from the Amp plugins.
+		TokensIn  int64 `json:"tokens_in"`
+		TokensOut int64 `json:"tokens_out"`
 	}
 	b, _ := io.ReadAll(io.LimitReader(os.Stdin, 32<<20))
 	if json.Unmarshal(b, &in) != nil || in.SessionID == "" || in.Event == "" {
@@ -59,6 +80,9 @@ func runHook(args []string) {
 	ev := sources.JournalEvent{
 		Time: time.Now().UTC(), Tool: tool, Event: in.Event,
 		Session: in.SessionID, Cwd: in.Cwd, Human: in.Event == humanEvents[tool],
+	}
+	if !ev.Human {
+		ev.In, ev.Out = max(0, in.TokensIn), max(0, in.TokensOut)
 	}
 	if ev.Human {
 		s := textscore.Analyze(in.Prompt)
@@ -78,10 +102,12 @@ func runHook(args []string) {
 		relaySoon(in.Event == "agent.end")
 		return
 	}
+	// Looked up before this event is written, which would otherwise be the last.
+	interrupted := ev.Human && turnLeftOpen(dataDir(), tool, ev.Session, ev.Time)
 	if err := sources.AppendJournal(dataDir(), ev); err != nil {
 		fmt.Fprintln(os.Stderr, "teardrop hook:", err)
 	}
-	syncSoon()
+	syncSoon(turnEnds[tool][in.Event] || interrupted)
 }
 
 // dataDir is where teardrop keeps its own records, such as the hook journal.

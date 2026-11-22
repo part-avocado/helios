@@ -26,8 +26,12 @@ import (
 const (
 	// syncWindow is how much history a sync uploads.
 	syncWindow = "365d"
-	// syncEvery is how often hooks start a background sync.
+	// syncEvery is how often hooks start a background sync while no turn
+	// ends, such as at a prompt. A turn that ends starts one at once.
 	syncEvery = 15 * time.Minute
+	// A background sync that has run this long is taken to have died. An
+	// upload alone may take five minutes.
+	syncLockStale = 10 * time.Minute
 )
 
 // submittedLog names one log in a submission; the signature covers its hash,
@@ -147,6 +151,7 @@ func runSync(args []string) {
 	server := fs.String("server", "", "central server URL, remembered for later runs")
 	key := fs.String("key", "", "your sync key from the server's Settings page, remembered for later runs")
 	quiet := fs.Bool("quiet", false, "print only errors (used by hooks)")
+	background := fs.Bool("background", false, "do nothing while another background sync runs, and sync again if a turn ended meanwhile (used by hooks)")
 	claudeDir := fs.String("claude-dir", "", "Claude Code config directories, comma-separated")
 	codexDir := fs.String("codex-dir", "", "Codex home directories, comma-separated")
 	fs.Parse(args)
@@ -155,17 +160,31 @@ func runSync(args []string) {
 	k, err := syncKey(*key, srv)
 	check(err)
 
-	window, _ := parseSince(syncWindow)
-	now := time.Now()
-	raws, _ := loadAll(*claudeDir, *codexDir)
-	rep, _ := buildReport(raws, now.Add(-window), timeline.DefaultRules)
-	signed, err := signReport(rep, syncWindow, now)
-	check(err)
-	b, err := json.Marshal(signed)
-	check(err)
-	res, err := post(srv, k, "/api/v1/reports", b)
-	check(err)
-	os.WriteFile(filepath.Join(dataDir(), "last-sync"), nil, 0o600)
+	var rep timeline.Report
+	var res []byte
+	once := func() error {
+		window, _ := parseSince(syncWindow)
+		now := time.Now()
+		raws, _ := loadAll(*claudeDir, *codexDir)
+		rep, _ = buildReport(raws, now.Add(-window), timeline.DefaultRules)
+		signed, err := signReport(rep, syncWindow, now)
+		if err != nil {
+			return err
+		}
+		b, err := json.Marshal(signed)
+		if err != nil {
+			return err
+		}
+		if res, err = post(srv, k, "/api/v1/reports", b); err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(dataDir(), "last-sync"), nil, 0o600)
+	}
+	if *background {
+		check(syncQueued(dataDir(), once))
+		return
+	}
+	check(once())
 	if *quiet {
 		return
 	}
@@ -183,23 +202,54 @@ func runSync(args []string) {
 		dur(time.Duration(rep.Engaged)), plural(len(rep.Projects), "project"), id, r.URL)
 }
 
-// syncSoon starts a background sync when a server is set and the last one
-// was more than syncEvery ago. Hooks call it, so it never waits.
-func syncSoon() {
+// syncQueued runs sync for a hook, in dir. Only one runs at a time on a
+// machine: two at once would upload the same report twice, and the server
+// refuses the one that arrives second. A turn that ends while one runs is not
+// lost: its hook leaves a note in dir (sync-wanted), and the sync that is
+// running goes again once it is done.
+func syncQueued(dir string, sync func() error) error {
+	lock := filepath.Join(dir, "sync.lock")
+	for i := 0; i < 5; i++ {
+		if info, err := os.Stat(lock); err == nil && time.Since(info.ModTime()) > syncLockStale {
+			os.Remove(lock)
+		}
+		f, err := os.OpenFile(lock, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err != nil {
+			return nil // another sync is running, and will see the note
+		}
+		f.Close()
+		started := time.Now()
+		err = sync()
+		os.Remove(lock)
+		if err != nil {
+			return err
+		}
+		if note, err := os.Stat(filepath.Join(dir, "sync-wanted")); err != nil || !note.ModTime().After(started) {
+			return nil
+		}
+	}
+	return nil
+}
+
+// syncSoon starts a background sync when a server is set. With now, because
+// a turn just ended, it starts one at once. Otherwise it starts one only if
+// the last was more than syncEvery ago. Hooks call it, so it never waits.
+func syncSoon(now bool) {
 	if _, err := os.Stat(filepath.Join(dataDir(), "server")); err != nil {
 		return
 	}
-	stamp := filepath.Join(dataDir(), "last-sync")
-	if info, err := os.Stat(stamp); err == nil && time.Since(info.ModTime()) < syncEvery {
+	if now {
+		// For a sync that is already running: it started before this turn ended.
+		os.WriteFile(filepath.Join(dataDir(), "sync-wanted"), nil, 0o600)
+	} else if !due(filepath.Join(dataDir(), "last-sync"), syncEvery) {
 		return
 	}
-	os.WriteFile(stamp, nil, 0o600) // claim this slot, so parallel hooks start one sync
 	exe, err := os.Executable()
 	if err != nil {
 		return
 	}
 	logf, _ := os.OpenFile(filepath.Join(dataDir(), "sync.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
-	cmd := exec.Command(exe, "sync", "-quiet")
+	cmd := exec.Command(exe, "sync", "-quiet", "-background")
 	cmd.Stdout, cmd.Stderr = logf, logf
 	if cmd.Start() == nil {
 		cmd.Process.Release()
@@ -207,6 +257,16 @@ func syncSoon() {
 	if logf != nil {
 		logf.Close()
 	}
+}
+
+// due reports whether the run that stamp records is more than every old, or
+// there was none. If so it records one now, so parallel hooks start one run.
+func due(stamp string, every time.Duration) bool {
+	if info, err := os.Stat(stamp); err == nil && time.Since(info.ModTime()) < every {
+		return false
+	}
+	os.WriteFile(stamp, nil, 0o600)
+	return true
 }
 
 // runSubmit uploads one project's hours with the full chat logs behind them.

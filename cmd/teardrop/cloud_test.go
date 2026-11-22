@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -133,5 +134,18 @@ func TestCountCloud(t *testing.T) {
 	before := len(uploads)
 	if err := countCloud(ts.Client(), ts.URL, "mine", now); err == nil || len(uploads) != before {
 		t.Errorf("without a key from the server: err %v and %d uploads, want an error and none", err, len(uploads)-before)
+	}
+}
+
+func TestDue(t *testing.T) {
+	stamp := filepath.Join(t.TempDir(), "last-sync")
+	if !due(stamp, time.Hour) {
+		t.Fatal("the first run was not due")
+	}
+	if due(stamp, time.Hour) {
+		t.Error("a run right after another was due")
+	}
+	if !due(stamp, 0) {
+		t.Error("a run was not due once enough time had passed")
 	}
 }

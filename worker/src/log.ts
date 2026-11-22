@@ -10,6 +10,13 @@ const DAY = 86400_000
 const LOG_ROWS = 5000
 /** Seconds a report may be off by before it is flagged, for clocks that disagree. */
 const SLACK = 300
+/**
+ * Seconds of engaged time that a report may add from before the report before
+ * it. teardrop syncs when a reply ends, and a reply that ends earns up to ten
+ * minutes of watching the agent work, which may all lie before a sync that
+ * another session started meanwhile.
+ */
+const WATCHED = 600
 /** The most days kept from one report. A year's report has 366 at most. */
 const MAX_DAYS = 400
 /** The most projects kept from one report, the largest first. */
@@ -249,7 +256,7 @@ export function findings(e: Entry): string[] {
 		// Engaged time counts each moment once, so it can't grow faster than the clock.
 		const added = e.engaged_seconds - e.prev_engaged_seconds!
 		const passed = (e.at - e.prev_generated_at!) / 1000
-		if (added > passed + SLACK) out.push(`Added ${dur(added)} of engaged time, but only ${dur(passed)} had passed since the report before it.`)
+		if (added > passed + WATCHED + SLACK) out.push(`Added ${dur(added)} of engaged time, but only ${dur(passed)} had passed since the report before it.`)
 	}
 	return out
 }

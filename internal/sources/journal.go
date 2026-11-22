@@ -1,6 +1,7 @@
 package sources
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -26,6 +27,8 @@ type JournalEvent struct {
 	Real    int       `json:"real,omitempty"`
 	Sim     uint64    `json:"sim,omitempty"` // prompt fingerprint, for finding repeats
 	Low     bool      `json:"low,omitempty"` // prompt only steers ("continue", "fix it")
+	In      int64     `json:"in,omitempty"`  // tokens the model read in the turn this event ends, cached ones included
+	Out     int64     `json:"out,omitempty"` // tokens the model wrote in it
 }
 
 // AppendJournal adds ev to the month's journal file in dir. Each event is
@@ -48,6 +51,34 @@ func AppendJournal(dir string, ev JournalEvent) error {
 		err = cerr
 	}
 	return err
+}
+
+// lastEventTail is how much of the end of a journal file LastJournalEvent reads.
+const lastEventTail = 256 << 10
+
+// LastJournalEvent returns the newest event of one session in the journal
+// file of the month at holds, and whether it found one. It reads only the end
+// of the file, so a hook can call it; a session whose last event lies further
+// back, or in an earlier month, is reported as not found.
+func LastJournalEvent(dir string, at time.Time, tool, session string) (JournalEvent, bool) {
+	var last JournalEvent
+	f, err := os.Open(filepath.Join(dir, "events-"+at.UTC().Format("2006-01")+".jsonl"))
+	if err != nil {
+		return last, false
+	}
+	defer f.Close()
+	if info, err := f.Stat(); err == nil && info.Size() > lastEventTail {
+		f.Seek(-lastEventTail, io.SeekEnd)
+	}
+	b, _ := io.ReadAll(f)
+	lines := bytes.Split(b, []byte("\n"))
+	for i := len(lines) - 1; i >= 0; i-- {
+		var ev JournalEvent
+		if json.Unmarshal(lines[i], &ev) == nil && ev.Tool == tool && ev.Session == session {
+			return ev, true
+		}
+	}
+	return last, false
 }
 
 // ReadJournal reads every journal file in dir into one Raw per session.
@@ -133,6 +164,7 @@ func (j *journal) read(f io.Reader, path string) error {
 		}
 		e := timeline.Event{Time: ev.Time, Kind: timeline.Agent}
 		if !ev.Human {
+			e.In, e.Out = max(0, ev.In), max(0, ev.Out)
 			r.Events = append(r.Events, e)
 			return
 		}

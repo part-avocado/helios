@@ -10,7 +10,7 @@ import { mkdir, readdir, rename, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
 export const description =
-	'Counts time in Amp cloud threads toward your teardrop hours. Sends when you prompt and when Amp finishes, never the prompt text, to your teardrop site. Needs TEARDROP_SERVER and TEARDROP_KEY.'
+	'Counts time in Amp cloud threads toward your teardrop hours. Sends when you prompt and when Amp finishes, with its token counts and never the prompt text, to your teardrop site. Needs TEARDROP_SERVER and TEARDROP_KEY.'
 
 const releases = 'https://github.com/part-avocado/teardrop/releases'
 /** The first release whose `teardrop hook amp -relay` sends events to a site. */
@@ -107,6 +107,23 @@ async function findTeardrop(dir: string): Promise<string> {
 	}
 }
 
+/**
+ * Adds up the tokens the model read and wrote in one turn, from the usage Amp
+ * records with each reply. Cached tokens count as read, as they do for the
+ * other tools. Replies without usage add nothing.
+ */
+function tokens(messages: readonly unknown[] = []) {
+	type Usage = { inputTokens?: number; outputTokens?: number; cacheCreationInputTokens?: number | null; cacheReadInputTokens?: number | null }
+	let tokens_in = 0
+	let tokens_out = 0
+	for (const m of messages as { role?: string; usage?: Usage }[]) {
+		if (m?.role !== 'assistant' || !m.usage) continue
+		tokens_in += (m.usage.inputTokens ?? 0) + (m.usage.cacheCreationInputTokens ?? 0) + (m.usage.cacheReadInputTokens ?? 0)
+		tokens_out += m.usage.outputTokens ?? 0
+	}
+	return { tokens_in, tokens_out }
+}
+
 export default function (amp: PluginAPI) {
 	// On a person's own computer, the plugin `teardrop setup` writes records
 	// threads in the local journal. This one is for Amp's cloud only.
@@ -168,10 +185,10 @@ export default function (amp: PluginAPI) {
 
 	// Events wait here, in memory only, while teardrop downloads: a fresh orb
 	// has none. Each carries its own time, so waiting doesn't move it.
-	let waiting: { session_id: string; cwd: string; hook_event_name: string; prompt: string; time: string }[] = []
+	let waiting: { session_id: string; cwd: string; hook_event_name: string; prompt: string; time: string; tokens_in?: number; tokens_out?: number }[] = []
 	let sending = Promise.resolve()
-	const record = (event: string, threadID: string, prompt = '') => {
-		waiting.push({ session_id: threadID, cwd: root, hook_event_name: event, prompt, time: new Date().toISOString() })
+	const record = (event: string, threadID: string, prompt = '', used: { tokens_in?: number; tokens_out?: number } = {}) => {
+		waiting.push({ session_id: threadID, cwd: root, hook_event_name: event, prompt, time: new Date().toISOString(), ...used })
 		sending = sending.then(async () => {
 			const bin = await find()
 			waiting = waiting.filter((w) => Date.now() - Date.parse(w.time) < tooLate).slice(-500)
@@ -193,5 +210,6 @@ export default function (amp: PluginAPI) {
 		await record('agent.start', e.thread.id, e.message)
 		return {}
 	})
-	amp.on('agent.end', (e) => record('agent.end', e.thread.id))
+	// A turn that was stopped ends here too, with the tokens it used until then.
+	amp.on('agent.end', (e) => record('agent.end', e.thread.id, '', tokens(e.messages)))
 }

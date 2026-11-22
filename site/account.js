@@ -76,7 +76,7 @@ function renderSetup(el, key) {
 		</div></li>
 		<li><div>
 			<h3>Connect it to your account</h3>
-			<p>Open a new terminal and run this once. It uploads your hours, and teardrop keeps them up to date while you work in Claude Code or Amp.</p>
+			<p>Open a new terminal and run this once. It uploads your hours, and teardrop syncs again each time a reply finishes in Claude Code or Amp, or you stop one.</p>
 			<div class="cmdbox">${cmd(connect)}</div>
 			<p class="fine">The command includes your sync key, which can only upload your stats. Keep it to yourself.</p>
 		</div></li>
