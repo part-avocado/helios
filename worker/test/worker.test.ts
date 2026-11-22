@@ -1,7 +1,7 @@
 // Runs the Worker in the real Workers runtime with a local D1 database, and
 // stands in for Hack Club Auth and the review server with a local HTTP server.
 import assert from 'node:assert/strict'
-import { generateKeyPairSync, sign } from 'node:crypto'
+import { createPrivateKey, createPublicKey, generateKeyPairSync, type KeyObject, sign } from 'node:crypto'
 import { readdirSync, readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -84,7 +84,7 @@ async function signIn(person: string): Promise<string> {
 }
 
 async function me(cookie: string) {
-	return (await (await call('/api/me', { cookie })).json()) as { name: string; slack_id: string; admin: boolean; api_key: string; computers: { id: string }[] }
+	return (await (await call('/api/me', { cookie })).json()) as { name: string; slack_id: string; admin: boolean; api_key: string; computers: { id: string; cloud: boolean }[] }
 }
 
 async function reports(cookie: string, query = '') {
@@ -94,8 +94,7 @@ async function reports(cookie: string, query = '') {
 }
 
 /** computer is a teardrop install: a signing key, and reports signed the way the CLI signs them. */
-function computer() {
-	const { publicKey, privateKey } = generateKeyPairSync('ed25519')
+function computer({ publicKey, privateKey }: { publicKey: KeyObject; privateKey: KeyObject } = generateKeyPairSync('ed25519')) {
 	const account = publicKey.export({ format: 'jwk' }).x!
 	return (report: object, generatedAt = Date.now(), version = 'v0.0.1') => {
 		const payload = JSON.stringify({
@@ -590,8 +589,9 @@ test('every report is kept in full, refused ones too, until the account is delet
 	assert.deepEqual([await files(`${person.id}/`), (await files('')).length], [[], others])
 })
 
-test('events from Amp\'s cloud wait for one of the person\'s computers, which takes each once', async () => {
-	const { api_key: key } = await me(await signIn('cloudy'))
+test('events from Amp\'s cloud are kept, and a cloud thread reads them back with the key to sign its count', async () => {
+	const cookie = await signIn('cloudy')
+	const { api_key: key } = await me(cookie)
 	const { api_key: otherKey } = await me(await signIn('stranger'))
 	const now = Date.now()
 	// sim is larger than a JavaScript number holds exactly, and must come back as sent.
@@ -602,39 +602,79 @@ test('events from Amp\'s cloud wait for one of the person\'s computers, which ta
 		const res = await call('/api/v1/events', { method: 'POST', body, key: as })
 		return res.status === 200 ? ((await res.json()) as { stored: number }).stored : res.status
 	}
-	const take = async (computer: string, after = 0, as = key) => {
-		const res = await call(`/api/v1/events?computer=${computer}&after=${after}`, { key: as })
+	const read = async (after = 0, as = key) => {
+		const res = await call(`/api/v1/cloud?after=${after}`, { key: as })
 		assert.equal(res.status, 200, await res.clone().text())
-		return (await res.json()) as { last: number; lines: string[] }
+		return (await res.json()) as { key: string; last: number; lines: string[] }
 	}
-	const laptop = 'td-aaaaaaaaaaaa'
-	const desktop = 'td-bbbbbbbbbbbb'
 
 	assert.equal(await send(prompt, ''), 401, 'no sync key')
+	assert.equal((await call('/api/v1/cloud')).status, 401, 'no sync key')
 	const junk = ['not json', '{"tool":"claude-code","session":"T-1","t":"2026-01-01T00:00:00Z","event":"Stop"}', line(-3600_000, 'agent.end'), line(40 * DAY, 'agent.end'), ''].join('\n')
 	assert.deepEqual([await send([prompt, junk, done].join('\n')), await send(prompt + '\n')], [2, 0], 'only Amp events from a sensible time, each once')
 	assert.equal(await send(line(1000, 'agent.end', `,"cwd":"${'x'.repeat(600_000)}"`)), 413)
 
-	// No one else gets them, and the first of their computers to ask does.
-	assert.deepEqual((await take(laptop, 0, otherKey)).lines, [])
-	const first = await take(laptop)
+	// Reading leaves them there, because the next thread starts on a new machine. No one else gets them.
+	const first = await read()
 	assert.deepEqual(first.lines, [prompt, done])
-	// Asking again without saying they arrived hands them over again; the other computer gets none.
-	assert.deepEqual([(await take(laptop)).lines.length, (await take(desktop)).lines.length], [2, 0])
-	// Saying they arrived lets the server forget them, and later events follow.
-	assert.deepEqual(await take(laptop, first.last), { last: first.last, lines: [] })
+	assert.deepEqual([(await read()).lines, (await read(0, otherKey)).lines], [[prompt, done], []])
+	// A thread that has them asks only for what came after.
+	assert.deepEqual((await read(first.last)).lines, [])
 	const later = line(1000, 'agent.start', ',"human":true')
 	assert.equal(await send(later), 1)
-	assert.deepEqual((await take(desktop)).lines, [])
-	const next = await take(laptop, first.last)
+	const next = await read(first.last)
 	assert.deepEqual([next.lines, next.last > first.last], [[later], true])
-	assert.equal((await call('/api/v1/events?computer=nonsense', { key })).status, 400)
 
-	// A computer that stopped asking a week ago gives way to another.
+	// Every thread of one person signs with the same key, which a new sync key doesn't change.
+	const rotated = (await (await call('/api/key', { method: 'POST', cookie, origin: SITE })).json()) as { api_key: string }
+	assert.equal((await call('/api/v1/cloud', { key })).status, 401, 'the old sync key')
+	const again = await read(0, rotated.api_key)
+	assert.deepEqual([again.key, again.lines.length], [first.key, 3])
+	assert.notEqual((await read(0, otherKey)).key, first.key)
+
+	// What a thread counts is stored like any computer's report, and the person's settings say which computer is their cloud threads.
+	const seed = Buffer.from(first.key, 'base64url')
+	assert.equal(seed.length, 32)
+	const privateKey = createPrivateKey({ key: Buffer.concat([Buffer.from('302e020100300506032b657004220420', 'hex'), seed]), format: 'der', type: 'pkcs8' })
+	const cloud = computer({ publicKey: createPublicKey(privateKey), privateKey })
+	const laptop = computer()
+	for (const signed of [cloud, laptop]) {
+		const res = await call('/api/v1/reports', { method: 'POST', body: signed({ engaged_seconds: 600, blocks: [block(now - 1000)] }), key: rotated.api_key })
+		assert.equal(res.status, 200, await res.clone().text())
+	}
+	const mine = (await me(cookie)).computers
+	assert.deepEqual(mine.map((c) => c.cloud).sort(), [false, true])
+
+	// A turn that ends in one thread earns minutes from before the count another
+	// thread just made, so a cloud count isn't held to the clock as a computer's
+	// is. Time added to days that were over is flagged for both.
+	const admin = await signIn('admin')
+	const { slack_id } = await me(cookie)
+	const sync = async (signed: ReturnType<typeof computer>, engaged_seconds: number, days: Record<string, number>) => {
+		const report = { engaged_seconds, blocks: [block(now - 1000)], days: Object.entries(days).map(([date, engaged_seconds]) => ({ date, engaged_seconds })) }
+		const res = await call('/api/v1/reports', { method: 'POST', body: signed(report), key: rotated.api_key })
+		assert.equal(res.status, 200, await res.clone().text())
+		return ((await (await call(`/api/admin/person?slack=${slack_id}`, { cookie: admin })).json()) as Review).log[0]!
+	}
+	const today = { [day(now)]: 7800 }
+	let row = await sync(laptop, 7800, today)
+	assert.deepEqual([row.flagged, row.findings.length], [1, 1])
+	assert.match(row.findings[0]!, /Added 2h 00m of engaged time/)
+	row = await sync(cloud, 7800, today)
+	assert.deepEqual([row.flagged, row.findings], [0, []])
+	assert.match(row.remarks.join(' '), /Amp cloud threads/)
+	row = await sync(cloud, 11400, { ...today, [day(now - 10 * DAY)]: 3600 })
+	assert.deepEqual([row.flagged, row.past_added_seconds, row.findings.length], [1, 3600, 1])
+
+	// teardrop v0.5.2 on a computer still asks to take the events, and is told there are none for it.
+	assert.equal((await call('/api/v1/events?computer=td-aaaaaaaaaaaa&after=0', { key: rotated.api_key })).status, 404)
+
+	// Events from before the year a report covers go when more arrive.
 	const env = await server.getWorker<{ DB: { prepare(sql: string): { run(): Promise<unknown> } } }>().getEnv()
-	await env.DB.prepare(`UPDATE users SET relay_pulled_at = ${now - 8 * DAY} WHERE relay_computer = '${laptop}'`).run()
-	assert.deepEqual((await take(desktop)).lines, [later])
-	assert.deepEqual((await take(laptop, next.last)).lines, [], 'and no longer gets them itself')
+	await env.DB.prepare(`UPDATE relayed_events SET received_at = ${now - 367 * DAY} WHERE event = 'agent.end' AND session = 'T-1'`).run()
+	const newest = line(500, 'agent.end')
+	assert.equal(await send(newest, rotated.api_key), 1)
+	assert.deepEqual((await read(0, rotated.api_key)).lines, [prompt, later, newest])
 })
 
 test('project submissions go on to the review server', async () => {

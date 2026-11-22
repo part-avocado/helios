@@ -82,7 +82,12 @@ func accountID(pub ed25519.PublicKey) string {
 
 // signReport signs rep as generated now.
 func signReport(rep timeline.Report, since string, now time.Time) (SignedReport, error) {
-	return signPayload(func(account string) any {
+	return signPayload(reportPayload(rep, since, now))
+}
+
+// reportPayload makes the payload of a report generated now, for the account that signs it.
+func reportPayload(rep timeline.Report, since string, now time.Time) func(account string) any {
+	return func(account string) any {
 		return exportPayload{
 			Account:     account,
 			GeneratedAt: now.UTC(),
@@ -91,7 +96,7 @@ func signReport(rep timeline.Report, since string, now time.Time) (SignedReport,
 			Teardrop:    version,
 			Report:      rep,
 		}
-	})
+	}
 }
 
 // signPayload signs the JSON of the payload that build makes for this
@@ -101,6 +106,11 @@ func signPayload(build func(account string) any) (SignedReport, error) {
 	if err != nil {
 		return SignedReport{}, err
 	}
+	return signWith(priv, build)
+}
+
+// signWith is signPayload for the account whose key is priv.
+func signWith(priv ed25519.PrivateKey, build func(account string) any) (SignedReport, error) {
 	payload, err := json.Marshal(build(base64.RawURLEncoding.EncodeToString(priv.Public().(ed25519.PublicKey))))
 	if err != nil {
 		return SignedReport{}, err

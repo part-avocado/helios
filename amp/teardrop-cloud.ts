@@ -140,8 +140,11 @@ export default function (amp: PluginAPI) {
 	}
 
 	// Hands one event to teardrop, which scores the prompt, keeps only the
-	// counts, and sends them to the site. Failures are ignored so Amp is never
-	// blocked.
+	// counts, and sends them to the site. When a turn ends, teardrop v0.6.0 or
+	// later also counts the person's cloud threads from what the site holds and
+	// syncs the total, so no computer of theirs is needed. An older teardrop
+	// only sends, and the site keeps the events until a newer one counts them.
+	// Failures are ignored so Amp is never blocked.
 	const hand = (bin: string, event: object) =>
 		new Promise<void>((resolve) => {
 			try {

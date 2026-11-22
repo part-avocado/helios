@@ -35,7 +35,9 @@ var humanEvents = map[string]string{
 // would reach the model), always exits 0, and keeps no prompt text.
 //
 // With -relay after the tool, the event goes to the person's teardrop site
-// instead of this machine's journal. Amp's cloud plugin uses it.
+// instead of this machine's journal, and a turn that ends, finished or
+// interrupted, has the person's cloud threads counted (cloud.go). Amp's cloud
+// plugin uses it.
 func runHook(args []string) {
 	defer func() { recover() }()
 	if len(args) == 0 || humanEvents[args[0]] == "" {
@@ -64,15 +66,16 @@ func runHook(args []string) {
 	}
 	if relay {
 		ev.Time = happenedAt(ev.Time, in.Time)
-		// The computer that counts this event can't look the folder up, so
-		// the repository goes with it, without any sign-in the remote holds.
+		// The thread that counts this event may run on another machine, which
+		// can't look the folder up, so the repository goes with it, without
+		// any sign-in the remote holds.
 		if remote := gitOut(in.Cwd, "config", "--get", "remote.origin.url"); remote != "" {
 			ev.Git = normalizeRemote(remote)
 		}
 		if err := queueRelay(ev); err != nil {
 			fmt.Fprintln(os.Stderr, "teardrop hook:", err)
 		}
-		relaySoon()
+		relaySoon(in.Event == "agent.end")
 		return
 	}
 	if err := sources.AppendJournal(dataDir(), ev); err != nil {

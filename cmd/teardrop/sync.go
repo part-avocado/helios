@@ -155,14 +155,6 @@ func runSync(args []string) {
 	k, err := syncKey(*key, srv)
 	check(err)
 
-	// Activity from Amp threads in Amp's cloud waits on the server for one of
-	// this person's computers to count it.
-	if k != "" {
-		if _, err := pullRelayed(&http.Client{Timeout: time.Minute}, srv, k); err != nil && !*quiet {
-			fmt.Fprintln(os.Stderr, "teardrop: could not fetch your Amp cloud activity:", err)
-		}
-	}
-
 	window, _ := parseSince(syncWindow)
 	now := time.Now()
 	raws, _ := loadAll(*claudeDir, *codexDir)

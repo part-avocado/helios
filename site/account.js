@@ -96,7 +96,7 @@ function renderSetup(el, key) {
 					<p>Threads you start in the Amp app or on ampcode.com run on Amp's machines, where that plugin can't reach. To count them too, paste this into any Amp thread:</p>
 					<div class="prompt"><code>${esc(cloudPrompt)}</code><button class="copy" type="button">Copy</button></div>
 					<p>When Amp asks for the secret, paste your sync key:</p>${cmd(key, 'plain')}
-					<p>Cloud time reaches your dashboard when this computer next syncs, so keep teardrop installed here.</p></div>
+					<p>Cloud time is counted in the cloud and reaches your dashboard when Amp finishes a turn or you stop it. No computer needs to be on.</p></div>
 			</div>
 		</div></li>
 		<li><div>

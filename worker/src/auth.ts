@@ -32,6 +32,14 @@ async function hmacKey(env: Env): Promise<CryptoKey> {
 	return crypto.subtle.importKey('raw', new TextEncoder().encode(env.SESSION_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify'])
 }
 
+/**
+ * derived returns 32 bytes that only this server can make for label, the
+ * same ones each time. No label is a value that sign is given.
+ */
+export async function derived(env: Env, label: string): Promise<Uint8Array> {
+	return new Uint8Array(await crypto.subtle.sign('HMAC', await hmacKey(env), new TextEncoder().encode(label)))
+}
+
 /** sign returns value with a signature only this server can make. */
 async function sign(env: Env, value: string): Promise<string> {
 	const sig = await crypto.subtle.sign('HMAC', await hmacKey(env), new TextEncoder().encode(value))

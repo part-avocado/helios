@@ -2,6 +2,7 @@
 // storing the latest one of each computer, and reading them back. Every report
 // is also kept as it arrived, in the REPORTS bucket, for reviewers.
 import { newKey, type User } from './auth.ts'
+import { cloudComputer } from './events.ts'
 import { fromBase64Url, Refusal } from './http.ts'
 import { dayChanges, dayTotals, type Detail, type Entry, findings, logEntry, type LogEvent, logRemoval, parseDays, parseStored, pastAdded, projectChanges, projectTotals, removedReport, type ReportBody, summarize } from './log.ts'
 
@@ -130,15 +131,15 @@ async function store(env: Env, user: User, body: string, entry: Entry): Promise<
 		entry.prev_teardrop_version = before.teardrop_version
 		if (existing?.days && existing.since === since) entry.past_added_seconds = pastAdded(parseDays(existing.days), days, existing.generated_at)
 	}
-	entry.flagged = Number(findings(entry).length > 0)
-
 	// What changed since the report this one replaces, day by day and project
 	// by project. With nothing to compare it with, everything it holds is listed.
 	const comparable = existing && existing.days !== '' && existing.since === since ? existing : null
 	const detail: Detail = { ...held, full: !comparable, days: dayChanges(comparable && parseDays(comparable.days), days) }
+	if (id === (await cloudComputer(env, user)).id) detail.cloud = true
 	// A computer that last synced before project totals were kept has none to compare with.
 	if (!comparable || comparable.projects !== '') Object.assign(detail, projectChanges(comparable && parseStored(comparable.projects), projects))
 	entry.detail = JSON.stringify(detail)
+	entry.flagged = Number(findings(entry).length > 0)
 
 	const chunks: string[] = []
 	for (let at = 0; at < signed.payload.length; ) {
@@ -288,8 +289,6 @@ export async function removeComputer(env: Env, userID: number, id: string): Prom
 	// Deleting the computer deletes its report pieces with it (ON DELETE CASCADE).
 	const results = await env.DB.batch([
 		...logRemoval(env, userID, id),
-		// Their cloud events go to whichever computer asks next.
-		env.DB.prepare(`UPDATE users SET relay_computer = '' WHERE id = ? AND relay_computer = ?`).bind(userID, id),
 		env.DB.prepare('DELETE FROM computers WHERE id = ? AND user_id = ?').bind(id, userID),
 	])
 	await forgetDropped(env, results)
@@ -309,10 +308,10 @@ export async function deleteUser(env: Env, userID: number): Promise<void> {
 		env.DB.prepare(`UPDATE account_log SET report_key = NULL, detail = json_remove(detail, '$.projects', '$.more_projects') WHERE user_id = ?`).bind(userID),
 		// The report pieces go with the computers (ON DELETE CASCADE).
 		env.DB.prepare('DELETE FROM computers WHERE user_id = ?').bind(userID),
-		// Cloud events that no computer took yet go too.
+		// The events kept from their cloud threads go too.
 		env.DB.prepare('DELETE FROM relayed_events WHERE user_id = ?').bind(userID),
 		// The new sync key is one no one has seen, so the old one stops working.
-		env.DB.prepare(`UPDATE users SET name = '', relay_computer = '', api_key = ?, deleted_at = ? WHERE id = ?`).bind(newKey(), Date.now(), userID),
+		env.DB.prepare(`UPDATE users SET name = '', api_key = ?, deleted_at = ? WHERE id = ?`).bind(newKey(), Date.now(), userID),
 	])
 	// Everything kept for this person, including what no log row names any more.
 	let cursor: string | undefined

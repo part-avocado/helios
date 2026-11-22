@@ -118,9 +118,12 @@ in its Secrets & Env Vars settings, `TEARDROP_SERVER` (your site) and
 `TEARDROP_KEY` (your sync key, which Amp asks you for privately). In a cloud
 thread the plugin downloads teardrop, checks its checksum, and runs
 `teardrop hook amp -relay`, which sends your site the same line the journal
-holds, without the prompt text. The site only holds these lines. One of your
-computers takes them into its journal at its next `teardrop sync` and counts
-them with everything else, so that computer needs teardrop v0.5.2 or later.
+holds, without the prompt text. The site keeps these lines for a year. No
+computer of yours is needed: when Amp finishes a turn or you stop it, the
+teardrop in that thread reads all of your cloud lines back, counts them, and
+syncs the result as one "Amp cloud threads" entry on your dashboard. Threads
+that ran side by side are counted together,
+so their overlap counts once. Cloud days are split at midnight UTC.
 The Mac app's threads can instead run on your Mac: turn on the runner in the
 app's App Settings, Runner, and pick "This Mac" when you start a thread.
 
@@ -289,7 +292,8 @@ teardrop reads timestamps, token counts, line counts, and working
 directories. Prompt text is scored in memory and dropped; it is never stored
 or printed, and `sync` never uploads it. In Amp's cloud, the cloud plugin
 sends your site each prompt's time, thread, folder, repository, and word
-counts, without its text. Your chat logs leave your machine
+counts, without its text, and the site keeps them for a year so your cloud
+threads can count them. Your chat logs leave your machine
 only when you run `teardrop submit` and confirm.
 
 ## License

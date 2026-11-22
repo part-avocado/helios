@@ -7,7 +7,7 @@
 //	teardrop setup amp   set up one tool only: claude, codex, or amp
 //	teardrop update   replace this teardrop with the latest release
 //	teardrop hook claude-code   record one Claude Code hook event (run by Claude Code)
-//	teardrop relay    send events recorded in Amp's cloud to your teardrop site (run by the Amp cloud plugin)
+//	teardrop relay    send events recorded in Amp's cloud to your teardrop site, and count them there (run by the Amp cloud plugin)
 package main
 
 import (
@@ -334,14 +334,19 @@ func resolveProject(cwd, gitURL string) (timeline.Project, string) {
 	if gitURL == "" {
 		gitURL = gitOut(cwd, "config", "--get", "remote.origin.url")
 	}
+	return nameProject(root, gitURL), root
+}
+
+// nameProject names the project in the folder root by its git remote, when it has one.
+func nameProject(root, gitURL string) timeline.Project {
 	if gitURL != "" {
 		key := normalizeRemote(gitURL)
-		return timeline.Project{Key: key, Name: filepath.Base(key)}, root
+		return timeline.Project{Key: key, Name: filepath.Base(key)}
 	}
 	if root == "" {
-		return timeline.Project{Key: "(unknown)", Name: "(unknown)"}, ""
+		return timeline.Project{Key: "(unknown)", Name: "(unknown)"}
 	}
-	return timeline.Project{Key: root, Name: filepath.Base(root)}, root
+	return timeline.Project{Key: root, Name: filepath.Base(root)}
 }
 
 // normalizeRemote maps git@host:o/r.git and https://host/o/r to host/o/r.

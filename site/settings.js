@@ -25,7 +25,7 @@ const change = (path, method, body) => api(path, { method, body })
 
 function listComputers(computers) {
 	$('computer-list').innerHTML = computers.map((c) => `<div class="item">
-			<div class="grow"><code>${esc(c.id)}</code>
+			<div class="grow">${c.cloud ? 'Amp cloud threads ' : ''}<code>${esc(c.id)}</code>
 				<div class="sub">Synced ${esc(ago(c.synced_at))} - ${dur(c.engaged_seconds)} in the past year${c.teardrop_version ? ` - teardrop ${esc(c.teardrop_version)}` : ''}</div></div>
 			<button class="btn small danger" type="button" data-remove="${esc(c.id)}">Remove</button>
 		</div>`).join('') ||
@@ -54,7 +54,7 @@ $('new-key').addEventListener('click', async () => {
 
 $('computer-list').addEventListener('click', async (e) => {
 	const id = e.target.closest('[data-remove]')?.dataset.remove
-	if (!id || !confirm(`Remove ${id} and its hours from your account? It comes back if that computer syncs again.`)) return
+	if (!id || !confirm(`Remove ${id} and its hours from your account? It comes back if it syncs again.`)) return
 	try {
 		await change('/api/computers/' + encodeURIComponent(id), 'DELETE')
 		listComputers((await api('/api/me')).computers)

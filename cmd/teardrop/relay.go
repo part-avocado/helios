@@ -2,19 +2,14 @@ package main
 
 import (
 	"bytes"
-	"crypto/ed25519"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -23,9 +18,8 @@ import (
 
 // An Amp thread that runs in Amp's cloud has no computer of the person's to
 // keep a journal on. There, the cloud plugin runs `teardrop hook amp -relay`,
-// which hands each event to the person's teardrop site. One of their own
-// computers takes the events into its journal at its next sync and counts
-// them with everything else, so no moment is counted twice.
+// which hands each event to the person's teardrop site. The site keeps them,
+// and a thread that finishes a turn counts them all (cloud.go).
 
 const (
 	// relayOutbox holds events that are waiting to go to the site.
@@ -71,13 +65,18 @@ func queueRelay(ev sources.JournalEvent) error {
 	return err
 }
 
-// relaySoon sends the outbox in the background. Hooks call it, so it never waits.
-func relaySoon() {
+// relaySoon sends the outbox in the background, and with count, because a
+// turn ended, counts the person's cloud threads after. Hooks call it, so it
+// never waits.
+func relaySoon(count bool) {
 	exe, err := os.Executable()
 	if err != nil {
 		return
 	}
 	cmd := exec.Command(exe, "relay")
+	if count {
+		cmd.Args = append(cmd.Args, "-count")
+	}
 	if cmd.Start() == nil {
 		cmd.Process.Release()
 	}
@@ -85,31 +84,40 @@ func relaySoon() {
 
 // runRelay sends the outbox to the site named by $TEARDROP_SERVER, as the
 // person whose sync key is in $TEARDROP_KEY. Without both it does nothing,
-// and the events wait.
+// and the events wait. With -count it then counts the person's cloud threads
+// and syncs the result.
 func runRelay(args []string) {
 	fs := flag.NewFlagSet("relay", flag.ExitOnError)
+	count := fs.Bool("count", false, "then count your cloud threads and sync the result")
 	verbose := fs.Bool("verbose", false, "say what was sent, or why nothing was")
 	fs.Parse(args)
-	err := func() error {
+	counted, err := func() (bool, error) {
 		server, err := serverURL("")
 		if err != nil {
-			return err
+			return false, err
 		}
 		key, err := syncKey("", server)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if key == "" {
-			return fmt.Errorf("no sync key set; put yours in $TEARDROP_KEY")
+			return false, fmt.Errorf("no sync key set; put yours in $TEARDROP_KEY")
 		}
 		client := &http.Client{Timeout: time.Minute}
-		return sendOutbox(dataDir(), func(lines []byte) (int, error) {
+		err = sendOutbox(dataDir(), func(lines []byte) (int, error) {
 			return relayRequest(client, "POST", server+"/api/v1/events", key, lines, nil)
 		})
+		if err != nil || !*count {
+			return false, err
+		}
+		return true, countCloud(client, server, key, time.Now())
 	}()
 	if *verbose {
 		check(err)
 		fmt.Println("Sent.")
+		if counted {
+			fmt.Println("Counted your cloud threads and synced them.")
+		}
 	}
 }
 
@@ -168,62 +176,4 @@ func relayRequest(client *http.Client, method, address, key string, body []byte,
 		}
 	}
 	return res.StatusCode, nil
-}
-
-// pullRelayed moves the person's cloud events from the site into this
-// computer's journal, and returns how many it took. The site hands them to
-// one computer only. A site without cloud events is not an error.
-func pullRelayed(client *http.Client, server, key string) (int, error) {
-	priv, err := accountKey()
-	if err != nil {
-		return 0, err
-	}
-	id := accountID(priv.Public().(ed25519.PublicKey))
-	// The cursor is the last event taken, which the site may then forget. It
-	// holds for one account on one server only: with another's, the site
-	// would forget events this computer never took.
-	cursorPath := filepath.Join(dataDir(), "relay-cursor")
-	sum := sha256.Sum256([]byte(server + "\x00" + key))
-	whose := hex.EncodeToString(sum[:8])
-	var after int64
-	if b, err := os.ReadFile(cursorPath); err == nil {
-		if from, n, ok := strings.Cut(strings.TrimSpace(string(b)), "\n"); ok && from == whose {
-			after, _ = strconv.ParseInt(n, 10, 64)
-		}
-	}
-	taken := 0
-	for {
-		var page struct {
-			Last  int64    `json:"last"`
-			Lines []string `json:"lines"`
-		}
-		q := url.Values{"computer": {id}, "after": {strconv.FormatInt(after, 10)}}
-		status, err := relayRequest(client, "GET", server+"/api/v1/events?"+q.Encode(), key, nil, &page)
-		if status == http.StatusNotFound {
-			return taken, nil
-		}
-		if err != nil {
-			return taken, err
-		}
-		if len(page.Lines) == 0 || page.Last <= after {
-			return taken, nil
-		}
-		latest := time.Now().Add(5 * time.Minute)
-		for _, line := range page.Lines {
-			var ev sources.JournalEvent
-			// Only what the cloud plugin sends is taken, and nothing from the future.
-			if json.Unmarshal([]byte(line), &ev) != nil || ev.Tool != "amp" || ev.Session == "" || ev.Time.IsZero() || ev.Time.After(latest) {
-				continue
-			}
-			if err := sources.AppendJournal(dataDir(), ev); err != nil {
-				return taken, err
-			}
-			taken++
-		}
-		after = page.Last
-		// Asking again with the new cursor is what lets the site forget these.
-		if err := os.WriteFile(cursorPath, []byte(whose+"\n"+strconv.FormatInt(after, 10)+"\n"), 0o600); err != nil {
-			return taken, err
-		}
-	}
 }

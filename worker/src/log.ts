@@ -63,6 +63,8 @@ export interface Detail {
 	lines_removed: number
 	lines_kept: number
 	tools: string[]
+	/** Set when the report is the count of the person's Amp cloud threads. */
+	cloud?: boolean
 	/**
 	 * Whether the lists below are everything the report held, because there
 	 * was no earlier report to compare it with. Otherwise they are what changed.
@@ -239,7 +241,11 @@ export function findings(e: Entry): string[] {
 	if ((e.past_added_seconds ?? 0) > SLACK) {
 		out.push(`Added ${dur(e.past_added_seconds!)} to days that were already over when the report before it was made.`)
 	}
-	if (comparable(e)) {
+	// A cloud report is counted from the events of every cloud thread. A thread
+	// only says that a turn is over when it is, and the minutes that earns lie
+	// before the report another thread made meanwhile. So the rule below doesn't
+	// hold for it; the one above does.
+	if (comparable(e) && !parseStored<Detail>(e.detail)?.cloud) {
 		// Engaged time counts each moment once, so it can't grow faster than the clock.
 		const added = e.engaged_seconds - e.prev_engaged_seconds!
 		const passed = (e.at - e.prev_generated_at!) / 1000
@@ -254,6 +260,7 @@ export function remarks(e: Entry): string[] {
 	if (e.event === 'remove') return [`Removed in Settings. It had ${dur(e.engaged_seconds)}.`]
 	if (e.event === 'delete') return [`The person deleted their account in Settings. Its computers had ${dur(e.engaged_seconds)} between them.`]
 	const out: string[] = []
+	if (parseStored<Detail>(e.detail)?.cloud) out.push('Counted from their Amp cloud threads. Time is not checked against the clock, because a turn that ends adds minutes from before the last report.')
 	if (e.prev_generated_at == null) {
 		// A computer's first sync brings its earlier history with it, which nothing can be compared with.
 		if (e.engaged_seconds > 0) out.push(`First sync: ${dur(e.engaged_seconds)} of earlier history, unchecked.`)

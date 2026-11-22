@@ -2,10 +2,7 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -76,73 +73,6 @@ func TestSendOutbox(t *testing.T) {
 	sendOutbox(dir, answer(200, nil))
 	if len(sent) != 0 {
 		t.Errorf("a refused upload was sent again: %q", sent)
-	}
-}
-
-func TestPullRelayed(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("TEARDROP_DATA_DIR", dir)
-	line := func(ev sources.JournalEvent) string {
-		b, _ := json.Marshal(ev)
-		return string(b)
-	}
-	at := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
-	prompt := sources.JournalEvent{Time: at, Tool: "amp", Event: "agent.start", Human: true, Session: "T-1", Cwd: "/home/user/workspace/repo", Git: "github.com/o/app", Judged: 4, Real: 4}
-	pages := map[string][]string{
-		"0": {
-			line(prompt),
-			line(prompt), // handed over twice
-			line(sources.JournalEvent{Time: at, Tool: "claude-code", Event: "UserPromptSubmit", Human: true, Session: "c"}),
-			line(sources.JournalEvent{Time: at.Add(48 * time.Hour), Tool: "amp", Event: "agent.start", Human: true, Session: "T-future"}),
-			"not json",
-		},
-		"7": {line(sources.JournalEvent{Time: at.Add(time.Minute), Tool: "amp", Event: "agent.end", Session: "T-1"})},
-	}
-	last := map[string]int{"0": 7, "7": 9, "9": 9}
-	var asked []string
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		q := r.URL.Query()
-		who := r.Header.Get("Authorization")
-		if (who != "Bearer mine" && who != "Bearer else") || !strings.HasPrefix(q.Get("computer"), "td-") {
-			http.Error(w, "who are you?", http.StatusUnauthorized)
-			return
-		}
-		asked = append(asked, q.Get("after"))
-		json.NewEncoder(w).Encode(map[string]any{"last": last[q.Get("after")], "lines": pages[q.Get("after")]})
-	}))
-	defer ts.Close()
-
-	// The repeat is written too; reading the journal is what drops it.
-	n, err := pullRelayed(ts.Client(), ts.URL, "mine")
-	if err != nil || n != 3 {
-		t.Fatalf("took %d events (%v), want 3: only Amp's, and none from the future", n, err)
-	}
-	// Asking again past the last event is what tells the site it can forget them.
-	if strings.Join(asked, ",") != "0,7,9" {
-		t.Errorf("asked after %v, want 0, 7, then 9", asked)
-	}
-	raws, _ := sources.ReadJournal(dir)
-	if len(raws) != 1 || raws[0].ID != "T-1" || raws[0].GitURL != "github.com/o/app" || len(raws[0].Events) != 2 {
-		t.Fatalf("journal holds %+v, want T-1 with its repository and one prompt and one finish", raws)
-	}
-
-	// The next sync starts where this one stopped.
-	asked = nil
-	if n, err := pullRelayed(ts.Client(), ts.URL, "mine"); err != nil || n != 0 || strings.Join(asked, ",") != "9" {
-		t.Errorf("a second pull took %d events after %v (%v), want none after 9", n, asked, err)
-	}
-	// Another account on the same site starts from its own beginning: the
-	// site forgets what comes before the number asked for.
-	asked = nil
-	if _, err := pullRelayed(ts.Client(), ts.URL, "else"); err != nil || len(asked) == 0 || asked[0] != "0" {
-		t.Errorf("another account's pull asked after %v (%v), want 0 first", asked, err)
-	}
-
-	// A site without cloud events, such as an older one, is not a failure.
-	old := httptest.NewServer(http.NotFoundHandler())
-	defer old.Close()
-	if n, err := pullRelayed(old.Client(), old.URL, "mine"); err != nil || n != 0 {
-		t.Errorf("a site without cloud events: took %d, err %v", n, err)
 	}
 }
 
