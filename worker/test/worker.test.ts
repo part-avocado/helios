@@ -1245,3 +1245,26 @@ test('commits travel as records, earn no time, and are checked against GitHub', 
 		['github.com/kid/site', 2, 1, [['b', false], ['a', true]]],
 	])
 })
+
+test('a superadmin imports what the old review server credited, and it is never credited again', async () => {
+	const cookie = await signIn('importer')
+	const { api_key: key } = await me(cookie)
+	const sync = computer()
+	assert.equal((await call('/api/v1/reports', { method: 'POST', key, body: sync({ blocks: [], projects: [], engaged_seconds: 0 }) })).status, 200)
+	const { computers: mine } = (await (await call('/api/me', { cookie })).json()) as { computers: { id: string }[] }
+	const now = Date.now()
+	const iso = (t: number) => new Date(t).toISOString()
+	const lines = [
+		{ id: 'r1', account: mine[0]!.id, project: { key: 'github.com/kid/old', name: 'old' }, received_at: iso(now - 86400_000), engaged: [{ start: iso(now - 600_000), end: iso(now - 280_000) }], credited_seconds: 320 },
+		{ id: 'r2', account: 'td-ffffffffffff', project: { key: 'x', name: 'x' }, received_at: iso(now), credited_seconds: 5 },
+	].map((r) => JSON.stringify(r)).join('\n')
+	const reviewer = await signIn('admin')
+	const importIt = () => call('/api/review/import', { method: 'POST', cookie: reviewer, origin: SITE, body: lines })
+	assert.deepEqual(await (await importIt()).json(), { imported: 1, unknown: ['r2'] })
+	assert.deepEqual(await (await importIt()).json(), { imported: 0, unknown: ['r2'] }, 'importing twice adds nothing')
+	// Live records over the same stretch earn nothing new.
+	const line = (t: number, event: string, extra: object = {}) => JSON.stringify({ t: iso(t), tool: 'claude-code', event, session: 'o', project: 'github.com/kid/old', ...extra })
+	await call('/api/v1/events', { method: 'POST', key, body: [line(now - 290_000, 'UserPromptSubmit', { human: true }), line(now - 170_000, 'Stop')].join('\n') })
+	const sub = (await (await call('/api/v1/submissions', { method: 'POST', key, body: JSON.stringify({ project: 'github.com/kid/old' }) })).json()) as { credited_seconds: number; earlier_overlap_seconds: number }
+	assert.deepEqual([sub.credited_seconds, sub.earlier_overlap_seconds], [110, 10])
+})

@@ -77,6 +77,8 @@
 	"migrations": [{ "tag": "v1", "new_sqlite_classes": ["UserHub"] }],
 	"observability": {
 		"enabled": true,
+		// Keep a tenth of request logs, so logging stays cheap as people join.
+		"head_sampling_rate": 0.1,
 		"traces": { "enabled": true }
 	}
 }

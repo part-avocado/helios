@@ -137,16 +137,6 @@ func openLog(path string) (io.Reader, func(), error) {
 	return zr, func() { zr.Close(); f.Close() }, nil
 }
 
-// ReadLog returns a log file's contents, decompressed.
-func ReadLog(path string) ([]byte, error) {
-	r, done, err := openLog(path)
-	if err != nil {
-		return nil, err
-	}
-	defer done()
-	return io.ReadAll(r)
-}
-
 func parseFile(path string, parse Parser) (Raw, error) {
 	rd, done, err := openLog(path)
 	if err != nil {

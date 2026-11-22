@@ -224,3 +224,56 @@ export async function accept(env: Env, actor: User, id: string, body: Record<str
 		env.DB.prepare('INSERT INTO staff_log (at, by_slack_id, action, slack_id, detail) VALUES (?, ?, ?, ?, ?)').bind(now, actor.slack_id, 'accept', row.slack_id, `${id}: accepted ${accepted}s unwitnessed. ${note}`),
 	])
 }
+
+/** An old review server's record.json line, as `teardrop export-records` prints it. */
+interface OldRecord {
+	id?: unknown
+	account?: unknown
+	project?: { key?: unknown; name?: unknown }
+	received_at?: unknown
+	engaged?: { start: string; end: string }[]
+	credited_seconds?: unknown
+}
+
+/**
+ * importRecords copies what the retired review server credited into
+ * submissions, marked imported, so a project is never credited twice. Each
+ * record's computer names its account. It returns how many were added and
+ * which records name a computer no account has.
+ */
+export async function importRecords(env: Env, body: string): Promise<{ imported: number; unknown: string[] }> {
+	let imported = 0
+	const unknown: string[] = []
+	for (const line of body.split('\n')) {
+		if (!line.trim()) continue
+		let r: OldRecord
+		try {
+			r = JSON.parse(line)
+		} catch {
+			throw new Refusal(400, 'Each line must be one record from `teardrop export-records`.')
+		}
+		const id = typeof r.id === 'string' ? r.id : ''
+		const account = typeof r.account === 'string' ? r.account : ''
+		const key = typeof r.project?.key === 'string' ? r.project.key : ''
+		if (!id || !key) throw new Refusal(400, 'A record has no id or project.')
+		const owner = await env.DB.prepare('SELECT user_id FROM computers WHERE id = ?').bind(account).first<{ user_id: number }>()
+		if (!owner) {
+			unknown.push(id)
+			continue
+		}
+		const witnessed: Span[] = (r.engaged ?? []).map((e) => [Date.parse(e.start), Date.parse(e.end)] as Span).filter(([s, e]) => e > s)
+		const snapshotKey = `${owner.user_id}/submissions/old-${id}.json.gz`
+		const snapshot: Snapshot = { project: { key, name: typeof r.project?.name === 'string' ? r.project.name : nameOf(key) }, days: [], witnessed: merge(witnessed), unwitnessed: [], earlier: [] }
+		await env.REPORTS.put(snapshotKey, await gzip(JSON.stringify(snapshot)))
+		const credited = Number(r.credited_seconds) || 0
+		const done = await env.DB.prepare(
+			`INSERT OR IGNORE INTO submissions (id, user_id, project_key, project_name, received_at, witnessed_seconds, unwitnessed_seconds, earlier_overlap_seconds,
+				credited_seconds, prompts, state, snapshot_key, imported)
+			 VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, 0, 'decided', ?, 1)`,
+		)
+			.bind('old-' + id, owner.user_id, key, snapshot.project.name, Date.parse(String(r.received_at)) || Date.now(), seconds(witnessed), credited, snapshotKey)
+			.run()
+		imported += done.meta.changes
+	}
+	return { imported, unknown }
+}

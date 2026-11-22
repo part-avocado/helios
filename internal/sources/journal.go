@@ -104,34 +104,6 @@ func ReadJournal(dir string) (out []Raw, warnings []string) {
 	return j.raws(), warnings
 }
 
-// ParseJournal reads journal lines from r, such as those a submission holds,
-// into one Raw per session.
-func ParseJournal(r io.Reader, name string) ([]Raw, error) {
-	j := journal{byKey: map[string]*Raw{}}
-	err := j.read(r, name)
-	return j.raws(), err
-}
-
-// JournalLines returns the journal lines of one session, as written.
-func JournalLines(dir, tool, session string) []byte {
-	files, _ := filepath.Glob(filepath.Join(dir, "events-*.jsonl"))
-	var out []byte
-	for _, path := range files {
-		f, err := os.Open(path)
-		if err != nil {
-			continue
-		}
-		lines(f, func(b []byte) {
-			var ev JournalEvent
-			if json.Unmarshal(b, &ev) == nil && ev.Tool == tool && ev.Session == session {
-				out = append(append(out, b...), '\n')
-			}
-		})
-		f.Close()
-	}
-	return out
-}
-
 type journal struct {
 	byKey map[string]*Raw
 	order []string

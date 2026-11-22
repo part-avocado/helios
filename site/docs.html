@@ -228,7 +228,7 @@
 		<tr><td><code>teardrop export</code></td><td>Write a signed report to upload under Settings on the website (<code>-o file</code>, <code>-since</code>, default 365d).</td></tr>
 		<tr><td><code>teardrop sync</code></td><td>Upload your signed counts to your account (<code>-server URL -key KEY</code> once; both are remembered).</td></tr>
 		<tr><td><code>teardrop submit &lt;project&gt;</code></td><td>Submit a project's hours, made by the site from the records it holds. Nothing is uploaded.</td></tr>
-		<tr><td><code>teardrop server</code></td><td>Run the review server with its admin pages (<code>-addr</code>, <code>-data</code>, <code>-public-url</code>).</td></tr>
+		<tr><td><code>teardrop export-records</code></td><td>Print the submission records of a retired review server (<code>-data</code>), for a superadmin to import.</td></tr>
 		<tr><td><code>teardrop -version</code></td><td>Print the installed version.</td></tr>
 	</table>
 	<table>
@@ -259,15 +259,10 @@
 	<p>teardrop remembers the server and the key, so later it's just <code>teardrop sync</code>, and hooks sync in the background when a reply finishes or you stop one. Amp reports a stopped reply at once; Claude Code runs no hook then, so that sync happens at your next prompt or when the session closes. Codex syncs through its <code>notify</code> program when a turn ends. The key can only upload stats. If the server answers that it needs your sync key, run the command from Settings again.</p>
 	<p><code>teardrop submit &lt;project&gt;</code> asks your site to submit a project. Nothing is uploaded: the site makes the submission from the per-prompt records your hooks already sent it. Only time whose records reached the site within 5 minutes of when they happened is credited. Time that arrived late, such as history from before your hooks were set up or work done offline, is listed but not credited unless a neoadmin accepts it with a note. You can submit a project again as it grows; time an earlier submission already covered is credited once.</p>
 	<p>Witnessing stops backdating and editing after the fact. It can't stop a script that sends made-up records live, which no tracker on your own computer can rule out, so reviewers also see flags: more than 16 witnessed hours in a day, gaps between prompts that barely vary, prompts the agent never answered, and Amp turns with no tokens.</p>
-	<p>Your stats on the website are visible to you and to reviewers, apart from what your <a href="#profile">public profile</a> shows: a reviewer sees, for each project, your total and a timeline of your work blocks (when each started and ended, with its prompts, tokens, and lines changed), and neoadmins and superadmins see everything you synced. Deleting your account, under Settings, removes them; admins keep your Slack ID and a record of what your computers reported, without project names. Submissions and their chats are visible only to admins, who review them at <code>/admin</code> on the review server. To host either, see <a href="#run-server">Running a server</a>.</p>
+	<p>Your stats on the website are visible to you and to reviewers, apart from what your <a href="#profile">public profile</a> shows: a reviewer sees, for each project, your total and a timeline of your work blocks (when each started and ended, with its prompts, tokens, and lines changed), and neoadmins and superadmins see everything you synced. Deleting your account, under Settings, removes them; admins keep your Slack ID and a record of what your computers reported, without project names. Submissions hold no chats; reviewers see their records in the review app. To host the site, see <a href="#run-server">Running a server</a>.</p>
 
 	<h2 id="run-server">Running a server</h2>
-	<p>There are two parts, and you can run either without the other:</p>
-	<table>
-		<tr><th>Part</th><th>What it does</th><th>Where it runs</th></tr>
-		<tr><td>The website</td><td>Accounts, sign-in, synced stats, and the dashboard.</td><td>Cloudflare Workers, with its data in a D1 database.</td></tr>
-		<tr><td>The review server</td><td>Takes <code>teardrop submit</code>, recomputes the hours from the chat logs, and serves the review pages.</td><td>Any machine that stays on, such as Fly.io.</td></tr>
-	</table>
+	<p>The site is one Cloudflare Worker with a D1 database for summaries, an R2 bucket for every report and per-prompt record, and a Durable Object per account that takes records as they arrive and pushes them to open dashboards.</p>
 
 	<h3 id="cloudflare">The website, on Cloudflare</h3>
 	<p>The Worker is in the <code>worker</code> folder of the <a href="https://github.com/part-avocado/teardrop">repository</a> and serves the pages in <code>site</code>. You need a Cloudflare account and Node.js 22 or later.</p>
@@ -291,7 +286,7 @@ npm run dev</code></pre>
 		<tr><td><code>SESSION_SECRET</code></td><td>Signs sign-in cookies. Changing it signs everyone out.</td></tr>
 		<tr><td><code>HCA_CLIENT_ID</code>, <code>HCA_CLIENT_SECRET</code></td><td>Your Hack Club Auth app.</td></tr>
 		<tr><td><code>ADMINS</code></td><td>Slack user IDs of the superadmins, separated by commas. They add everyone else who reviews, in <a href="#review-app">the review app</a>.</td></tr>
-		<tr><td><code>REVIEW_SERVER</code></td><td>Optional, in <code>wrangler.jsonc</code>. The address of your review server. With it set, <code>teardrop submit</code> works against the website's address, and submissions need a sync key.</td></tr>
+		<tr><td><code>GITHUB_TOKEN</code></td><td>Optional secret. Lets the hourly check ask GitHub which claimed commits exist. Without it, commits are linked but not checked.</td></tr>
 	</table>
 	<p>To change a secret later, edit it in the dashboard. For your own domain, add a <a href="https://developers.cloudflare.com/workers/configuration/routing/custom-domains/">custom domain</a> to the Worker and use it in the redirect URI. Cloudflare accepts uploads of up to 100 MB, so a larger submission has to go to the review server directly.</p>
 
@@ -330,47 +325,17 @@ npm run dev</code></pre>
   -d '{"code":"tdc_...","redirect_uri":"https://example.com/callback"}'</pre>
 	<p>The answer is <code>{"key": "tdp_...", "token_type": "Bearer", "name": ..., "slack_id": ...}</code>. Use the key with the calls above. A code works once, for the <code>redirect_uri</code> it was made for; trading it a second time also revokes the key it became. <code>redirect_uri</code> must use https, except on <code>localhost</code>. A site without a server should add PKCE: send <code>code_challenge</code>, the base64url SHA-256 of a random verifier, and send <code>code_verifier</code> with the code. The key shows under the person's Settings, API, named after your site, where they can revoke it. Each site keeps at most 5 keys per person; signing in again after that revokes the oldest. Banned accounts can't sign in.</p>
 
-	<h3 id="review-server">The review server</h3>
-	<p>The review server is the same <code>teardrop</code> binary. It keeps everything as files in one folder, so it needs a machine that stays on and a disk that lasts; Cloudflare Workers can't host it.</p>
-	<h3>Try it on your computer</h3>
-	<pre><code>teardrop server -addr 127.0.0.1:8080 -dev-login U012ABCDEF</code></pre>
-	<p><code>-dev-login</code> signs every visitor in as that Slack user ID without Hack Club Auth, and only works on a localhost address. Open <code>http://127.0.0.1:8080/admin</code>, then send it something from another terminal with <code>teardrop sync -server http://127.0.0.1:8080</code>.</p>
 	<h3 id="hca-app">Set up sign-in</h3>
 	<ol>
-		<li>Open Developer Apps on <a href="https://auth.hackclub.com">auth.hackclub.com</a> and create an app with the <code>openid</code> and <code>slack_id</code> scopes.</li>
-		<li>Add <code>https://your-server/auth/callback</code> as its redirect URI.</li>
-		<li>Copy the app's client ID and client secret.</li>
-		<li>Collect the Slack user ID of each admin: in Slack, open their profile, choose ⋮, then Copy member ID.</li>
+		<li>Open Developer Apps on <a href="https://auth.hackclub.com">auth.hackclub.com</a> and create an app with the <code>openid</code>, <code>profile</code>, and <code>slack_id</code> scopes.</li>
+		<li>Add <code>https://your-site/auth/callback</code> as its redirect URI.</li>
+		<li>Copy the app's client ID and client secret into the Worker's secrets.</li>
+		<li>Collect the Slack user ID of each superadmin for <code>ADMINS</code>: in Slack, open their profile, choose ⋮, then Copy member ID.</li>
 	</ol>
-	<h3>Run it</h3>
-	<pre><code>TEARDROP_ADMINS=U012ABCDEF,U034GHIJKL \
-TEARDROP_HCA_CLIENT_ID=... TEARDROP_HCA_CLIENT_SECRET=... \
-teardrop server -addr :8080 -data /var/lib/teardrop -public-url https://your-server</code></pre>
-	<table>
-		<tr><th>Setting</th><th>Meaning</th></tr>
-		<tr><td><code>TEARDROP_ADMINS</code></td><td>Slack user IDs of the people who may review, separated by commas. Only they can open <code>/admin</code>.</td></tr>
-		<tr><td><code>TEARDROP_HCA_CLIENT_ID</code>, <code>TEARDROP_HCA_CLIENT_SECRET</code></td><td>The Hack Club Auth app from step 2.</td></tr>
-		<tr><td><code>-public-url</code></td><td>The address people reach the server at. Also read from <code>TEARDROP_PUBLIC_URL</code>.</td></tr>
-		<tr><td><code>-addr</code></td><td>Address to listen on. Default <code>:8080</code>.</td></tr>
-		<tr><td><code>-data</code></td><td>Folder for accounts, submissions, and the sign-in key. Default <code>teardrop-data</code>. Back it up.</td></tr>
-		<tr><td><code>-max-submission-mb</code></td><td>Largest submission accepted. Default 256.</td></tr>
-	</table>
-	<p>Put it behind HTTPS, such as a reverse proxy that sets <code>X-Forwarded-Proto</code>. Run one copy only: two servers sharing a data folder would overwrite each other. On start, the log says if admins or sign-in are not set up.</p>
-	<h3>Deploy to Fly.io</h3>
-	<p>The repository has a <code>Dockerfile</code> and a <code>fly.toml</code>. With <a href="https://fly.io/docs/flyctl/install/">flyctl</a> installed and signed in, from a clone of the <a href="https://github.com/part-avocado/teardrop">repository</a>:</p>
-	<ol>
-		<li>Pick an app name and put it in <code>fly.toml</code>, both as <code>app</code> and in <code>TEARDROP_PUBLIC_URL</code>. Then run <code>fly apps create &lt;app&gt;</code>.</li>
-		<li>Create the disk: <code>fly volumes create teardrop_data --region iad --size 1</code>.</li>
-		<li>Add <code>https://&lt;app&gt;.fly.dev/auth/callback</code> as a redirect URI in your Hack Club Auth app.</li>
-		<li>Set the secrets: <code>fly secrets set TEARDROP_ADMINS=... TEARDROP_HCA_CLIENT_ID=... TEARDROP_HCA_CLIENT_SECRET=...</code>.</li>
-		<li>Deploy: <code>fly deploy --build-arg VERSION=v0.5.0 --ha=false</code>. <code>--ha=false</code> keeps Fly from starting a second machine.</li>
-	</ol>
-	<p>Check it with <code>fly logs</code>. For your own domain, run <code>fly certs add &lt;domain&gt;</code>, then change <code>TEARDROP_PUBLIC_URL</code> and the redirect URI to match.</p>
-	<h3>Point people at it</h3>
-	<p>With <code>REVIEW_SERVER</code> set on the website, people need nothing more: <code>teardrop submit</code> goes through the website they already sync to. Without the website, each person runs this once:</p>
-	<pre><code>teardrop sync -server https://your-server</code></pre>
-	<h3>Reviewing</h3>
-	<p><code>/admin</code> lists submissions. Each one shows the hours the account claimed, the hours the server recomputed from the logs, and every chat with the time between messages. Time an earlier submission of the same project covered is taken off. <code>/admin/accounts</code> lists every account that has synced.</p>
+	<h3 id="old-review-server">Moving from the old review server</h3>
+	<p>teardrop v0.6 and before submitted chat logs to a separate Go review server. It is retired: submissions are now made on the site from the records it holds. To keep what it credited, so no project is credited twice, run <code>teardrop export-records -data &lt;its data folder&gt; &gt; records.jsonl</code> and, as a superadmin, post the file to <code>/api/review/import</code>. Each record is matched to its account by the computer that sent it.</p>
+	<h3 id="hosting-cost">Hosting cost</h3>
+	<p><code>node worker/scripts/cost-model.ts [prompts per hour]</code> prints the monthly bill from named inputs, with Cloudflare's prices of 2026-11-22. For 15,488 people logging 109,759 engaged hours a month at 20 prompts an hour, it comes to about $10 in the first month and $13 after a year ($25 and $40 at 60 prompts an hour), against a $500 limit. Per-prompt records are kept in R2 for good and add a few cents a month per year kept. D1's growth comes from <code>account_log</code>, one row per sync, capped at 5,000 rows per person; at this load it passes D1's 10 GB limit in the second year, so its rows will need to move to R2 before then. The inputs are assumptions until measured against a real deploy.</p>
 
 	<h2 id="privacy">Privacy</h2>
 	<p>teardrop reads timestamps, token counts, line counts, and working folders from your logs. Prompt text is only scored in memory to count recognized words; it is never stored or printed, and <code>sync</code> never uploads it. In Amp's cloud, the plugin sends your website each prompt's time, thread, folder, repository, and word counts, without its text, and every other harness's hooks send the same kind of record. The website keeps these records in R2 for good. The website keeps each report your computers send, which holds those counts and times, so reviewers can read it; deleting your account deletes them. Your public profile shows your hours, your days, and the projects it names to anyone, unless you make it private. Chat logs and prompt text never leave your computer.</p>

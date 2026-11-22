@@ -8,7 +8,7 @@ import { cloudComputer, holdEvents, MAX_EVENTS_BYTES, readEvents } from './event
 import { json, jsonText, readText, redirect, Refusal } from './http.ts'
 import { checkGit } from './git.ts'
 import { relayRecords } from './records.ts'
-import { accept, listSubmissions, submission, submit } from './submissions.ts'
+import { accept, importRecords, listSubmissions, submission, submit } from './submissions.ts'
 export { UserHub } from './hub.ts'
 import { ownProfile, updateProfile, visibleOwner } from './profile.ts'
 import { createUserKey, publicAPI, revokeUserKey, userKeys } from './public.ts'
@@ -295,6 +295,11 @@ async function reviewAPI(request: Request, env: Env, url: URL): Promise<Response
 	if (call === 'GET /me') return json({ name: actor.name, slack_id: actor.slack_id, level, by_key: byKey })
 	// Submissions, which every level reviews; a reviewer sees project names only.
 	if (call === 'GET /submissions') return json({ submissions: await listSubmissions(env, level) })
+	// What the retired Go review server credited, from `teardrop export-records`.
+	if (call === 'POST /import') {
+		need(actor, 0)
+		return json(await importRecords(env, await readText(request, 16 << 20)))
+	}
 	if (request.method === 'GET' && path.startsWith('/submissions/')) return json(await submission(env, rest('/submissions/'), level))
 	if (request.method === 'POST' && /^\/submissions\/[^/]+\/accept$/.test(path)) {
 		need(actor, 1)

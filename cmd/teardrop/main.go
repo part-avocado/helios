@@ -64,8 +64,8 @@ func main() {
 		case "submit":
 			runSubmit(os.Args[2:])
 			return
-		case "server":
-			runServer(os.Args[2:])
+		case "export-records":
+			runExportRecords(os.Args[2:])
 			return
 		case "help":
 			os.Args[1] = "-h"

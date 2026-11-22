@@ -181,8 +181,8 @@ no key.
 
 Everything else on the website is visible to you and to reviewers: a reviewer
 sees your total for each project, and neoadmins and superadmins see
-everything you synced. Submissions and chat logs are for the review server's
-admins only.
+everything you synced. Submissions hold no chat logs: they are made from the
+per-prompt records the site already has.
 
 ### The website, on Cloudflare
 
@@ -254,9 +254,8 @@ curl -H "Authorization: Bearer tdr_..." "https://<your-site>/api/review/person?s
 ```
 
 The log stays when a person deletes their account; the reports kept in full go.
-Set `REVIEW_SERVER` in `wrangler.jsonc` to the address of the review server
-below and `teardrop submit` goes through the website, which then asks for a
-sync key. `npm test` runs the Worker's tests in the Workers runtime.
+Set a `GITHUB_TOKEN` secret to have the hourly cron check claimed commits
+against GitHub. `npm test` runs the Worker's tests in the Workers runtime.
 
 #### Public API
 
@@ -287,81 +286,20 @@ every ban last until lifted: timed bans that had run out are marked lifted,
 and ones still in force become permanent, keeping their old end in
 `was_until`.
 
-### The review server
+### Moving from the old review server
 
-The review server takes `teardrop submit`, recomputes the hours from the
-chat logs, and serves the review pages. It keeps its data in files, so it
-needs a machine that stays on.
+The Go review server that took chat-log submissions is retired. Run
+`teardrop export-records -data <its data folder> > records.jsonl` and post the
+file to `/api/review/import` as a superadmin, so what it credited is never
+credited again.
 
-```sh
-TEARDROP_ADMINS=U012ABCDEF,U034GHIJKL \
-TEARDROP_HCA_CLIENT_ID=... TEARDROP_HCA_CLIENT_SECRET=... \
-teardrop server -addr :8080 -data /var/lib/teardrop -public-url https://teardrop.example.org
-```
+### Hosting cost
 
-Admins sign in with [Hack Club Auth](https://auth.hackclub.com) at `/admin`
-and see every account, submission, and chat. `TEARDROP_ADMINS` lists their
-Slack user IDs (in Slack: profile, ⋮, Copy member ID); Hack Club Auth tells
-the server the Slack ID linked to whoever signs in.
-
-To set up sign-in, open Developer Apps on
-[auth.hackclub.com](https://auth.hackclub.com), create an app with the
-`openid` and `slack_id` scopes, and add `<public-url>/auth/callback` as its
-redirect URI. Put the app's client ID and secret in
-`TEARDROP_HCA_CLIENT_ID` and `TEARDROP_HCA_CLIENT_SECRET`. `-public-url` can
-also come from `TEARDROP_PUBLIC_URL`. To try the review pages locally without
-Hack Club Auth, run `teardrop server -addr 127.0.0.1:8080 -dev-login U012ABCDEF`.
-
-The review page shows the claimed hours, the hours the server recomputed
-from the logs, and every chat with the time between messages. Time an
-earlier submission of the same project covered is taken off automatically.
-
-### Deploy to Fly.io
-
-The server needs to run somewhere always on; Cloudflare Workers and GitHub
-Actions can't host it. The repository has a `Dockerfile` and a `fly.toml` for
-[Fly.io](https://fly.io). With [flyctl](https://fly.io/docs/flyctl/install/)
-installed and signed in, from a clone of this repository:
-
-1. Pick an app name and put it in `fly.toml` (`app`, and the host in
-   `TEARDROP_PUBLIC_URL`), then create the app:
-
-   ```sh
-   fly apps create <app>
-   ```
-
-2. Create the volume that holds accounts and submissions, in the region from
-   `fly.toml`:
-
-   ```sh
-   fly volumes create teardrop_data --region iad --size 1
-   ```
-
-3. In your Hack Club Auth app, add `https://<app>.fly.dev/auth/callback` as a
-   redirect URI. Then set the secrets:
-
-   ```sh
-   fly secrets set TEARDROP_ADMINS=U012ABCDEF \
-     TEARDROP_HCA_CLIENT_ID=... TEARDROP_HCA_CLIENT_SECRET=...
-   ```
-
-4. Deploy:
-
-   ```sh
-   fly deploy --build-arg VERSION=v0.5.0 --ha=false
-   ```
-
-Run exactly one machine: the server keeps its data in files on the volume
-(`--ha=false` stops Fly from starting a second one). It stops when idle and
-starts on the next request. Check it with `fly logs`; on start it warns if
-admins or sign-in are not set up. Then point people at it:
-
-```sh
-teardrop sync -server https://<app>.fly.dev
-```
-
-To use your own domain, run `fly certs add <domain>`, add the DNS records it
-prints, and change `TEARDROP_PUBLIC_URL` and the redirect URI to match.
+`node worker/scripts/cost-model.ts [prompts per hour]` prints the monthly bill
+from named inputs. At 15,488 people and 109,759 engaged hours a month it is
+about $13 after a year at 20 prompts an hour, and $40 at 60, against a $500
+limit. `account_log` (one row per sync) is what grows D1 toward its 10 GB
+limit, in the second year at that load.
 
 ## Privacy
 
