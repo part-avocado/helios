@@ -58,6 +58,9 @@ func main() {
 		case "relay":
 			runRelay(os.Args[2:])
 			return
+		case "calibrate":
+			runCalibrate(os.Args[2:])
+			return
 		case "submit":
 			runSubmit(os.Args[2:])
 			return

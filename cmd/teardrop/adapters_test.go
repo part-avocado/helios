@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/part-avocado/teardrop/internal/timeline"
 )
 
 // Payloads shaped like the examples in each vendor's hook docs.
@@ -144,5 +146,30 @@ func TestListCommits(t *testing.T) {
 	// Newest first: the second commit changed one line and dropped one; the first added three.
 	if got[0].Added != 1 || got[0].Removed != 2 || got[1].Added != 3 || got[1].Removed != 0 {
 		t.Errorf("line counts: %+v", got)
+	}
+}
+
+func TestCalibrate(t *testing.T) {
+	at := time.Date(2026, 3, 1, 9, 0, 0, 0, time.UTC)
+	ev := func(min int, k timeline.Kind) timeline.Event {
+		return timeline.Event{Time: at.Add(time.Duration(min) * time.Minute), Kind: k}
+	}
+	// A prompt, the agent's reply 4 minutes later, and the next prompt 16 minutes after that.
+	sessions := []timeline.Session{{Tool: "claude-code", ID: "s", Events: []timeline.Event{ev(0, timeline.Human), ev(4, timeline.Agent), ev(20, timeline.Human)}}}
+	var b strings.Builder
+	calibrate(&b, sessions)
+	out := b.String()
+	// Under 5m/10m: 4m watching plus the last 5m before the prompt. Under 2m/5m: 4m plus 2m.
+	rows := map[string]string{}
+	for _, l := range strings.Split(out, "\n") {
+		if f := strings.Fields(l); len(f) == 5 {
+			rows[f[0]] = strings.Join(f[1:], " ")
+		}
+	}
+	if rows["5m*"] != "9m 9m 9m 9m" || rows["2m"] != "6m 6m 6m 6m" {
+		t.Errorf("grid:\n%s", out)
+	}
+	if !strings.Contains(out, "a prompt") || !strings.Contains(out, "100%") {
+		t.Errorf("the 16-minute gap before the prompt should be over the 5m cap:\n%s", out)
 	}
 }

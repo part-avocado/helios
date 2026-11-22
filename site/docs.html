@@ -165,6 +165,8 @@
 
 	<h2 id="what-counts">What counts</h2>
 	<p>teardrop counts the time you spend working with your AI tools: writing prompts, reading replies, and steering the agent. An agent left running on its own doesn't earn time, and parallel sessions on one project count once. Prompts that don't reflect real work aren't counted; they're listed as <strong>SKIPPED</strong>.</p>
+	<p>The rules, applied to each session's prompts and agent output in time order: before a prompt, the last 5 minutes of the gap count (reading the reply, writing the prompt); while the agent works, the gap counts as long as it lies within 10 minutes of your last prompt. Work blocks closer than 15 minutes are shown as one. Time between prompts beyond those caps isn't counted, and commits earn no time. Your site stamps each day's totals with the version of these rules (currently 1), and keeps every record, so a day can be counted again if the rules change; what a past submission was credited never changes.</p>
+	<p><code>teardrop calibrate</code> shows how the caps treat your own logs: how long your gaps before prompts and before agent output are, how many run past the caps, and your engaged total under other caps. It reads only your computer's logs and uploads nothing. Two things differ between your site and the local count: time on two computers at once counts once on your site, and a Claude Code reply you interrupt runs no hook, so its end reaches your site late and up to 10 minutes of it is unwitnessed.</p>
 
 	<h2 id="tokens">Tokens</h2>
 	<p>Token counts come from the usage records Claude Code and Codex save with each response. A Claude Code response that's written several times, or copied into a resumed session, counts once. Codex counts are taken from the increase in its running totals. Amp counts come from the usage Amp hands the teardrop plugin when a turn ends, so they start with teardrop v0.6.0: Amp turns recorded before that show no tokens.</p>
@@ -221,6 +223,8 @@
 		<tr><td><code>teardrop setup amp</code></td><td>The same for one tool: <code>claude</code>, <code>codex</code>, or <code>amp</code>.</td></tr>
 		<tr><td><code>teardrop update</code></td><td>Download the latest teardrop, check it against the release's checksums, replace this one with it, and run setup again. <code>-check</code> only says whether a newer version is out; <code>teardrop update v0.5.0</code> installs that version, even if it is older.</td></tr>
 		<tr><td><code>teardrop dashboard</code></td><td>Open the live dashboard on localhost.</td></tr>
+		<tr><td><code>teardrop calibrate</code></td><td>Show how the time model's caps treat your logs (<code>-since 30d</code>). Uploads nothing.</td></tr>
+		<tr><td><code>teardrop hook -check &lt;tool&gt;</code></td><td>Print the record a hook payload on stdin would make, and write nothing.</td></tr>
 		<tr><td><code>teardrop export</code></td><td>Write a signed report to upload under Settings on the website (<code>-o file</code>, <code>-since</code>, default 365d).</td></tr>
 		<tr><td><code>teardrop sync</code></td><td>Upload your signed counts to your account (<code>-server URL -key KEY</code> once; both are remembered).</td></tr>
 		<tr><td><code>teardrop submit &lt;project&gt;</code></td><td>Submit a project's hours, made by the site from the records it holds. Nothing is uploaded.</td></tr>
