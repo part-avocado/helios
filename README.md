@@ -166,7 +166,17 @@ changed after signing or that claims a block no log backs, and recomputes the
 hours from the logs itself. Submitting a project again is fine: time that an
 earlier submission of it already covered is credited once.
 
-Your stats on the website are visible to you and to reviewers: a reviewer
+Every account has a public profile at `/@handle`, which anyone can open
+without signing in: the handle, the month they joined, hours in the past
+year, a year of days, and their projects. It never shows a name, a Slack ID,
+or a folder: a project is named only when it is a repository on a public host
+or its owner chose to show it, and others are only counted. Each account
+starts with a neutral handle, such as `u-3f9a0c12b4d1`. Under Settings,
+Profile, its owner changes the handle, hides or names projects, or makes the
+profile private. `GET /api/public/v1/users/{handle}` returns the same, with
+no key.
+
+Everything else on the website is visible to you and to reviewers: a reviewer
 sees your total for each project, and neoadmins and superadmins see
 everything you synced. Submissions and chat logs are for the review server's
 admins only.
@@ -207,9 +217,12 @@ bar. There are three levels:
 | 1, neoadmin | added by a superadmin | Read every account: computers, projects, and the log of every report, each kept as it arrived in the R2 bucket. Add and remove reviewers. Ban people. |
 | 2, reviewer | added by a neoadmin or superadmin | Look a person up by Slack ID and read their total for each project, with each project's graphs. Nothing else of theirs. |
 
-People are added on the app's Reviewers page by Slack ID, and can be added
-before they first sign in. No one can add, remove, or ban someone at their
-own level or above, so a neoadmin can't touch another neoadmin.
+Levels and bans are set on a person's account view: look them up by Slack ID
+and use its Access and Bans panels. A Slack ID that has never signed in opens
+a view with only those two, so people can be added or banned before they first
+sign in. The Reviewers and Bans pages list who holds each level and every ban,
+each linking to that account view. No one can add, remove, or ban someone at
+their own level or above, so a neoadmin can't touch another neoadmin.
 
 Each person's page has a Project activity panel. For one project at a time it
 draws engaged time and lines added and removed per day, when in the week they
@@ -219,11 +232,11 @@ on two computers at once, long blocks without breaks, lines changed without a
 prompt, very many lines per hour, and days over 14 hours. The graphs come from
 the work blocks in each computer's latest report.
 
-A ban is for a number of days or until it is lifted, and always has a reason,
-which only reviewers see. While it holds, the site takes nothing new from the
-person (syncs, uploads, cloud events, submissions). `teardrop sync`, their
-dashboard, and their settings say plainly that they are banned and until
-when, but not why. They can still sign in and see what they had. The review
+A ban has no length: it lasts until someone lifts it, and always has a
+reason, which only reviewers see. While it holds, the site takes nothing new
+from the person (syncs, uploads, cloud events, submissions). `teardrop sync`,
+their dashboard, and their settings say plainly that they are banned until a
+reviewer lifts it, but not why. They can still sign in and see what they had. The review
 app marks a banned person in red wherever they appear. A banned reviewer can't
 review. Someone below the level of whoever issued a ban can't lift or replace
 it.
@@ -265,7 +278,11 @@ https (or localhost), and a code traded twice revokes its key. See the docs
 for details.
 
 Migration 0008 adds the table of read keys, 0009 keeps each computer's work
-blocks for the review graphs, and 0010 adds sign-in codes.
+blocks for the review graphs, 0010 adds sign-in codes, 0011 adds profile
+handles and the choice of which projects a profile names, and 0012 makes
+every ban last until lifted: timed bans that had run out are marked lifted,
+and ones still in force become permanent, keeping their old end in
+`was_until`.
 
 ### The review server
 

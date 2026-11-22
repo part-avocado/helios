@@ -414,7 +414,9 @@ export async function deleteUser(env: Env, userID: number): Promise<void> {
 		// The events kept from their cloud threads go too.
 		env.DB.prepare('DELETE FROM relayed_events WHERE user_id = ?').bind(userID),
 		// The new sync key is one no one has seen, so the old one stops working.
-		env.DB.prepare(`UPDATE users SET name = '', api_key = ?, deleted_at = ? WHERE id = ?`).bind(newKey(), Date.now(), userID),
+		// Their profile goes: its handle is free for someone else, and their choices of what it shows are forgotten.
+		env.DB.prepare('DELETE FROM project_settings WHERE user_id = ?').bind(userID),
+		env.DB.prepare(`UPDATE users SET name = '', handle = NULL, profile_public = 1, api_key = ?, deleted_at = ? WHERE id = ?`).bind(newKey(), Date.now(), userID),
 	])
 	// Everything kept for this person, including what no log row names any more.
 	let cursor: string | undefined

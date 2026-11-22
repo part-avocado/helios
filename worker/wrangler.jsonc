@@ -14,8 +14,8 @@
 		// These reach the Worker before the files in ../site: the API, sign-in
 		// (and signing in to other sites with teardrop),
 		// the pages that need an account, the review app and its old addresses,
-		// and the home page and docs, which show an account menu to signed-in
-		// visitors.
+		// the home page, docs, and profiles, which show an account menu to
+		// signed-in visitors.
 		"run_worker_first": [
 			"/api/*",
 			"/auth/*",
@@ -34,7 +34,9 @@
 			"/",
 			"/index.html",
 			"/docs",
-			"/docs.html"
+			"/docs.html",
+			// Public profiles, /@handle.
+			"/@*"
 		]
 	},
 	"d1_databases": [

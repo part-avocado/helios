@@ -5,6 +5,7 @@
 // read nothing.
 import { keyHash, type User, userKeyUser } from './auth.ts'
 import { json, randomToken, Refusal } from './http.ts'
+import { profileJSON } from './profile.ts'
 import { tradeCode } from './signin.ts'
 import { computers, personDays, personProjects, projectBlocks } from './reports.ts'
 import { banMessage } from './staff.ts'
@@ -55,7 +56,7 @@ export async function revokeUserKey(env: Env, user: User, id: string): Promise<v
  * key is one on a public host. A key that is a folder on their computer, or a
  * repository on a machine at home, stays private.
  */
-function repo(key: string): string | null {
+export function repo(key: string): string | null {
 	const host = /^([a-z0-9.-]+)(\/[^/\s]+){2,}$/i.exec(key)?.[1]?.toLowerCase()
 	const labels = host?.split('.') ?? []
 	if (labels.length < 2 || labels.some((l) => !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(l))) return null
@@ -82,12 +83,15 @@ async function answer(request: Request, env: Env, url: URL): Promise<Response> {
 	const call = `${request.method} ${url.pathname.slice('/api/public/v1'.length)}`
 	// Where a site that a person signed in to trades its code for their read key.
 	if (call === 'POST /token') return tradeCode(request, env)
+	// Anyone's public profile, with no key.
+	const profile = /^GET \/users\/([^/]+)$/.exec(call)
+	if (profile) return profileJSON(env, profile[1]!)
 	if (!/^Bearer tdp_/.test(request.headers.get('Authorization') ?? '')) {
 		throw new Refusal(401, 'Send a read key as a bearer token. Make one on your teardrop site under Settings, then API.')
 	}
 	const user = await userKeyUser(request, env)
 	if (!user) throw new Refusal(401, 'That read key is not valid. It may have been revoked.')
-	if (user.ban) throw new Refusal(403, banMessage(user.ban))
+	if (user.ban) throw new Refusal(403, banMessage())
 
 	if (call === 'GET /me') {
 		const theirs = await computers(env, user.id)
@@ -118,5 +122,5 @@ async function answer(request: Request, env: Env, url: URL): Promise<Response> {
 		const since = url.searchParams.get('since') ?? ''
 		return json({ days: Object.keys(perDay).sort().filter((d) => d >= since).map((date) => ({ date, engaged_seconds: perDay[date] })) })
 	}
-	throw new Refusal(404, 'Not found. The calls are GET /me, /projects, and /days, and POST /token.')
+	throw new Refusal(404, 'Not found. The calls are GET /me, /projects, /days, and /users/{handle}, and POST /token.')
 }

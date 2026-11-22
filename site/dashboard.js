@@ -10,10 +10,6 @@ let days = 30
 let live = false
 
 const count = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(n))
-const dayKey = (d) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
-const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate())
-// Calendar days, not 24-hour steps, which land on the wrong day across a clock change.
-const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n)
 
 // What the visitor has picked. Clicking a day on the heatmap or a bar picks
 // that day (a week, on the yearly chart) and shows its work blocks below.
@@ -23,16 +19,12 @@ let heatScrolled = false
 let pick = null // { from: Date, to: Date, label: string }
 let only = null // a project key
 
-const fmtDate = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 const fmtDay = new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
 const fmtShort = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' })
 const hm = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' })
 const hourName = (h) => new Date(2000, 0, 1, h % 24).toLocaleTimeString(undefined, { hour: 'numeric' })
 const pct = (v, of) => (of ? Math.round((v / of) * 100) : 0) + '%'
 
-// tipAttrs makes an element show the tooltip: a title, a line under it, and
-// an optional hint about clicking.
-const tipAttrs = (title, body, hint = '') => ` data-tip="${esc(title)}" data-body="${esc(body)}" data-hint="${esc(hint)}"`
 const X = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>'
 
 function render() {
@@ -183,27 +175,7 @@ function renderHeatmap(now, scoped) {
 			perDay.set(k, (perDay.get(k) || 0) + b.engaged_seconds)
 		}
 	}
-	const end = startOfDay(now)
-	const start = new Date(end.getFullYear(), end.getMonth(), end.getDate() - 364 - end.getDay())
-	const level = (s) => (s <= 0 ? 0 : s < 1800 ? 1 : s < 3600 ? 2 : s < 3 * 3600 ? 3 : 4)
-	const cell = 13, gap = 3
-	let rects = '', months = '', lastMonth = -1, col = 0
-	for (let d = new Date(start); d <= end; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
-		const row = d.getDay()
-		if (row === 0 && d > start) col++
-		if (row === 0 && d.getMonth() !== lastMonth) {
-			lastMonth = d.getMonth()
-			months += `<text x="${30 + col * (cell + gap)}" y="10">${d.toLocaleString(undefined, { month: 'short' })}</text>`
-		}
-		const s = perDay.get(dayKey(d)) || 0
-		// The level's class colors the day, so the chart follows the dark or light theme.
-		const cls = `l${level(s)}${s > 0 ? ' has' : ''}${s > 0 && picked(d, 1) ? ' sel' : ''}`
-		const click = s > 0 ? ` data-ts="${d.getTime()}" data-span="1"` : ''
-		rects += `<rect class="${cls}" x="${30 + col * (cell + gap)}" y="${18 + row * (cell + gap)}" width="${cell}" height="${cell}" rx="2"${click}${tipAttrs(fmtDate.format(d), s ? dur(s) : 'No activity', s ? 'Click to see this day' : '')}/>`
-	}
-	const labels = ['Mon', 'Wed', 'Fri'].map((t, i) => `<text x="0" y="${18 + (i * 2 + 1) * (cell + gap) + 10}">${t}</text>`).join('')
-	const w = 30 + (col + 1) * (cell + gap)
-	$('heatmap').innerHTML = `<svg width="${w}" height="${18 + 7 * (cell + gap)}" role="img" aria-label="Engaged time per day over the last year">${months}${labels}${rects}</svg>`
+	$('heatmap').innerHTML = heatmapHTML(perDay, now, { clickable: true, selected: (d) => picked(d, 1) })
 	// The first time, start on the latest weeks, which is what the eye wants on a narrow screen.
 	if (!heatScrolled) $('heatmap').scrollLeft = $('heatmap').scrollWidth, (heatScrolled = true)
 }
@@ -401,40 +373,24 @@ $('content').addEventListener('click', (e) => {
 	render()
 })
 
-// Tooltips: one box that follows the pointer, and sits above a focused bar.
-const tipBox = $('tip')
-function showTip(el) {
-	tipBox.querySelector('b').textContent = el.dataset.tip
-	tipBox.querySelector('span').textContent = el.dataset.body
-	tipBox.querySelector('em').textContent = el.dataset.hint
-	tipBox.querySelector('em').hidden = !el.dataset.hint
-	tipBox.hidden = false
+initTips($('content'))
+
+// Profiles are public by default, so each person is told once, with the
+// address of theirs and where to change it. Not when a reviewer is viewing.
+async function profileNote() {
+	if (localStorage.getItem('teardrop-profile-note')) return
+	const me = await api('/api/me')
+	if (!me.profile_public || !me.handle) return
+	const url = `${location.origin}/@${me.handle}`
+	$('profile-note-link').href = url
+	$('profile-note-link').textContent = url.replace(/^https?:\/\//, '')
+	$('profile-note').hidden = false
 }
-function moveTip(x, y) {
-	const box = tipBox.getBoundingClientRect()
-	let left = x + 14, top = y - box.height - 12
-	if (left + box.width > innerWidth - 8) left = x - box.width - 14
-	if (top < 8) top = y + 20
-	tipBox.style.transform = `translate(${Math.round(Math.max(8, left))}px, ${Math.round(top)}px)`
-}
-const hideTip = () => (tipBox.hidden = true)
-$('content').addEventListener('pointermove', (e) => {
-	const el = e.target.closest('[data-tip]')
-	if (!el) return hideTip()
-	showTip(el)
-	moveTip(e.clientX, e.clientY)
+$('profile-note-ok').addEventListener('click', () => {
+	localStorage.setItem('teardrop-profile-note', '1')
+	$('profile-note').hidden = true
 })
-$('content').addEventListener('pointerleave', hideTip)
-$('content').addEventListener('focusin', (e) => {
-	const el = e.target.closest('[data-tip]')
-	if (!el) return
-	showTip(el)
-	const r = el.getBoundingClientRect()
-	moveTip(r.left + r.width / 2, r.top)
-})
-$('content').addEventListener('focusout', hideTip)
-document.addEventListener('pointerdown', (e) => e.target.closest('#content') || hideTip())
-addEventListener('scroll', hideTip, { passive: true })
+if (hosted && !viewing) profileNote().catch(() => {})
 
 if (hosted) loadHosted()
 else poll()

@@ -187,16 +187,15 @@ func runSync(args []string) {
 	}
 	priv, _ := accountKey()
 	id := accountID(priv.Public().(ed25519.PublicKey))
+	fmt.Printf("Synced %s engaged across %s from this computer (%s).\n",
+		dur(time.Duration(rep.Engaged)), plural(len(rep.Projects), "project"), id)
 	// A server with accounts answers with the page that shows these stats.
 	var r struct {
 		URL string `json:"url"`
 	}
-	json.Unmarshal(res, &r)
-	if r.URL == "" {
-		r.URL = srv + "/api/v1/accounts/" + id
+	if json.Unmarshal(res, &r) == nil && r.URL != "" {
+		fmt.Printf("See it at %s\n", r.URL)
 	}
-	fmt.Printf("Synced %s engaged across %s from this computer (%s).\nSee it at %s\n",
-		dur(time.Duration(rep.Engaged)), plural(len(rep.Projects), "project"), id, r.URL)
 }
 
 // syncQueued runs sync for a hook, in dir. Only one runs at a time on a

@@ -52,6 +52,7 @@
 	<a href="#report">The report</a>
 	<a href="#dashboard">The dashboard</a>
 	<a href="#account">Your account</a>
+	<a href="#profile">Public profile</a>
 	<a href="#verification-keys">Verification keys</a>
 	<a href="#what-counts">What counts</a>
 	<a href="#tokens">Tokens</a>
@@ -130,7 +131,7 @@
 	<p>The dashboard shows an activity heatmap, daily totals, projects, tools, and recent work blocks. There are two ways to open it.</p>
 	<p>The graphs are interactive. Hover a day, bar, or tool for the details. Click a day on the heatmap, or a bar, to list that day's work blocks (a week, on the yearly chart). Click a project in the table to see only that project; every number and chart follows it. Click again, or the chip at the top, to clear it.</p>
 	<h3 id="account">On the website, with an account</h3>
-	<p>The <a href="dashboard.html">dashboard on the website</a> adds up the hours from every computer you code on. Only you and your server's reviewers can see them.</p>
+	<p>The <a href="dashboard.html">dashboard on the website</a> adds up the hours from every computer you code on. Only you and your server's reviewers can see the dashboard; your <a href="#profile">public profile</a> shows a summary to anyone.</p>
 	<ol>
 		<li>Open the <a href="dashboard.html">dashboard</a> and sign in with Hack Club. Your first sign-in creates your account.</li>
 		<li>Run the two commands it shows: one installs teardrop, the other connects that computer to your account.</li>
@@ -147,6 +148,10 @@
 	<p>You can sign out from the menu at the top right of any page. A computer syncs to one account. To move it to another, remove it under Computers first.</p>
 	<h3>On your computer, without an account</h3>
 	<p>Run <code>teardrop dashboard</code> to open the same charts with live data from this computer, refreshed every 30 seconds. It runs on <code>localhost</code> only and refuses requests from other sites, so your stats never leave your computer.</p>
+	<h3 id="profile">Your public profile</h3>
+	<p>Every account has a public profile at <code>/@handle</code>, which anyone can open without signing in. It shows your handle, the month you joined, your hours in the past year, a year of days, and your projects. It never shows your name, your Slack ID, or a folder on your computer. A project that is a repository on a public host, such as <code>github.com/you/site</code>, is named and linked; any other project is only counted, as one of your other projects. Under Settings, Profile, you can change your handle, hide or name each project, or make the profile private. A private profile, like a banned or deleted account, answers "no such profile", so its address doesn't say that the account exists.</p>
+	<p>Each account starts with a neutral handle, such as <code>u-3f9a0c12b4d1</code>, never one made from your name. When you change it, the old address stops working.</p>
+
 	<h3 id="verification-keys">Verification keys</h3>
 	<p>Every sync and export carries a verification key: an Ed25519 signature, made by your account, over the report's numbers, the time it was made, and the time it expires. Change one minute of engaged time, the account, or a date, and the key no longer matches. The website refuses a report that:</p>
 	<ul>
@@ -232,7 +237,7 @@
 	<pre><code>teardrop sync -server https://your-site -key tdk_…</code></pre>
 	<p>teardrop remembers the server and the key, so later it's just <code>teardrop sync</code>, and hooks sync in the background when a reply finishes or you stop one. Amp reports a stopped reply at once; Claude Code runs no hook then, so that sync happens at your next prompt or when the session closes. Codex has no hook, so its time goes up with the next of those syncs. The key can only upload stats. If the server answers that it needs your sync key, run the command from Settings again.</p>
 	<p><code>teardrop submit &lt;project&gt;</code> sends a project's hours for review together with the full chat logs behind them: your prompts, the agent's replies, and its code changes. It asks before uploading; <code>-o file</code> writes the submission so you can read it first. The server refuses a submission whose logs were changed after signing, or that claims a block no log backs, and recomputes the hours from the logs itself. You can submit a project again as it grows; time an earlier submission already covered is credited once.</p>
-	<p>Your stats on the website are visible to you and to reviewers: a reviewer sees, for each project, your total and a timeline of your work blocks (when each started and ended, with its prompts, tokens, and lines changed), and neoadmins and superadmins see everything you synced. Deleting your account, under Settings, removes them; admins keep your Slack ID and a record of what your computers reported, without project names. Submissions and their chats are visible only to admins, who review them at <code>/admin</code> on the review server. To host either, see <a href="#run-server">Running a server</a>.</p>
+	<p>Your stats on the website are visible to you and to reviewers, apart from what your <a href="#profile">public profile</a> shows: a reviewer sees, for each project, your total and a timeline of your work blocks (when each started and ended, with its prompts, tokens, and lines changed), and neoadmins and superadmins see everything you synced. Deleting your account, under Settings, removes them; admins keep your Slack ID and a record of what your computers reported, without project names. Submissions and their chats are visible only to admins, who review them at <code>/admin</code> on the review server. To host either, see <a href="#run-server">Running a server</a>.</p>
 
 	<h2 id="run-server">Running a server</h2>
 	<p>There are two parts, and you can run either without the other:</p>
@@ -276,9 +281,10 @@ npm run dev</code></pre>
 		<tr><td>Neoadmin</td><td>Added by a superadmin.</td><td>Read every account: its computers, its projects, and a log of every report it sent. Each log entry shows what the report held and which days and projects changed, and links to the report itself, kept as it arrived. Add and remove reviewers. Ban people.</td></tr>
 		<tr><td>Reviewer</td><td>Added by a neoadmin or superadmin.</td><td>Look a person up by Slack ID and read their total for each project, with each project's graphs. Nothing else of theirs.</td></tr>
 	</table>
-	<p>To add someone, open Reviewers in the app and paste their Slack ID. They can be added before they first sign in. No one can add, remove, or ban someone at their own level or above, so a neoadmin can't touch another neoadmin.</p>
+	<p>To add someone, look up their Slack ID in the app and choose a level in the Access panel of their account view. They can be added before they first sign in. No one can add, remove, or ban someone at their own level or above, so a neoadmin can't touch another neoadmin.</p>
 	<p>Each person's page has a Project activity panel. For one project at a time it draws engaged time and lines added and removed per day, when in the week they work, and every work block's length against the share of it that was engaged. It also checks the blocks for what to ask about: time counted on two computers at once, long blocks without breaks, lines changed without a prompt, very many lines per hour, and days over 14 hours. A check that stands out is a reason to ask, not proof.</p>
-	<p>A ban lasts a number of days or until it is lifted, and always has a reason, which only reviewers see. While it holds, the site takes nothing new from the person: no syncs, uploads, cloud events, or submissions. <code>teardrop sync</code>, their dashboard, and their settings say plainly that they are banned and until when, but not why. They can still sign in and see what they had. The review app marks a banned person in red wherever they appear. A banned reviewer can't review. Someone below the level of whoever issued a ban can't lift or replace it.</p>
+	<p>Levels and bans are set on a person's account view, in its Access and Bans panels. A Slack ID that has never signed in opens a view with only those two, so a person can be added or banned before their first sign-in. The Reviewers and Bans pages list who holds each level and every ban, and link to each account view.</p>
+	<p>A ban has no length: it lasts until someone lifts it, and always has a reason, which only reviewers see. While it holds, the site takes nothing new from the person: no syncs, uploads, cloud events, or submissions. <code>teardrop sync</code>, their dashboard, and their settings say plainly that they are banned until a reviewer lifts it, but not why. They can still sign in and see what they had. The review app marks a banned person in red wherever they appear. A banned reviewer can't review. Someone below the level of whoever issued a ban can't lift or replace it.</p>
 	<p>Any reviewer can make API keys, under API keys in the app, for a script or a bot. A key acts as the person who made it, at the level they hold when it is used, and stops working when they are removed or banned. The key is shown once, in a popup to copy it from; the site keeps only its hash. Send it as a bearer token:</p>
 	<pre>curl -H "Authorization: Bearer tdr_..." "https://your-site/api/review/person?slack=U012ABCDEF"</pre>
 
@@ -290,6 +296,7 @@ npm run dev</code></pre>
 		<tr><td><code>GET /api/public/v1/me</code></td><td><code>name</code>, <code>slack_id</code>, <code>created_at</code>, <code>engaged_seconds</code> in the past year, and <code>synced_at</code>.</td></tr>
 		<tr><td><code>GET /api/public/v1/projects</code></td><td><code>projects</code>, most time first, each with <code>name</code>, <code>repo</code> (such as <code>github.com/you/site</code>, or <code>null</code> for a project that is only a folder), <code>engaged_seconds</code>, <code>first_active</code>, and <code>last_active</code>.</td></tr>
 		<tr><td><code>GET /api/public/v1/days?since=2026-01-01</code></td><td><code>days</code>: each date with its <code>engaged_seconds</code>. <code>since</code> is optional.</td></tr>
+		<tr><td><code>GET /api/public/v1/users/{handle}</code></td><td>Anyone's <a href="#profile">public profile</a>, with no key: <code>handle</code>, <code>joined</code> (YYYY-MM), <code>engaged_seconds</code> in the past year, <code>days</code>, <code>projects</code> (each with <code>name</code>, <code>repo</code>, and <code>engaged_seconds</code>), and <code>other_projects</code> (<code>count</code> and <code>engaged_seconds</code>). A private, banned, or unknown profile answers 404. Answers may be cached for a minute.</td></tr>
 	</table>
 	<p>Times are Unix milliseconds. Answers are JSON; a refusal is plain text with its reason. Any site may call the API from the browser, since it takes only the key and no cookies. Folders on your computer are never shown, only repositories.</p>
 
@@ -344,7 +351,7 @@ teardrop server -addr :8080 -data /var/lib/teardrop -public-url https://your-ser
 	<p><code>/admin</code> lists submissions. Each one shows the hours the account claimed, the hours the server recomputed from the logs, and every chat with the time between messages. Time an earlier submission of the same project covered is taken off. <code>/admin/accounts</code> lists every account that has synced.</p>
 
 	<h2 id="privacy">Privacy</h2>
-	<p>teardrop reads timestamps, token counts, line counts, and working folders from your logs. Prompt text is only scored in memory to count recognized words; it is never stored or printed, and <code>sync</code> never uploads it. In Amp's cloud, the plugin sends your website each prompt's time, thread, folder, repository, and word counts, without its text, and the website keeps them for a year so your cloud threads can count them. The website keeps each report your computers send, which holds those counts and times, so reviewers can read it; deleting your account deletes them. Your chat logs leave your computer only when you run <code>teardrop submit</code> and confirm.</p>
+	<p>teardrop reads timestamps, token counts, line counts, and working folders from your logs. Prompt text is only scored in memory to count recognized words; it is never stored or printed, and <code>sync</code> never uploads it. In Amp's cloud, the plugin sends your website each prompt's time, thread, folder, repository, and word counts, without its text, and the website keeps them for a year so your cloud threads can count them. The website keeps each report your computers send, which holds those counts and times, so reviewers can read it; deleting your account deletes them. Your public profile shows your hours, your days, and the projects it names to anyone, unless you make it private. Your chat logs leave your computer only when you run <code>teardrop submit</code> and confirm.</p>
 
 	<h2 id="troubleshooting">Troubleshooting</h2>
 	<h3>“No Claude Code or Codex sessions found”</h3>

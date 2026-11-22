@@ -3,9 +3,10 @@
 // person's synced reports in D1, and the API the pages and the CLI use. The
 // review app, at /review/, is the files in ../site/review and the API under
 // /api/review/.
-import { clearSession, finishSignIn, keyUser, reviewKeyUser, rotateKey, sameOrigin, sessionUser, signOut, startSignIn, type User } from './auth.ts'
+import { clearSession, finishSignIn, keyUser, reviewKeyUser, rotateKey, sameOrigin, sessionUser, signOut, startSignIn, type User, userByID } from './auth.ts'
 import { cloudComputer, holdEvents, MAX_EVENTS_BYTES, readEvents } from './events.ts'
 import { json, jsonText, readText, redirect, Refusal } from './http.ts'
+import { ownProfile, updateProfile, visibleOwner } from './profile.ts'
 import { createUserKey, publicAPI, revokeUserKey, userKeys } from './public.ts'
 import { computerReportJSON, computers, deleteUser, keptReportJSON, MAX_REPORT_BYTES, removeComputer, reportsJSON, storeReport } from './reports.ts'
 import { fullLog, people, person, summary } from './review.ts'
@@ -56,6 +57,12 @@ async function route(request: Request, env: Env): Promise<Response> {
 	if (request.method === 'GET' && PUBLIC.has(page)) {
 		const visitor = await sessionUser(request, env).catch(() => null)
 		return servePage(request, env, visitor)
+	}
+	// Public profiles. One no one may see is "not found", the same as one that doesn't exist.
+	if (request.method === 'GET' && path.startsWith('/@')) {
+		const [visitor, owner] = await Promise.all([sessionUser(request, env).catch(() => null), visibleOwner(env, path.slice(2))])
+		const page = await servePage(new Request(new URL('/profile', url)), env, visitor)
+		return owner ? page : new Response(page.body, { status: 404, headers: page.headers })
 	}
 
 	// Until the secrets are set, say so plainly instead of failing in some other place.
@@ -134,7 +141,7 @@ async function route(request: Request, env: Env): Promise<Response> {
 		// The computer their cloud threads sync as is named as such, since it is no machine of theirs.
 		const cloud = (await cloudComputer(env, user)).id
 		const all = (await computers(env, user.id)).map((c) => ({ ...c, cloud: c.id === cloud }))
-		return json({ name: user.name, slack_id: user.slack_id, admin: user.admin, level: user.level, ban: ownBan(user), api_key: user.api_key, created_at: user.created_at, computers: all })
+		return json({ name: user.name, slack_id: user.slack_id, handle: user.handle, profile_public: user.profile_public, admin: user.admin, level: user.level, ban: ownBan(user), api_key: user.api_key, created_at: user.created_at, computers: all })
 	}
 	if (call === 'GET /api/report') {
 		// Neoadmins and superadmins can read anyone's reports; everyone else only their own.
@@ -148,12 +155,12 @@ async function route(request: Request, env: Env): Promise<Response> {
 		return jsonText(`{"person":${JSON.stringify(person)},"computers":${await reportsJSON(env, person.id)}}`)
 	}
 	if (call === 'POST /api/reports') {
-		if (user.ban) throw new Refusal(403, banMessage(user.ban))
+		if (user.ban) throw new Refusal(403, banMessage())
 		return json({ computer: await storeReport(env, user, await readText(request, MAX_REPORT_BYTES), 'upload') })
 	}
 	if (call === 'GET /api/export') {
 		// The visitor's profile and their computers' latest reports, as a file to keep. The sync key stays out of it.
-		const body = `{"exported_at":${Date.now()},"profile":${JSON.stringify({ name: user.name, slack_id: user.slack_id, created_at: user.created_at })},"computers":${await reportsJSON(env, user.id)}}`
+		const body = `{"exported_at":${Date.now()},"profile":${JSON.stringify({ name: user.name, slack_id: user.slack_id, handle: user.handle, created_at: user.created_at })},"computers":${await reportsJSON(env, user.id)}}`
 		return new Response(body, { headers: { 'Content-Type': 'application/json', 'Content-Disposition': 'attachment; filename="teardrop-data.json"', 'Cache-Control': 'no-store' } })
 	}
 	if (call === 'DELETE /api/account') {
@@ -164,6 +171,18 @@ async function route(request: Request, env: Env): Promise<Response> {
 		return res
 	}
 	if (call === 'POST /api/key') return json({ api_key: await rotateKey(env, user) })
+	// Their public profile: its handle, whether it is public, and which projects it names.
+	if (call === 'GET /api/profile') return json(await ownProfile(env, user))
+	if (call === 'POST /api/profile') {
+		let body: Record<string, unknown> = {}
+		try {
+			body = JSON.parse(await readText(request, 64 << 10)) ?? {}
+		} catch {
+			throw new Refusal(400, 'Send the changes as a JSON object.')
+		}
+		await updateProfile(env, user, body)
+		return json(await ownProfile(env, (await userByID(env, user.id))!))
+	}
 	// Their read keys for the public API.
 	if (call === 'GET /api/keys') return json({ keys: await userKeys(env, user) })
 	if (call === 'POST /api/keys') {
@@ -190,12 +209,16 @@ async function needKey(request: Request, env: Env, url: URL): Promise<User> {
 	if (!user) {
 		throw new Refusal(401, `This server needs your sync key. Sign in at ${url.origin}/settings and run the command it shows under Setup.`)
 	}
-	if (user.ban) throw new Refusal(403, banMessage(user.ban))
+	if (user.ban) throw new Refusal(403, banMessage())
 	return user
 }
 
-/** ownBan is what a person is told of their own ban: that it holds, and until when. The reason is for reviewers. */
-const ownBan = (user: User) => (user.ban ? { until: user.ban.until } : null)
+/**
+ * ownBan is what a person is told of their own ban: that it holds until it is
+ * lifted. The reason is for reviewers. until is always null; pages from before
+ * bans lost their length read it.
+ */
+const ownBan = (user: User) => (user.ban ? { until: null } : null)
 
 /**
  * reviewAPI answers the review app, and reviewers' own tools: it takes a
@@ -228,7 +251,7 @@ async function reviewAPI(request: Request, env: Env, url: URL): Promise<Response
 
 	if (call === 'GET /me') return json({ name: actor.name, slack_id: actor.slack_id, level, by_key: byKey })
 	// A reviewer gets a person's totals per project. Those above get everything.
-	if (call === 'GET /person') return json(level === 2 ? await summary(env, url.searchParams) : await person(env, url.searchParams))
+	if (call === 'GET /person') return json(level === 2 ? await summary(env, url.searchParams) : await person(env, actor, url.searchParams))
 
 	// A reviewer's own keys. A key can't make or revoke keys, so one that leaks can't keep itself alive.
 	if (path === '/keys' || path.startsWith('/keys/')) {

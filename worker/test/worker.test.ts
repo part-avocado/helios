@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, type KeyObject, sign } from 'node:crypto'
 import { readdirSync, readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
+import { DatabaseSync } from 'node:sqlite'
 import type { AddressInfo } from 'node:net'
 import { after, before, test } from 'node:test'
 import { createTestHarness, unstable_splitSqlQuery } from 'wrangler'
@@ -84,7 +85,7 @@ async function signIn(person: string): Promise<string> {
 }
 
 async function me(cookie: string) {
-	return (await (await call('/api/me', { cookie })).json()) as { name: string; slack_id: string; admin: boolean; level: number | null; ban: { until: number | null } | null; api_key: string; computers: { id: string; cloud: boolean }[] }
+	return (await (await call('/api/me', { cookie })).json()) as { name: string; slack_id: string; handle: string; profile_public: boolean; admin: boolean; level: number | null; ban: { until: null } | null; api_key: string; computers: { id: string; cloud: boolean }[] }
 }
 
 async function reports(cookie: string, query = '') {
@@ -325,11 +326,12 @@ test('reviewers look a person up by Slack ID and read their log', async () => {
 		return (await review()).log[0]!
 	}
 
-	// Only admins, and only for people who exist.
+	// Only admins, and only for people who exist. A Slack ID no one has signed in with has only its access and bans.
 	assert.equal((await call('/api/review/person?slack=ULOGGED', { cookie })).status, 403)
 	assert.equal((await call('/review/', { cookie })).headers.get('Location'), '/dashboard')
 	assert.equal((await call('/review/', { cookie: admin })).status, 200)
-	for (const query of ['slack=UNOBODY', 'id=999999', 'id=1e3', '']) assert.equal((await call(`/api/review/person?${query}`, { cookie: admin })).status, 404, query)
+	for (const query of ['id=999999', 'id=1e3', '']) assert.equal((await call(`/api/review/person?${query}`, { cookie: admin })).status, 404, query)
+	assert.equal(((await (await call('/api/review/person?slack=UNOBODY', { cookie: admin })).json()) as { signed_in: boolean }).signed_in, false)
 	assert.deepEqual([(await review()).person.slack_id, (await review()).log], ['ULOGGED', []])
 
 	// A first report has nothing to be compared with: noted, not flagged.
@@ -766,43 +768,60 @@ test('reviewers have levels, which decide what they read, whom they add and ban,
 	assert.equal(await status('/team', superadmin, 'POST', { slack_id: 'UREV', level: 2 }), 200)
 	assert.equal((await withKey('/people', made.key)).status, 403)
 
-	// Bans: for a time or until lifted, on people below the one who bans.
+	// Bans last until lifted, and are only on people below the one who bans.
 	const ban = (cookie: string, body: object) => review('/bans', cookie, 'POST', body)
-	assert.equal((await ban(rev, { slack_id: 'UPLAIN', reason: 'no', days: 1 })).status, 403, 'a reviewer bans no one')
-	assert.equal((await ban(neo, { slack_id: 'UPLAIN', reason: ' ', days: 1 })).status, 400, 'a ban needs a reason')
-	assert.equal((await ban(neo, { slack_id: 'UPLAIN', reason: 'x', days: -1 })).status, 400)
+	assert.equal((await ban(rev, { slack_id: 'UPLAIN', reason: 'no' })).status, 403, 'a reviewer bans no one')
+	assert.equal((await ban(neo, { slack_id: 'UPLAIN', reason: ' ' })).status, 400, 'a ban needs a reason')
+	// A request for a length is refused, so a script can't believe it issued a short ban.
+	for (const days of [1, 7, '', null]) {
+		const asked = await ban(neo, { slack_id: 'UPLAIN', reason: 'x', days })
+		assert.deepEqual([asked.status, /no length/.test(await asked.text())], [400, true], String(days))
+	}
+	assert.equal((await me(member)).ban, null)
 	for (const above of ['UOTHERNEO', 'UNEO', 'UADMIN']) assert.equal((await ban(neo, { slack_id: above, reason: 'x' })).status, 403, above)
 	assert.equal((await ban(superadmin, { slack_id: 'UOTHER', reason: 'x' })).status, 403, 'another superadmin')
-	const temp = (await (await ban(neo, { slack_id: 'UPLAIN', reason: 'Edited reports', days: 7 })).json()) as { id: number; until: number }
-	assert.ok(Math.abs(temp.until - (Date.now() + 7 * DAY)) < 60_000)
-	// Nothing new is taken from them. They are told they are banned and until when, but not why.
+	const temp = (await (await ban(neo, { slack_id: 'UPLAIN', reason: 'Edited reports' })).json()) as { id: number }
+	// Nothing new is taken from them. They are told they are banned until it is lifted, but not why.
 	const refused = await call('/api/v1/reports', { method: 'POST', body: laptop(report(6000)), key: memberKey })
 	assert.equal(refused.status, 403)
 	const said = await refused.text()
-	assert.match(said, /banned until \d{4}-\d\d-\d\d \d\d:\d\d UTC/)
+	assert.match(said, /banned until a reviewer lifts the ban/)
 	assert.doesNotMatch(said, /Edited reports/)
 	assert.equal((await call('/api/v1/events', { method: 'POST', body: '', key: memberKey })).status, 403)
 	assert.equal((await call('/api/reports', { method: 'POST', body: laptop(report(6000)), cookie: member, origin: SITE })).status, 403)
 	// They can still sign in and see what they had.
 	const banned = await me(member)
-	assert.deepEqual(banned.ban, { until: temp.until })
+	assert.deepEqual(banned.ban, { until: null })
 	const theirs = (await (await call('/api/report', { cookie: member })).json()) as { ban: object; computers: object[] }
-	assert.deepEqual([theirs.ban, theirs.computers.length], [{ until: temp.until }, 1])
+	assert.deepEqual([theirs.ban, theirs.computers.length], [{ until: null }, 1])
 	assert.equal(((await (await review('/person?slack=UPLAIN', rev)).json()) as typeof seen).ban?.reason, 'Edited reports')
-	// Lifting it, and one that runs out.
+	// Each account view says what the visitor may change of that person: the levels they may give, and whether they may remove, ban, or lift.
+	type Access = { level: number | null; levels: number[]; remove: boolean; ban: boolean; lift: boolean }
+	const access = async (who: string, cookie: string) => ((await (await review(`/person?slack=${who}`, cookie)).json()) as { access: Access }).access
+	assert.deepEqual(await access('UPLAIN', neo), { level: null, levels: [2], remove: false, ban: true, lift: true })
+	assert.deepEqual(await access('UPLAIN', superadmin), { level: null, levels: [1, 2], remove: false, ban: true, lift: true })
+	assert.deepEqual(await access('UREV', neo), { level: 2, levels: [], remove: true, ban: true, lift: false })
+	assert.deepEqual(await access('UREV', superadmin), { level: 2, levels: [1], remove: true, ban: true, lift: false })
+	assert.deepEqual(await access('UOTHERNEO', neo), { level: 1, levels: [], remove: false, ban: false, lift: false }, 'a neoadmin, at their own level')
+	assert.deepEqual(await access('UADMIN', superadmin), { level: 0, levels: [], remove: false, ban: false, lift: false })
+	// A Slack ID that has never signed in opens the same view with its access and bans, so they can be added or banned first.
+	const unseen = (await (await review('/person?slack=u0new', neo)).json()) as { signed_in: boolean; person: object; access: Access; bans: object[] }
+	assert.deepEqual(unseen, { signed_in: false, person: { slack_id: 'U0NEW' }, access: { level: null, levels: [2], remove: false, ban: true, lift: false }, bans: [] })
+	assert.equal(await status('/person?slack=U0NEW', rev), 404, 'a reviewer reads only people who have signed in')
+	assert.equal(await status('/person?slack=not-an-id', neo), 400)
+
+	// Lifting it. It holds until then, however long that is.
+	const env = await server.getWorker<{ DB: { prepare(sql: string): { run(): Promise<unknown> } } }>().getEnv()
+	await env.DB.prepare(`UPDATE bans SET at = ${Date.now() - 400 * DAY} WHERE id = ${temp.id}`).run()
+	assert.notEqual((await me(member)).ban, null)
 	assert.deepEqual([await status(`/bans/${temp.id}`, rev, 'DELETE'), await status(`/bans/${temp.id}`, neo, 'DELETE'), await status(`/bans/${temp.id}`, neo, 'DELETE')], [403, 200, 404])
 	assert.deepEqual([(await me(member)).ban, await sync(6000)], [null, 200])
-	const short = (await (await ban(neo, { slack_id: 'UPLAIN', reason: 'again', days: 1 })).json()) as { id: number }
-	assert.notEqual((await me(member)).ban, null)
-	const env = await server.getWorker<{ DB: { prepare(sql: string): { run(): Promise<unknown> } } }>().getEnv()
-	await env.DB.prepare(`UPDATE bans SET until = ${Date.now() - 1000} WHERE id = ${short.id}`).run()
-	assert.equal((await me(member)).ban, null)
 
 	// A banned reviewer can't review, and neither can their key. A neoadmin can't undo a superadmin's ban.
-	const forever = (await (await ban(superadmin, { slack_id: 'UREV', reason: 'Left the team' })).json()) as { id: number; until: number | null }
-	assert.equal(forever.until, null)
+	const forever = (await (await ban(superadmin, { slack_id: 'UREV', reason: 'Left the team' })).json()) as { id: number }
+	assert.deepEqual(await access('UREV', neo), { level: 2, levels: [], remove: true, ban: false, lift: false }, 'a superadmin\'s ban')
 	assert.deepEqual([await status('/me', rev), (await withKey('/me', made.key)).status, (await call('/review/', { cookie: rev })).headers.get('Location')], [403, 403, '/dashboard'])
-	assert.deepEqual([await status(`/bans/${forever.id}`, neo, 'DELETE'), (await ban(neo, { slack_id: 'UREV', reason: 'shorter', days: 1 })).status], [403, 403])
+	assert.deepEqual([await status(`/bans/${forever.id}`, neo, 'DELETE'), (await ban(neo, { slack_id: 'UREV', reason: 'replaced' })).status], [403, 403])
 	team = (await (await review('/team', neo)).json()) as Team
 	assert.equal(team.reviewers.find((r) => r.slack_id === 'UREV')!.banned, 1)
 	assert.equal(await status(`/bans/${forever.id}`, superadmin, 'DELETE'), 200)
@@ -815,6 +834,29 @@ test('reviewers have levels, which decide what they read, whom they add and ban,
 	for (const [action, slack, by] of [['add', 'UNEO', 'UADMIN'], ['change', 'UREV', 'UADMIN'], ['ban', 'UPLAIN', 'UNEO'], ['unban', 'UREV', 'UADMIN'], ['remove', 'UREV', 'UNEO']]) {
 		assert.ok(team.log.some((l) => l.action === action && l.slack_id === slack && l.by_slack_id === by), `${action} ${slack} by ${by}`)
 	}
+})
+
+test('migration 0012 makes timed bans in force permanent and leaves ones that ran out over', () => {
+	const db = new DatabaseSync(':memory:')
+	const migrations = new URL('../migrations/', import.meta.url)
+	for (const file of readdirSync(migrations).sort().filter((f) => f < '0012')) db.exec(readFileSync(new URL(file, migrations), 'utf8'))
+	const now = Date.now()
+	const add = db.prepare('INSERT INTO bans (slack_id, reason, by_slack_id, by_level, at, until, lifted_at, lifted_by) VALUES (?, ?, ?, 1, ?, ?, ?, ?)')
+	add.run('URANOUT', 'ran out', 'UNEO', now - 9 * DAY, now - 2 * DAY, null, null)
+	add.run('UTIMED', 'timed', 'UNEO', now - DAY, now + 6 * DAY, null, null)
+	add.run('ULIFTED', 'lifted', 'UNEO', now - 3 * DAY, now + 4 * DAY, now - DAY, 'UNEO')
+	add.run('UFOREVER', 'forever', 'UNEO', now - DAY, null, null, null)
+	db.exec(readFileSync(new URL('0012_permanent_bans.sql', migrations), 'utf8'))
+	const rows = Object.fromEntries((db.prepare('SELECT slack_id, until, was_until, lifted_at, lifted_by FROM bans').all() as { slack_id: string }[]).map(({ slack_id, ...b }) => [slack_id, b]))
+	assert.deepEqual(rows, {
+		URANOUT: { until: now - 2 * DAY, was_until: now - 2 * DAY, lifted_at: now - 2 * DAY, lifted_by: null },
+		UTIMED: { until: null, was_until: now + 6 * DAY, lifted_at: null, lifted_by: null },
+		ULIFTED: { until: now + 4 * DAY, was_until: now + 4 * DAY, lifted_at: now - DAY, lifted_by: 'UNEO' },
+		UFOREVER: { until: null, was_until: null, lifted_at: null, lifted_by: null },
+	})
+	const noted = db.prepare('SELECT by_slack_id, action, slack_id, detail FROM staff_log').all() as { slack_id: string; action: string; detail: string }[]
+	assert.deepEqual(noted.map((l) => [l.slack_id, l.action]), [['UTIMED', 'permanent']])
+	assert.equal(noted[0]!.detail, `was to end ${new Date(now + 6 * DAY).toISOString().slice(0, 16).replace('T', ' ')} UTC`)
 })
 
 test('anyone reads their own stats through the public API with a read key, unless banned', async () => {
@@ -861,7 +903,7 @@ test('anyone reads their own stats through the public API with a read key, unles
 
 	// A banned person's keys read nothing, and work again once the ban is lifted.
 	const admin = await signIn('admin')
-	const banned = (await (await call('/api/review/bans', { method: 'POST', cookie: admin, origin: SITE, body: JSON.stringify({ slack_id, reason: 'Faked hours', days: 1 }) })).json()) as { id: number }
+	const banned = (await (await call('/api/review/bans', { method: 'POST', cookie: admin, origin: SITE, body: JSON.stringify({ slack_id, reason: 'Faked hours' }) })).json()) as { id: number }
 	const denied = await read('/projects', made.key)
 	assert.equal(denied.status, 403)
 	assert.doesNotMatch(await denied.text(), /Faked hours/)
@@ -872,6 +914,76 @@ test('anyone reads their own stats through the public API with a read key, unles
 	assert.equal((await call(`/api/keys/${made.id}`, { method: 'DELETE', cookie: admin, origin: SITE })).status, 404)
 	assert.equal((await keys('DELETE', `/${made.id}`)).status, 200)
 	assert.equal((await read('/me', made.key)).status, 401)
+})
+
+test('every profile is public by default, and shows no name, Slack ID, or folder', async () => {
+	const cookie = await signIn('kid')
+	const { api_key: key, handle, profile_public } = await me(cookie)
+	assert.match(handle, /^u-[0-9a-f]{12}$/, 'a neutral handle, not one made from the name')
+	assert.equal(profile_public, true)
+	const settings = (body: object) => call('/api/profile', { method: 'POST', cookie, origin: SITE, body: JSON.stringify(body) })
+	const profile = (h: string) => call(`/api/public/v1/users/${h}`)
+	const named = async (h: string) => {
+		const p = (await (await profile(h)).json()) as { projects: { name: string; repo: string | null }[]; other_projects: { count: number; engaged_seconds: number } }
+		return { names: p.projects.map((x) => [x.name, x.repo]), other: p.other_projects }
+	}
+
+	const now = Date.now()
+	const site = { key: 'github.com/kid/site', name: 'site' }, game = { key: '/home/kid/game', name: 'game' }
+	const body = computer()({
+		engaged_seconds: 5000,
+		blocks: [{ ...block(now - 60_000), project: site }, { ...block(now - 5000), project: game }],
+		projects: [{ project: site, engaged_seconds: 3600 }, { project: game, engaged_seconds: 1800 }],
+		days: [{ date: '2026-01-02', engaged_seconds: 5000 }],
+	})
+	assert.equal((await call('/api/v1/reports', { method: 'POST', body, key })).status, 200)
+
+	// Anyone reads it with no credentials. The repository is named; the folder is only counted.
+	const res = await profile(handle)
+	assert.deepEqual([res.status, res.headers.get('Access-Control-Allow-Origin'), res.headers.get('Cache-Control')], [200, '*', 'public, max-age=60'])
+	const text = await res.text()
+	const p = JSON.parse(text) as { handle: string; engaged_seconds: number; days: unknown[]; projects: unknown[]; other_projects: unknown }
+	assert.deepEqual([p.handle, p.engaged_seconds, p.days], [handle, 5000, [{ date: '2026-01-02', engaged_seconds: 5000 }]])
+	assert.deepEqual(p.projects, [{ name: 'site', repo: 'github.com/kid/site', engaged_seconds: 3600 }])
+	assert.deepEqual(p.other_projects, { count: 1, engaged_seconds: 1800 })
+	assert.doesNotMatch(text, /kid<|&lt;b|UKID|home\/kid|game|td-[0-9a-f]|tdk_/)
+	const page = await call(`/@${handle}`)
+	assert.equal(page.status, 200)
+	assert.match(await page.text(), /profile\.js/)
+	assert.equal((await call('/@u-000000000000')).status, 404)
+	assert.equal((await profile('u-000000000000')).status, 404)
+
+	// The owner names or hides each project, but only their own.
+	assert.equal((await settings({ projects: { '/home/kid/game': true, 'github.com/kid/site': false } })).status, 200)
+	assert.deepEqual(await named(handle), { names: [['game', null]], other: { count: 1, engaged_seconds: 3600 } })
+	assert.equal((await settings({ projects: { '/home/other/thing': true } })).status, 404)
+	assert.equal((await settings({ projects: { 'github.com/kid/site': 'yes' } })).status, 400)
+
+	// A new handle moves the profile. Handles are lowercase, and two people can't share one.
+	assert.equal((await settings({ handle: 'a' })).status, 400)
+	assert.equal((await settings({ handle: '-kid' })).status, 400)
+	assert.equal((await call('/api/profile', { method: 'POST', cookie, body: '{"handle":"kid-codes"}' })).status, 403, 'no Origin')
+	const moved = (await (await settings({ handle: 'Kid-Codes' })).json()) as { handle: string }
+	assert.equal(moved.handle, 'kid-codes')
+	assert.equal((await profile(handle)).status, 404)
+	assert.equal((await profile('KID-CODES')).status, 200)
+	const other = await signIn('kid2')
+	assert.equal((await call('/api/profile', { method: 'POST', cookie: other, origin: SITE, body: '{"handle":"kid-codes"}' })).status, 409)
+
+	// A private profile, a ban, and a deleted account each look like no profile at all.
+	assert.equal((await settings({ public: false })).status, 200)
+	assert.deepEqual([(await profile('kid-codes')).status, (await call('/@kid-codes')).status], [404, 404])
+	assert.equal((await settings({ public: true })).status, 200)
+	const admin = await signIn('admin')
+	const ban = (await (await call('/api/review/bans', { method: 'POST', cookie: admin, origin: SITE, body: JSON.stringify({ slack_id: 'UKID', reason: 'Faked hours' }) })).json()) as { id: number }
+	assert.equal((await profile('kid-codes')).status, 404)
+	assert.equal((await call(`/api/review/bans/${ban.id}`, { method: 'DELETE', cookie: admin, origin: SITE })).status, 200)
+	assert.equal((await profile('kid-codes')).status, 200)
+	assert.equal((await call('/api/account', { method: 'DELETE', cookie, origin: SITE })).status, 200)
+	assert.equal((await profile('kid-codes')).status, 404)
+	// The handle is free again, and signing in again reopens the account with a new neutral one.
+	assert.equal((await call('/api/profile', { method: 'POST', cookie: other, origin: SITE, body: '{"handle":"kid-codes"}' })).status, 200)
+	assert.match((await me(await signIn('kid'))).handle, /^u-[0-9a-f]{12}$/)
 })
 
 test('another site gets a read key when a person signs in there with teardrop', async () => {
@@ -939,7 +1051,7 @@ test('another site gets a read key when a person signs in there with teardrop', 
 
 	// A banned person can't allow a site, and isn't told why.
 	const admin = await signIn('admin')
-	const ban = await call('/api/review/bans', { method: 'POST', cookie: admin, origin: SITE, body: JSON.stringify({ slack_id: 'UFOLIO', reason: 'Faked hours', days: 1 }) })
+	const ban = await call('/api/review/bans', { method: 'POST', cookie: admin, origin: SITE, body: JSON.stringify({ slack_id: 'UFOLIO', reason: 'Faked hours' }) })
 	assert.equal(ban.status, 200)
 	const bannedPage = await call(ask(), { cookie })
 	assert.equal(bannedPage.status, 403)

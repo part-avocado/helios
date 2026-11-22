@@ -58,6 +58,39 @@ $('new-key').addEventListener('click', async () => {
 	}
 })
 
+// The public profile: its handle, whether anyone can see it, and which projects it names.
+function showProfile(p) {
+	const url = `${location.origin}/@${p.handle}`
+	$('profile-link').textContent = url.replace(/^https?:\/\//, '')
+	$('profile-link').href = url
+	$('handle').value = p.handle
+	$('profile-public').checked = p.public
+	$('profile-projects').innerHTML = p.projects.map((x) => `<div class="item">
+			<div class="grow"><b>${esc(x.name)}</b>
+				<div class="sub">${x.repo ? esc(x.repo) : 'A folder on your computer'} - ${dur(x.engaged_seconds)}</div></div>
+			<label class="check"><input type="checkbox" data-project="${esc(x.key)}"${x.shown ? ' checked' : ''}> Name it</label>
+		</div>`).join('') || '<div class="item"><div class="grow muted">No projects yet. They appear here after your first sync.</div></div>'
+}
+const saveProfile = async (changes, done) => {
+	try {
+		showProfile(await change('/api/profile', 'POST', JSON.stringify(changes)))
+		if (done) say($('profile-msg'), done, true)
+		else $('profile-msg').hidden = true
+	} catch (e) {
+		say($('profile-msg'), e.message, false)
+		showProfile(await api('/api/profile'))
+	}
+}
+$('handle-form').addEventListener('submit', (e) => {
+	e.preventDefault()
+	saveProfile({ handle: $('handle').value }, 'Handle saved. Your profile has moved to the new address.')
+})
+$('profile-public').addEventListener('change', (e) => saveProfile({ public: e.target.checked }, e.target.checked ? 'Your profile is public.' : 'Your profile is private. Its address now says there is no such profile.'))
+$('profile-projects').addEventListener('change', (e) => {
+	const key = e.target.dataset.project
+	if (key !== undefined) saveProfile({ projects: { [key]: e.target.checked } })
+})
+
 // Read keys for the public API.
 async function listKeys() {
 	const { keys } = await api('/api/keys')
@@ -141,5 +174,6 @@ $('delete-account').addEventListener('click', async () => {
 if ('hosted' in document.documentElement.dataset) {
 	load().catch((e) => say($('key-msg'), e.message, false))
 	listKeys().catch((e) => say($('api-msg'), e.message, false))
+	api('/api/profile').then(showProfile, (e) => say($('profile-msg'), e.message, false))
 }
 else location.replace('dashboard.html')

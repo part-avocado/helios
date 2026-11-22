@@ -44,6 +44,7 @@
 	<div class="settings">
 		<nav class="side" aria-label="Settings">
 			<a href="#setup"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2.5 3.5h11v9h-11zM5 6.5l2 1.5-2 1.5M8.5 10H11"/></svg>Setup</a>
+			<a href="#profile"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M2.5 8h11M8 2.5c1.6 1.6 2.3 3.4 2.3 5.5S9.6 11.9 8 13.5M8 2.5C6.4 4.1 5.7 5.9 5.7 8s.7 3.9 2.3 5.5"/></svg>Profile</a>
 			<a href="#computers"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2.5 3h11v7.5h-11zM6 13.5h4M8 10.5v3"/></svg>Computers</a>
 			<a href="#data"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M8 10.5V3M5 6l3-3 3 3M3 10.5V13h10v-2.5"/></svg>Data</a>
 			<a href="#api"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="5.5" cy="10.5" r="3"/><path d="M7.7 8.3 13.5 2.5M11 5l2 2M9.3 6.7l1.5 1.5"/></svg>API</a>
@@ -58,6 +59,21 @@
 			<p class="muted">If your sync key gets out, make a new one. The old key stops working, so run the new connect command on each of your computers afterwards.</p>
 			<button class="btn small" id="new-key" type="button">Make a new key</button>
 			<p class="msg" id="key-msg" role="status" hidden></p>
+		</section>
+
+		<section class="pane" id="profile" hidden>
+			<h2>Public profile</h2>
+			<p class="muted">Anyone can see your profile at <a id="profile-link" href="#profile">-</a>: your handle, when you joined, your hours, and the projects it names. It never shows your name, your Slack ID, or folders on your computer.</p>
+			<label class="check"><input type="checkbox" id="profile-public"> Anyone can see my profile</label>
+			<form class="key-form" id="handle-form">
+				<label class="field">Handle<input name="handle" id="handle" minlength="3" maxlength="30" autocomplete="off" spellcheck="false" required></label>
+				<button class="btn small primary">Save handle</button>
+			</form>
+			<p class="muted fine">3 to 30 letters, digits, and hyphens. Your old address stops working when you change it.</p>
+			<p class="msg" id="profile-msg" role="status" hidden></p>
+			<h3>Projects</h3>
+			<p class="muted">A repository on a public host, such as GitHub, is named on your profile unless you hide it. Any other project is only counted, as one of your other projects, unless you show its name.</p>
+			<div class="list" id="profile-projects"></div>
 		</section>
 
 		<section class="pane" id="computers" hidden>
@@ -88,7 +104,7 @@
 			</ol>
 			<p class="muted fine">The file holds times and counts, never the text of your prompts. A file that was edited after it was made is refused.</p>
 			<h3>Export your data</h3>
-			<p class="muted">Download your name, your Slack ID, and the latest stats from each of your computers as one JSON file. It does not include your sync key.</p>
+			<p class="muted">Download your name, your Slack ID, your handle, and the latest stats from each of your computers as one JSON file. It does not include your sync key.</p>
 			<a class="btn small" href="/api/export" download>Download my data</a>
 		</section>
 
@@ -109,6 +125,7 @@
 				<tr><td><code>GET /api/public/v1/me</code></td><td>Your name, Slack ID, when you joined, your engaged seconds in the past year, and your last sync.</td></tr>
 				<tr><td><code>GET /api/public/v1/projects</code></td><td>Each project: its name, its repository (such as <code>github.com/you/site</code>, or <code>null</code>), its engaged seconds, and when you first and last worked on it.</td></tr>
 				<tr><td><code>GET /api/public/v1/days?since=2026-01-01</code></td><td>Your engaged seconds on each day.</td></tr>
+				<tr><td><code>GET /api/public/v1/users/{handle}</code></td><td>Anyone's public profile, as it shows at /@handle. Needs no key.</td></tr>
 			</table></div>
 			<p class="muted fine">More in the <a href="docs.html#public-api">docs</a>.</p>
 		</section>

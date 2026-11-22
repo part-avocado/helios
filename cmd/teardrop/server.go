@@ -26,9 +26,8 @@ import (
 	"github.com/part-avocado/teardrop/site"
 )
 
-// server is the central server. Anyone can see an account's totals; the
-// details behind them (work blocks, submissions, and their chat logs) are
-// for admins only, who sign in with Hack Club Auth and are listed by Slack user ID.
+// server is the central server. Accounts, their reports, submissions, and
+// their chat logs are for admins only, who sign in with Hack Club Auth and are listed by Slack user ID.
 // Accounts are their signing keys, registered on first upload. Everything is
 // stored as files under dir, so a small VPS runs it.
 type server struct {
@@ -94,7 +93,6 @@ func (s *server) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /", http.FileServerFS(site.FS))
 	mux.HandleFunc("POST /api/v1/reports", s.postReport)
-	mux.HandleFunc("GET /api/v1/accounts/{id}", s.getProfile)
 	mux.HandleFunc("GET /api/v1/accounts/{id}/report", s.admin(s.getReport))
 	mux.HandleFunc("POST /api/v1/submissions", s.postSubmission)
 	mux.HandleFunc("GET /api/v1/submissions/{id}", s.admin(s.getSubmission))
@@ -197,36 +195,6 @@ func (s *server) accountReport(id string) (SignedReport, exportPayload, error) {
 		return signed, p, errors.New("damaged report")
 	}
 	return signed, p, nil
-}
-
-// Profile is what anyone can see of an account: totals, without the work
-// blocks or sessions behind them.
-type Profile struct {
-	Account   string           `json:"account"`
-	UpdatedAt time.Time        `json:"updated_at"`
-	Engaged   timeline.Seconds `json:"engaged_seconds"`
-	Projects  []ProfileProject `json:"projects"`
-}
-
-type ProfileProject struct {
-	Name    string           `json:"name"`
-	Engaged timeline.Seconds `json:"engaged_seconds"`
-}
-
-// getProfile serves an account's public totals.
-func (s *server) getProfile(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	_, p, err := s.accountReport(id)
-	if err != nil {
-		httpError(w, http.StatusNotFound, "no such account")
-		return
-	}
-	prof := Profile{Account: id, UpdatedAt: p.GeneratedAt, Engaged: p.Report.Engaged, Projects: []ProfileProject{}}
-	for _, pt := range p.Report.Projects {
-		prof.Projects = append(prof.Projects, ProfileProject{Name: pt.Project.Name, Engaged: pt.Engaged})
-	}
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	writeJSON(w, prof)
 }
 
 // getReport serves an account's latest signed report, blocks included, to admins.

@@ -60,7 +60,6 @@ const send = (method, path, body) => api(path, { method, body: body === undefine
 
 const badge = (level) => `<span class="badge l${level}">${LEVELS[level]}</span>`
 const named = (name, slack) => `${name ? `<b>${esc(name)}</b> ` : ''}<code>${esc(slack)}</code>`
-const until = (ms) => (ms == null ? 'until lifted' : `until ${when(ms)}`)
 const head = (title, extra = '') => `<div class="dash-head"><h1>${title}</h1>${extra}</div>`
 const notice = (title, text) => `<div class="empty"><h2>${esc(title)}</h2><p class="muted">${esc(text)}</p></div>`
 const LOOKUP = `<form class="lookup" role="search" data-form="lookup">
@@ -369,26 +368,75 @@ function activity(projects) {
 const banForm = (slack = '') => `<form class="rv-form" data-form="ban">
 	${slack ? `<input type="hidden" name="slack_id" value="${esc(slack)}">` : '<label>Slack ID<input name="slack_id" placeholder="U012ABCDEF" autocomplete="off" spellcheck="false" required></label>'}
 	<label class="grow">Reason, for reviewers only<input name="reason" maxlength="500" autocomplete="off" required></label>
-	<label>For<select name="days">
-		<option value="1">1 day</option><option value="7" selected>7 days</option><option value="30">30 days</option><option value="90">90 days</option><option value="">Until lifted</option>
-	</select></label>
-	<button class="btn danger">Ban</button>
+	<button class="btn danger">Ban until lifted</button>
 </form>
 <p class="msg" role="alert" hidden></p>`
 
-const banRow = (b, withName) => `<div class="item">
-	<div class="grow">${withName ? named(b.name, b.slack_id) + ' ' : ''}<span class="badge${b.active ? ' banned' : ''}">${b.active ? `Banned ${esc(until(b.until))}` : b.lifted_at ? 'Lifted' : 'Over'}</span>
+// ended says how a ban that is over ended: lifted by someone, or, for one
+// from before bans lost their length, run out at the end it was given.
+const ended = (b) => (b.lifted_by ? `. Lifted by ${named(b.lifted_by_name, b.lifted_by)}, ${esc(ago(b.lifted_at))}.` : `. It ran out ${esc(ago(b.lifted_at))}.`)
+
+// banRow draws one ban. withName names the person and links to their account
+// view, where bans are issued and lifted; canLift offers to lift one in force.
+const banRow = (b, withName, canLift = false) => `<div class="item">
+	<div class="grow">${withName ? `<a href="#/person/${encodeURIComponent(b.slack_id)}">${named(b.name, b.slack_id)}</a> ` : ''}<span class="badge${b.active ? ' banned' : ''}">${b.active ? 'Banned until lifted' : b.lifted_by ? 'Lifted' : 'Ran out'}</span>
 		<div class="sub">${esc(b.reason)}</div>
-		<div class="sub">By ${named(b.by_name, b.by_slack_id)}, ${esc(ago(b.at))}${b.lifted_at ? `. Ended early by ${named(b.lifted_by_name, b.lifted_by)}, ${esc(ago(b.lifted_at))}.` : b.active ? '' : `. It ran out ${esc(ago(b.until))}.`}</div>
+		<div class="sub">By ${named(b.by_name, b.by_slack_id)}, ${esc(ago(b.at))}${b.active ? '.' : ended(b)}${b.active && b.was_until ? ` It was set to end ${esc(when(b.was_until))}, before bans lost their length; lift it then if that still stands.` : ''}</div>
 	</div>
-	${b.active ? `<button class="btn small" type="button" data-lift="${b.id}">Lift</button>` : ''}
+	${b.active && canLift ? `<button class="btn small" type="button" data-lift="${b.id}">Lift</button>` : ''}
 </div>`
+
+// accessPanel shows a person's place in the review app, and offers the
+// changes the visitor may make to it, as the server reported them.
+function accessPanel(slack, a) {
+	const has = a.level == null ? '<p class="muted">No place in the review app.</p>' : `<p>${badge(a.level)} <span class="muted">They can ${CAN[a.level]}.</span></p>`
+	const form = a.levels.length ? `<form class="rv-form" data-form="add">
+		<input type="hidden" name="slack_id" value="${esc(slack)}">
+		<label>${a.level == null ? 'Make them' : 'Change to'}<select name="level">${a.levels.map((l) => `<option value="${l}">${LEVELS[l]}</option>`).join('')}</select></label>
+		<label class="grow">Note, for the others<input name="note" maxlength="200" autocomplete="off" placeholder="Optional"></label>
+		<button class="btn primary">${a.level == null ? 'Add' : 'Change'}</button>
+	</form>` : ''
+	const remove = a.remove ? `<button class="btn small danger" type="button" data-remove="${esc(slack)}">Remove from the review app</button>` : ''
+	const none = form || remove ? '' : `<p class="muted fine">${a.level === 0 ? 'Superadmins are set in the ADMINS variable, not here.' : 'You can change the access only of people below your own level.'}</p>`
+	return `<div class="panel" data-area>
+		<h2>Access</h2>
+		${has}${form}${remove}${none}
+		<p class="msg" role="alert" hidden></p>
+	</div>`
+}
+
+// banPanel lists a person's bans, with the form to ban them when the visitor may.
+function banPanel(slack, a, theirBans) {
+	const form = !slack ? '<p class="muted">This account has no Slack ID, and bans go by Slack ID.</p>'
+		: a.ban ? banForm(slack)
+		: `<p class="muted fine">${a.level != null && a.level <= me.level ? 'You can ban only people below your own level.' : 'A superadmin issued their ban, so only a superadmin can change or lift it.'}</p>`
+	return `<div class="panel" data-area>
+		<h2>Bans</h2>
+		${form}
+		${theirBans.length ? `<div class="list">${theirBans.map((x) => banRow(x, false, a.lift)).join('')}</div>` : ''}
+		${a.ban ? '' : '<p class="msg" role="alert" hidden></p>'}
+	</div>`
+}
+
+// What a neoadmin or superadmin sees of a Slack ID that has never signed in:
+// only their access and bans, so they can be added or banned before they arrive.
+function unknownView(b) {
+	const slack = b.person.slack_id
+	const ban = b.bans.find((x) => x.active)
+	return `<div class="review">
+		<a class="back" href="#/people"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M10 3L5 8l5 5"/></svg>All people</a>
+		${head(`<code>${esc(slack)}</code>`, `<span class="status">Has not signed in yet</span>${ban ? '<span class="badge banned">Banned</span>' : ''}${LOOKUP}`)}
+		${ban ? banBanner(ban) : ''}
+		<div class="panels">${accessPanel(slack, b.access)}${banPanel(slack, b.access, b.bans)}</div>
+		<p class="muted fine">No account has this Slack ID yet. What you set here holds from their first sign-in.</p>
+	</div>`
+}
 
 // banBanner says, as loudly as the page can, that a person is banned, with
 // the reason, which only reviewers see.
 const banBanner = (ban) => `<div class="ban-banner" role="alert">
 	<svg viewBox="0 0 16 16" width="30" height="30" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="m3.8 3.8 8.4 8.4"/></svg>
-	<div><h2>Banned ${esc(until(ban.until))}</h2><p>${esc(ban.reason)}</p><p class="fine">They are told they are banned and until when, not why. Nothing new is taken from them.</p></div>
+	<div><h2>Banned until lifted</h2><p>${esc(ban.reason)}</p><p class="fine">They are told they are banned, not why. Nothing new is taken from them.</p></div>
 </div>`
 
 // What a reviewer sees of a person: who they are and each project's total.
@@ -537,11 +585,8 @@ function fullView(b) {
 					`<tr><td colspan="5" class="muted">${p.deleted_at ? 'None. They deleted their account.' : 'None. They have signed in, but nothing has synced.'}</td></tr>`}
 				</table></div>
 			</div>
-			<div class="panel" data-area>
-				<h2>Bans</h2>
-				${p.slack_id ? banForm(p.slack_id) : '<p class="muted">This account has no Slack ID, and bans go by Slack ID.</p>'}
-				${b.bans.length ? `<div class="list">${b.bans.map((x) => banRow(x, false)).join('')}</div>` : ''}
-			</div>
+			${p.slack_id ? accessPanel(p.slack_id, b.access) : ''}
+			${banPanel(p.slack_id, b.access ?? { ban: false, lift: false }, b.bans)}
 			<div class="panel"><h2>Projects</h2>${projectTable(b.projects)}</div>
 			${activity(b.activity)}
 			<div class="panel wide" id="log-panel">
@@ -573,7 +618,7 @@ async function person(arg) {
 	} catch (e) {
 		return head('No one found', LOOKUP) + notice('No one found', e.message)
 	}
-	return body.limited ? summaryView(body) : fullView(body)
+	return body.limited ? summaryView(body) : body.signed_in ? fullView(body) : unknownView(body)
 }
 
 // ---- Reviewers
@@ -581,26 +626,14 @@ async function person(arg) {
 async function team() {
 	const t = await api('/team')
 	const row = (r) => `<div class="item">
-		<div class="grow">${named(r.name, r.slack_id)}${r.banned ? ' <span class="badge banned">Banned</span>' : ''}
+		<div class="grow"><a href="#/person/${encodeURIComponent(r.slack_id)}">${named(r.name, r.slack_id)}</a>${r.banned ? ' <span class="badge banned">Banned</span>' : ''}
 			<div class="sub">${r.name == null ? 'Has not signed in yet. ' : ''}Added by ${named(r.added_by_name, r.added_by)}, ${esc(ago(r.added_at))}${r.note ? `: ${esc(r.note)}` : ''}</div>
 		</div>
-		${me.level === 0 ? `<button class="btn small" type="button" data-set-level="${r.level === 1 ? 2 : 1}" data-slack="${esc(r.slack_id)}">${r.level === 1 ? 'Make reviewer' : 'Make neoadmin'}</button>` : ''}
-		${r.level > me.level ? `<button class="btn small danger" type="button" data-remove="${esc(r.slack_id)}">Remove</button>` : ''}
 	</div>`
 	const list = (level, none) => t.reviewers.filter((r) => r.level === level).map(row).join('') || `<div class="item"><div class="grow muted">${none}</div></div>`
-	const ACTIONS = { add: 'added', change: 'changed', remove: 'removed', ban: 'banned', unban: 'lifted the ban on' }
-	return head('Reviewers') + `<div class="panel" data-area>
-		<h2>Add someone</h2>
-		<p class="muted">Paste their Slack ID. In Slack: open their profile, choose ⋮, then Copy member ID. They can review from their next page load, and they don't need to have signed in before.</p>
-		<form class="rv-form" data-form="add">
-			<label>Slack ID<input name="slack_id" placeholder="U012ABCDEF" autocomplete="off" spellcheck="false" required></label>
-			<label>As<select name="level"><option value="2">Reviewer</option>${me.level === 0 ? '<option value="1">Neoadmin</option>' : ''}</select></label>
-			<label class="grow">Note, for the others<input name="note" maxlength="200" autocomplete="off" placeholder="Optional"></label>
-			<button class="btn primary">Add</button>
-		</form>
-		<p class="msg" role="alert" hidden></p>
-	</div>
-	<div class="panel" data-area>
+	const ACTIONS = { add: 'added', change: 'changed', remove: 'removed', ban: 'banned', unban: 'lifted the ban on', permanent: 'made permanent the ban on' }
+	return head('Reviewers', LOOKUP) + `<div class="panel">
+		<p class="muted">To add someone, change their level, or remove them, open their account: look up their Slack ID above, or choose them below. In Slack: open their profile, choose ⋮, then Copy member ID. They don't need to have signed in before.</p>
 		<h2>Superadmins ${badge(0)}</h2>
 		<p class="muted">They can ${CAN[0]}. They are the Slack IDs in the Worker's <code>ADMINS</code> variable, which is changed in the Cloudflare dashboard and not here.</p>
 		<div class="list">${t.superadmins.map((s) => `<div class="item"><div class="grow">${named(s.name, s.slack_id)}${s.name == null ? '<div class="sub">Has not signed in yet.</div>' : ''}</div></div>`).join('') || '<div class="item"><div class="grow muted">None. ADMINS is empty.</div></div>'}</div>
@@ -609,8 +642,7 @@ async function team() {
 		<div class="list">${list(1, 'None yet.')}</div>
 		<h2>Reviewers ${badge(2)}</h2>
 		<p class="muted">They can ${CAN[2]}.</p>
-		<div class="list">${list(2, 'None yet. Add one above.')}</div>
-		<p class="msg" role="alert" hidden></p>
+		<div class="list">${list(2, 'None yet.')}</div>
 	</div>
 	<div class="panel">
 		<h2>Changes</h2>
@@ -627,15 +659,12 @@ async function banList() {
 	const { bans } = await api('/bans')
 	const now = bans.filter((b) => b.active)
 	const past = bans.filter((b) => !b.active)
-	return head('Bans') + `<div class="panel" data-area>
-		<h2>Ban someone</h2>
-		<p class="muted">While banned, nothing new is taken from the person: no syncs, uploads, cloud events, or submissions. They see that they are banned and until when, but not the reason, which is for reviewers only. A banned reviewer can't review. You can ban only people below your own level.</p>
-		${banForm()}
+	return head('Bans', LOOKUP) + `<div class="panel">
+		<p class="muted">Every ban lasts until someone lifts it. While banned, nothing new is taken from the person: no syncs, uploads, cloud events, or submissions. They see that they are banned, but not the reason, which is for reviewers only. A banned reviewer can't review. To ban someone or lift a ban, open their account: look up their Slack ID above, or choose them below. You can ban only people below your own level.</p>
 	</div>
-	<div class="panel" data-area>
+	<div class="panel">
 		<h2>In force</h2>
 		<div class="list">${now.map((b) => banRow(b, true)).join('') || '<div class="item"><div class="grow muted">No one is banned.</div></div>'}</div>
-		<p class="msg" role="alert" hidden></p>
 		${past.length ? `<h2>Over</h2><div class="list">${past.map((b) => banRow(b, true)).join('')}</div>` : ''}
 	</div>`
 }
@@ -653,7 +682,7 @@ async function keyList() {
 		['POST /api/review/team', 'Add a reviewer: {"slack_id", "level", "note"}.'],
 		['DELETE /api/review/team/U012ABCDEF', 'Remove a reviewer.'],
 		['GET /api/review/bans', 'Every ban.'],
-		['POST /api/review/bans', 'Ban someone: {"slack_id", "reason", "days"}. Leave days out for a ban until lifted.'],
+		['POST /api/review/bans', 'Ban someone until the ban is lifted: {"slack_id", "reason"}. A request with days is refused.'],
 		['DELETE /api/review/bans/12', 'Lift a ban.'],
 	)
 	return head('API keys') + `<div class="panel" data-area>
@@ -756,7 +785,6 @@ view.addEventListener('click', async (e) => {
 	if (!btn) return
 	const d = btn.dataset
 	if ('remove' in d && confirm(`Remove ${d.remove} from the reviewers? Their API keys stop working too.`)) act(btn, () => send('DELETE', '/team/' + encodeURIComponent(d.remove)))
-	if ('setLevel' in d) act(btn, () => send('POST', '/team', { slack_id: d.slack, level: Number(d.setLevel) }))
 	if ('lift' in d && confirm('Lift this ban now?')) act(btn, () => send('DELETE', '/bans/' + d.lift))
 	if ('revoke' in d && confirm(`Revoke the key "${d.name}"? Whatever uses it stops working at once.`)) act(btn, () => send('DELETE', '/keys/' + d.revoke))
 	// Which project's graphs are drawn.

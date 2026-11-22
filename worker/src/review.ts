@@ -4,7 +4,8 @@
 import { Refusal } from './http.ts'
 import { type Detail, dur, type Entry, findings, parseStored, remarks } from './log.ts'
 import { computers, personDays, personProjects, projectBlocks } from './reports.ts'
-import { bans } from './staff.ts'
+import { type User } from './auth.ts'
+import { access, bans, slackID } from './staff.ts'
 
 /** How many people the admin list shows. */
 const PEOPLE_LIMIT = 1000
@@ -21,12 +22,10 @@ export async function people(env: Env) {
 		`SELECT u.id, u.name, u.slack_id, u.created_at, u.deleted_at, COUNT(c.id) AS computers,
 			COALESCE(SUM(c.engaged_seconds), 0) AS engaged_seconds, MAX(c.synced_at) AS synced_at,
 			(SELECT COUNT(*) FROM account_log l WHERE l.user_id = u.id AND l.flagged = 1) AS flagged,
-			EXISTS (SELECT 1 FROM bans b WHERE b.slack_id = u.slack_id AND u.slack_id != '' AND b.lifted_at IS NULL AND (b.until IS NULL OR b.until > ?1)) AS banned
+			EXISTS (SELECT 1 FROM bans b WHERE b.slack_id = u.slack_id AND u.slack_id != '' AND b.lifted_at IS NULL) AS banned
 		 FROM users u LEFT JOIN computers c ON c.user_id = u.id
 		 GROUP BY u.id ORDER BY synced_at DESC NULLS LAST, u.created_at DESC LIMIT ${PEOPLE_LIMIT}`,
-	)
-		.bind(Date.now())
-		.all()
+	).all()
 	return results
 }
 
@@ -82,7 +81,13 @@ export async function fullLog(env: Env, params: URLSearchParams) {
  * continues the log from an earlier page, `show` narrows it to `flagged` or
  * `refused` rows, and `computer` to the history of one computer.
  */
-export async function person(env: Env, params: URLSearchParams) {
+export async function person(env: Env, actor: User, params: URLSearchParams) {
+	// Someone who has never signed in can still be made a reviewer or banned, by Slack ID.
+	if (!params.get('id') && params.get('slack')) {
+		const slack = slackID(params.get('slack'))
+		const known = await env.DB.prepare('SELECT 1 FROM users WHERE slack_id = ? COLLATE NOCASE').bind(slack).first()
+		if (!known) return { signed_in: false, person: { slack_id: slack }, access: await access(env, actor, slack), bans: await bans(env, slack) }
+	}
 	const who = await lookup(env, params)
 	const before = /^\d{1,15}$/.test(params.get('before') ?? '') ? Number(params.get('before')) : Number.MAX_SAFE_INTEGER
 	const show = { flagged: 'AND flagged = 1', refused: `AND refusal != ''` }[params.get('show') ?? ''] ?? ''
@@ -121,7 +126,10 @@ export async function person(env: Env, params: URLSearchParams) {
 
 	const page = rows.results.slice(0, LOG_PAGE)
 	return {
+		signed_in: true,
 		person: who,
+		// The person's level, and what the visitor may change of it, so the page offers only what the server allows.
+		access: who.slack_id ? await access(env, actor, who.slack_id) : null,
 		computers: theirComputers,
 		projects,
 		// Each project's work blocks, for the graphs.
@@ -158,7 +166,7 @@ export async function summary(env: Env, params: URLSearchParams) {
 		synced_at: theirComputers[0]?.synced_at ?? null,
 		// How many of their reports the server could not square with the one before. A neoadmin can read them.
 		flagged_reports: flagged?.n ?? 0,
-		ban: ban ? { reason: ban.reason, at: ban.at, until: ban.until } : null,
+		ban: ban ? { reason: ban.reason, at: ban.at } : null,
 		// A project's own name only. Its key can be a folder on their computer.
 		projects: projects.map(({ name, engaged_seconds }) => ({ name, engaged_seconds })),
 		// Each project's work blocks, for the graphs, by name only too.

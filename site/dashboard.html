@@ -43,6 +43,10 @@
 		<svg viewBox="0 0 16 16" width="28" height="28" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="m3.8 3.8 8.4 8.4"/></svg>
 		<div><h2>This account is banned</h2><p id="ban-text"></p></div>
 	</div>
+	<div class="profile-note" id="profile-note" hidden>
+		<p>Your profile is public at <a id="profile-note-link"></a>. It shows your handle, hours, and public repositories, never your name or Slack ID. <a href="settings.html#profile">Change what it shows</a></p>
+		<button class="btn small" type="button" id="profile-note-ok">Got it</button>
+	</div>
 	<div class="dash-head">
 		<h1 id="title">Your stats</h1>
 		<span class="status" id="status"></span>
@@ -92,6 +96,7 @@
 <div class="tip" id="tip" role="tooltip" hidden><b></b><span></span><em></em></div>
 <script src="site.js"></script>
 <script src="account.js"></script>
+<script src="charts.js"></script>
 <script src="dashboard.js"></script>
 </body>
 </html>

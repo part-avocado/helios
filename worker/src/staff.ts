@@ -7,11 +7,10 @@
 // Neoadmins and reviewers are listed in the reviewers table, by Slack ID. A
 // person can add, remove, or ban only those below their own level, so a
 // neoadmin can't touch another neoadmin. Reviewers can make API keys, which
-// act as they do.
+// act as they do. A ban has no length: it holds until someone lifts it.
 import { keyHash, type Level, superadmins, type User } from './auth.ts'
 import { randomToken, Refusal } from './http.ts'
 
-const DAY = 86400_000
 /** Someone with no place in the review app, who ranks below every reviewer. */
 const MEMBER = 3
 type Rank = Level | typeof MEMBER
@@ -58,11 +57,9 @@ export async function team(env: Env) {
 	const [reviewers, names, changes] = await Promise.all([
 		env.DB.prepare(
 			`SELECT r.slack_id, r.level, r.note, r.added_by, r.added_at, ${nameOf('r.slack_id')} AS name, ${nameOf('r.added_by')} AS added_by_name,
-				EXISTS (SELECT 1 FROM bans b WHERE b.slack_id = r.slack_id AND b.lifted_at IS NULL AND (b.until IS NULL OR b.until > ?)) AS banned
+				EXISTS (SELECT 1 FROM bans b WHERE b.slack_id = r.slack_id AND b.lifted_at IS NULL) AS banned
 			 FROM reviewers r ORDER BY r.level, r.added_at`,
-		)
-			.bind(Date.now())
-			.all<{ slack_id: string; level: number; note: string; added_by: string; added_at: number; name: string | null; added_by_name: string | null; banned: number }>(),
+		).all<{ slack_id: string; level: number; note: string; added_by: string; added_at: number; name: string | null; added_by_name: string | null; banned: number }>(),
 		env.DB.prepare(`SELECT slack_id, name FROM users WHERE deleted_at IS NULL AND slack_id IN (SELECT value FROM json_each(?)) ORDER BY id`)
 			.bind(JSON.stringify(admins))
 			.all<{ slack_id: string; name: string }>(),
@@ -76,6 +73,26 @@ export async function team(env: Env) {
 		// Someone in ADMINS is a superadmin, whatever an older row here says.
 		reviewers: reviewers.results.filter((r) => !admins.includes(r.slack_id)),
 		log: changes.results,
+	}
+}
+
+/**
+ * access returns the level a Slack ID holds and what the visitor may change
+ * of it: the levels they may give, whether they may remove or ban the person,
+ * and whether they may lift or replace the ban the person has now. It answers
+ * only what addReviewer, removeReviewer, issueBan, and liftBan would allow.
+ */
+export async function access(env: Env, actor: User, slack: string) {
+	const mine = need(actor, 1)
+	const has = await rankOf(env, slack)
+	const below = has > mine
+	const current = (await bans(env, slack)).find((b) => b.active)
+	return {
+		level: has === MEMBER ? null : has,
+		levels: below ? [1, 2].filter((l) => l > mine && l !== has) : [],
+		remove: below && has !== MEMBER,
+		ban: below && !(current && current.by_level < mine),
+		lift: Boolean(current) && current!.by_level >= mine,
 	}
 }
 
@@ -127,63 +144,57 @@ export interface BanRow {
 	by_slack_id: string
 	by_level: number
 	at: number
-	until: number | null
+	/** The end a ban was given before bans lost their length, if it had one. */
+	was_until: number | null
 	lifted_at: number | null
 	lifted_by: string | null
 }
 
-const BAN_COLUMNS = `b.id, b.slack_id, b.reason, b.by_slack_id, b.by_level, b.at, b.until, b.lifted_at, b.lifted_by,
+const BAN_COLUMNS = `b.id, b.slack_id, b.reason, b.by_slack_id, b.by_level, b.at, b.was_until, b.lifted_at, b.lifted_by,
 	${nameOf('b.slack_id')} AS name, ${nameOf('b.by_slack_id')} AS by_name, ${nameOf('b.lifted_by')} AS lifted_by_name`
 
-/** inForce says whether a ban still holds at now. */
-const inForce = (b: BanRow, now: number) => b.lifted_at == null && (b.until == null || b.until > now)
+/** inForce says whether a ban still holds: every ban does until it is lifted. */
+const inForce = (b: BanRow) => b.lifted_at == null
 
 /**
  * The words a banned person is told, by the site and by `teardrop sync`. The
  * reason is for reviewers only, so it is left out.
  */
-export function banMessage(ban: { until: number | null }): string {
-	const until = ban.until == null ? 'until a reviewer lifts the ban' : `until ${new Date(ban.until).toISOString().slice(0, 16).replace('T', ' ')} UTC`
-	return `This account is banned ${until}. Nothing new is taken from it: no syncs, uploads, cloud events, or submissions.`
+export function banMessage(): string {
+	return 'This account is banned until a reviewer lifts the ban. Nothing new is taken from it: no syncs, uploads, cloud events, or submissions.'
 }
 
 /** bans lists bans, newest first, each marked with whether it is in force: everyone's, or one person's. */
 export async function bans(env: Env, slack = '') {
-	const now = Date.now()
 	const { results } = await env.DB.prepare(`SELECT ${BAN_COLUMNS} FROM bans b WHERE ?1 = '' OR b.slack_id = ?1 ORDER BY b.id DESC LIMIT ${LISTED}`)
 		.bind(slack)
 		.all<BanRow & { name: string | null; by_name: string | null; lifted_by_name: string | null }>()
-	return results.map((b) => ({ ...b, active: inForce(b, now) }))
+	return results.map((b) => ({ ...b, active: inForce(b) }))
 }
 
 /**
- * issueBan bans a person below the visitor's level: for `days`, or without
- * it until someone lifts the ban. It replaces a ban already in force, unless
- * someone above the visitor issued that one.
+ * issueBan bans a person below the visitor's level until someone lifts the
+ * ban. It replaces a ban already in force, unless someone above the visitor
+ * issued that one.
  */
 export async function issueBan(env: Env, actor: User, body: { slack_id?: unknown; reason?: unknown; days?: unknown }) {
 	const mine = need(actor, 1)
+	// A script that still asks for a length must not believe it issued a short ban.
+	if ('days' in body) throw new Refusal(400, 'Bans have no length: each lasts until someone lifts it. Leave days out.')
 	const slack = slackID(body.slack_id)
 	const reason = String(body.reason ?? '').trim().slice(0, 500)
 	if (!reason) throw new Refusal(400, 'Give a reason. Only reviewers see it, never the person.')
 	const now = Date.now()
-	let until: number | null = null
-	if (body.days != null && body.days !== '') {
-		const days = Number(body.days)
-		if (!(days > 0 && days <= 3650)) throw new Refusal(400, 'A ban lasts between a fraction of a day and ten years. Leave the length out for one that lasts until it is lifted.')
-		until = now + Math.round(days * DAY)
-	}
 	const has = await rankOf(env, slack)
 	if (has <= mine) throw new Refusal(403, `${slack} is a ${RANK_NAMES[has]}. You can ban only people below your own level.`)
 	const current = (await bans(env, slack)).find((b) => b.active)
 	if (current && current.by_level < mine) throw new Refusal(403, 'A superadmin issued the ban they have now, so only a superadmin can change it.')
-	const length = until == null ? 'until lifted' : `until ${new Date(until).toISOString()}`
 	const [, added] = await env.DB.batch([
-		env.DB.prepare('UPDATE bans SET lifted_at = ?1, lifted_by = ?2 WHERE slack_id = ?3 AND lifted_at IS NULL AND (until IS NULL OR until > ?1)').bind(now, actor.slack_id, slack),
-		env.DB.prepare('INSERT INTO bans (slack_id, reason, by_slack_id, by_level, at, until) VALUES (?, ?, ?, ?, ?, ?) RETURNING id').bind(slack, reason, actor.slack_id, mine, now, until),
-		log(env, actor, 'ban', slack, `${length}: ${reason}`),
+		env.DB.prepare('UPDATE bans SET lifted_at = ?1, lifted_by = ?2 WHERE slack_id = ?3 AND lifted_at IS NULL').bind(now, actor.slack_id, slack),
+		env.DB.prepare('INSERT INTO bans (slack_id, reason, by_slack_id, by_level, at) VALUES (?, ?, ?, ?, ?) RETURNING id').bind(slack, reason, actor.slack_id, mine, now),
+		log(env, actor, 'ban', slack, reason),
 	])
-	return { id: (added!.results[0] as { id: number }).id, slack_id: slack, until }
+	return { id: (added!.results[0] as { id: number }).id, slack_id: slack }
 }
 
 /** liftBan ends a ban early. Someone below the level of whoever issued it can't. */
@@ -191,7 +202,7 @@ export async function liftBan(env: Env, actor: User, id: string): Promise<void> 
 	const mine = need(actor, 1)
 	const now = Date.now()
 	const ban = /^\d{1,15}$/.test(id) ? await env.DB.prepare('SELECT * FROM bans WHERE id = ?').bind(Number(id)).first<BanRow>() : null
-	if (!ban || !inForce(ban, now)) throw new Refusal(404, 'No such ban, or it is already over.')
+	if (!ban || !inForce(ban)) throw new Refusal(404, 'No such ban, or it is already over.')
 	if (ban.by_level < mine) throw new Refusal(403, 'A superadmin issued this ban, so only a superadmin can lift it.')
 	await env.DB.batch([
 		env.DB.prepare('UPDATE bans SET lifted_at = ?, lifted_by = ? WHERE id = ?').bind(now, actor.slack_id, ban.id),

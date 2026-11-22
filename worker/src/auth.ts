@@ -14,6 +14,10 @@ export interface User {
 	id: number
 	slack_id: string
 	name: string
+	/** The address of their public profile, /@handle. */
+	handle: string
+	/** Whether anyone may see that profile. */
+	profile_public: boolean
 	api_key: string
 	/** Unix milliseconds. */
 	created_at: number
@@ -22,19 +26,20 @@ export interface User {
 	/** Their place in the review app, or null for someone with none. A banned person has none. */
 	level: Level | null
 	/** The ban on them that is in force, if there is one. */
-	ban: { reason: string; until: number | null } | null
+	ban: { reason: string } | null
 }
 
-type UserRow = Omit<User, 'admin' | 'level' | 'ban'> & { reviewer_level: number | null; ban: string | null }
+type UserRow = Omit<User, 'admin' | 'level' | 'ban' | 'profile_public'> & { profile_public: number; reviewer_level: number | null; ban: string | null }
 
 /**
  * Selects a User's columns, with the level the reviewers table gives them and
- * the ban on them that is in force at ?1. A condition on users u follows it.
+ * the ban on them that is in force. A condition on users u follows it, with
+ * ?2 standing for its value.
  */
-const USER_QUERY = `SELECT u.id, u.slack_id, u.name, u.api_key, u.created_at,
+const USER_QUERY = `SELECT u.id, u.slack_id, u.name, u.handle, u.profile_public, u.api_key, u.created_at,
 	(SELECT r.level FROM reviewers r WHERE r.slack_id = u.slack_id) AS reviewer_level,
-	(SELECT json_object('reason', b.reason, 'until', b.until) FROM bans b
-	 WHERE b.slack_id = u.slack_id AND b.lifted_at IS NULL AND (b.until IS NULL OR b.until > ?1) ORDER BY b.id DESC LIMIT 1) AS ban
+	(SELECT json_object('reason', b.reason) FROM bans b
+	 WHERE b.slack_id = u.slack_id AND b.lifted_at IS NULL ORDER BY b.id DESC LIMIT 1) AS ban
 	FROM users u WHERE u.deleted_at IS NULL AND`
 
 /** superadmins lists the Slack IDs in ADMINS. */
@@ -44,14 +49,15 @@ export function superadmins(env: Env): string[] {
 
 /** load returns the first person that where picks out. It is SQL about users u, with ?2 standing for value. */
 async function load(env: Env, where: string, value: string | number): Promise<User | null> {
-	const row = await env.DB.prepare(`${USER_QUERY} ${where} ORDER BY u.id LIMIT 1`).bind(Date.now(), value).first<UserRow>()
+	// ?1 is unused, so the conditions callers pass keep their numbering.
+	const row = await env.DB.prepare(`${USER_QUERY} ${where} ORDER BY u.id LIMIT 1`).bind(null, value).first<UserRow>()
 	if (!row) return null
-	const { reviewer_level, ban: stored, ...rest } = row
+	const { reviewer_level, ban: stored, profile_public, ...rest } = row
 	const admin = rest.slack_id !== '' && superadmins(env).includes(rest.slack_id)
 	// A superadmin can't be banned, so a ban from before they were one doesn't hold.
 	const ban = admin || !stored ? null : (JSON.parse(stored) as User['ban'])
 	const level = admin ? 0 : ban ? null : reviewer_level === 1 ? 1 : reviewer_level === 2 ? 2 : null
-	return { ...rest, admin, level, ban }
+	return { ...rest, handle: rest.handle ?? '', profile_public: profile_public === 1, admin, level, ban }
 }
 
 export const newKey = () => 'tdk_' + randomToken(24)
@@ -93,11 +99,14 @@ function devLogin(request: Request, env: Env): string {
 /**
  * saveUser creates the person's account on their first sign-in and updates it
  * after. An account they had deleted is theirs again, empty but with its log.
+ * Every account gets a neutral handle, never one made from their name, which
+ * may be a real one.
  */
 async function saveUser(env: Env, hcaID: string, slackID: string, name: string): Promise<User> {
 	const row = await env.DB.prepare(
-		`INSERT INTO users (hca_id, slack_id, name, api_key, created_at) VALUES (?, ?, ?, ?, ?)
-		 ON CONFLICT (hca_id) DO UPDATE SET slack_id = excluded.slack_id, name = excluded.name, deleted_at = NULL
+		`INSERT INTO users (hca_id, slack_id, name, api_key, created_at, handle) VALUES (?, ?, ?, ?, ?, 'u-' || lower(hex(randomblob(6))))
+		 ON CONFLICT (hca_id) DO UPDATE SET slack_id = excluded.slack_id, name = excluded.name, deleted_at = NULL,
+			handle = coalesce(users.handle, excluded.handle)
 		 RETURNING id`,
 	)
 		.bind(hcaID, slackID, name, newKey(), Date.now())
@@ -117,6 +126,9 @@ export async function sessionUser(request: Request, env: Env): Promise<User | nu
 
 /** userByID returns the person with this account ID, or null for one deleted or unknown. */
 export const userByID = (env: Env, id: number) => load(env, 'u.id = ?2', id)
+
+/** userByHandle returns the person whose profile is /@handle, or null for one deleted or unknown. */
+export const userByHandle = (env: Env, handle: string) => load(env, 'u.handle = ?2', handle.toLowerCase())
 
 /** keyUser returns whose sync key request carries, or null. */
 export async function keyUser(request: Request, env: Env): Promise<User | null> {
