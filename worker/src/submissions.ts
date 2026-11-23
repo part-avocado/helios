@@ -7,6 +7,7 @@
 // prompt text is ever on the site.
 import type { User } from './auth.ts'
 import { dayKey } from './hub.ts'
+import { moved, projectCommits } from './git.ts'
 import { Refusal } from './http.ts'
 import { capSpans, credit, flags, type Rec, type Stretch } from './timeline.ts'
 
@@ -26,6 +27,8 @@ export interface SubmissionRow {
 	earlier_overlap_seconds: number
 	credited_seconds: number
 	accepted_seconds: number
+	/** Time accepted by hand for gaps with commits. */
+	gap_seconds: number
 	/** Witnessed time left uncredited by the daily and weekly caps. */
 	capped_seconds: number
 	/** What it finally credits, once decided. */
@@ -51,7 +54,21 @@ interface Snapshot {
 	earlier: Span[]
 	/** What it credited, after the caps. Older snapshots credited witnessed less earlier. */
 	credited?: Span[]
+	/** Uncredited gaps between the project's stretches that hold commits GitHub has, which a neoadmin may accept. */
+	commit_gaps?: Gap[]
 }
+
+/** A gap between credited stretches with commits in it. */
+interface Gap {
+	start: number
+	end: number
+	/** The most of it that may be accepted, in seconds. */
+	most: number
+	commits: { sha: string; t: number; added: number; removed: number }[]
+}
+
+/** The most one gap with commits may be credited by hand: an afternoon of coding between prompts, not a day. */
+const GAP_MOST = 2 * 3600
 
 /** A cap in hours from a setting, in ms; unset or not a positive number is no cap. */
 const capOf = (v: string | undefined) => (Number(v) > 0 ? Number(v) * 3600_000 : Infinity)
@@ -126,6 +143,24 @@ function stretches(recs: Rec[]): { witnessed: Span[]; unwitnessed: Span[] } {
 	return { witnessed, unwitnessed: minus(merge(all.map((s) => [s.start, s.end])), witnessed) }
 }
 
+/**
+ * commitGaps lists the gaps between the project's credited stretches (spans,
+ * merged) that hold a commit GitHub found and dates as claimed, less gaps an
+ * earlier submission listed. A commit's time is its author's to set, so this
+ * is evidence for a person to weigh, never credit by itself.
+ */
+function commitGaps(spans: Span[], recs: Rec[], found: Set<string>, listed: Span[]): Gap[] {
+	const commits = recs.filter((r) => r.sha && found.has(r.sha))
+	const gaps: Gap[] = []
+	for (let i = 1; i < spans.length; i++) {
+		const [start, end] = [spans[i - 1]![1], spans[i]![0]]
+		const inside = commits.filter((c) => c.t > start && c.t < end)
+		if (!inside.length || listed.some(([a, b]) => a < end && b > start)) continue
+		gaps.push({ start, end, most: Math.min(Math.round((end - start) / 1000), GAP_MOST), commits: inside.map((c) => ({ sha: c.sha!, t: c.t, added: c.added ?? 0, removed: c.removed ?? 0 })) })
+	}
+	return gaps
+}
+
 /** submit makes a submission of one of the person's projects from the records the site holds. */
 export async function submit(env: Env, user: User, body: Record<string, unknown>): Promise<SubmissionRow> {
 	if ('signed' in body || 'logs' in body) {
@@ -141,10 +176,13 @@ export async function submit(env: Env, user: User, body: Record<string, unknown>
 	const { witnessed, unwitnessed } = stretches(recs)
 	// What earlier submissions of the project covered is not credited again.
 	const { results: earlierRows } = await env.DB.prepare('SELECT snapshot_key FROM submissions WHERE user_id = ? AND project_key = ?').bind(user.id, key).all<{ snapshot_key: string }>()
-	const earlier: Span[] = []
+	const earlier: Span[] = [], listed: Span[] = []
 	for (const row of earlierRows) {
 		const obj = await env.REPORTS.get(row.snapshot_key)
-		if (obj) earlier.push(...((JSON.parse(await gunzip(obj)) as Snapshot).witnessed ?? []))
+		if (!obj) continue
+		const old = JSON.parse(await gunzip(obj)) as Snapshot
+		earlier.push(...(old.witnessed ?? []))
+		listed.push(...(old.commit_gaps ?? []).map((g) => [g.start, g.end] as Span))
 	}
 	const covered = merge(earlier)
 	const uncapped = minus(witnessed, covered)
@@ -164,14 +202,17 @@ export async function submit(env: Env, user: User, body: Record<string, unknown>
 		credited = merge(capSpans(uncapped, used, offset, daily, weekly))
 	}
 	const id = 'sub-' + [...crypto.getRandomValues(new Uint8Array(8))].map((b) => b.toString(16).padStart(2, '0')).join('')
-	const snapshot: Snapshot = { project: { key, name: nameOf(key) }, days, witnessed, unwitnessed, earlier: covered, credited }
+	const git = (await projectCommits(env, user.id)).get(key)?.commits ?? []
+	const found = new Set(git.filter((c) => c.found === true && !moved(c)).map((c) => c.sha))
+	const commit_gaps = commitGaps(merge([...witnessed, ...unwitnessed]), recs, found, listed)
+	const snapshot: Snapshot = { project: { key, name: nameOf(key) }, days, witnessed, unwitnessed, earlier: covered, credited, commit_gaps }
 	const snapshotKey = `${user.id}/submissions/${id}.json.gz`
 	await env.REPORTS.put(snapshotKey, await gzip(JSON.stringify(snapshot)))
 	const row: SubmissionRow = {
 		id, user_id: user.id, project_key: key, project_name: nameOf(key), received_at: Date.now(),
 		witnessed_seconds: seconds(witnessed), unwitnessed_seconds: seconds(unwitnessed),
 		earlier_overlap_seconds: seconds(witnessed) - seconds(uncapped), credited_seconds: seconds(credited), accepted_seconds: 0,
-		capped_seconds: seconds(uncapped) - seconds(credited), final_seconds: null,
+		capped_seconds: seconds(uncapped) - seconds(credited), gap_seconds: 0, final_seconds: null,
 		prompts: recs.filter((r) => r.human && !r.sha).length, tokens_in: recs.reduce((n, r) => n + (r.in ?? 0), 0), tokens_out: recs.reduce((n, r) => n + (r.out ?? 0), 0),
 		state: 'pending', decided_by: null, decided_at: null, note: null, submitter_note: note, snapshot_key: snapshotKey, imported: 0,
 	}
@@ -193,7 +234,8 @@ export async function submit(env: Env, user: User, body: Record<string, unknown>
 export async function ownSubmissions(env: Env, userID: number) {
 	const { results } = await env.DB.prepare(
 		`SELECT id, project_key, project_name, received_at, witnessed_seconds, unwitnessed_seconds, earlier_overlap_seconds, credited_seconds,
-			accepted_seconds, capped_seconds, final_seconds, prompts, state, decided_at, note, submitter_note, imported
+			-- To the person, time accepted for gaps with commits is time accepted by hand too.
+			accepted_seconds + gap_seconds AS accepted_seconds, capped_seconds, final_seconds, prompts, state, decided_at, note, submitter_note, imported
 		 FROM submissions WHERE user_id = ? ORDER BY received_at DESC LIMIT 200`,
 	)
 		.bind(userID)
@@ -241,6 +283,7 @@ export async function submission(env: Env, id: string, level: number) {
 		witnessed: snapshot?.witnessed ?? [],
 		unwitnessed: snapshot?.unwitnessed ?? [],
 		earlier: snapshot?.earlier ?? [],
+		commit_gaps: snapshot?.commit_gaps ?? [],
 		days: snapshot?.days ?? [],
 		flags: flags(recs, dayTotals),
 		records: recs.map((r) => ({
@@ -256,7 +299,8 @@ export type Action = 'approve' | 'adjust' | 'reject'
 /**
  * decide settles a submission, with a note kept in the staff log:
  *
- *   approve credits what was witnessed, plus any unwitnessed time accepted.
+ *   approve credits what was witnessed, plus any unwitnessed time accepted
+ *     and any time accepted for gaps with commits, each up to its most.
  *   adjust sets what it finally credits, at most witnessed plus unwitnessed.
  *   reject credits nothing.
  *
@@ -266,9 +310,9 @@ export type Action = 'approve' | 'adjust' | 'reject'
  * credit it.
  */
 export async function decide(env: Env, actor: User, id: string, body: Record<string, unknown>): Promise<void> {
-	const row = await env.DB.prepare('SELECT s.state, s.credited_seconds, s.unwitnessed_seconds, u.slack_id FROM submissions s JOIN users u ON u.id = s.user_id WHERE s.id = ?')
+	const row = await env.DB.prepare('SELECT s.state, s.credited_seconds, s.unwitnessed_seconds, s.snapshot_key, u.slack_id FROM submissions s JOIN users u ON u.id = s.user_id WHERE s.id = ?')
 		.bind(id)
-		.first<{ state: string; credited_seconds: number; unwitnessed_seconds: number; slack_id: string }>()
+		.first<{ state: string; credited_seconds: number; unwitnessed_seconds: number; snapshot_key: string; slack_id: string }>()
 	if (!row) throw new Refusal(404, 'No such submission.')
 	const action = body.action as Action
 	if (!['approve', 'adjust', 'reject'].includes(action)) throw new Refusal(400, 'Say whether to approve, adjust, or reject it.')
@@ -279,18 +323,27 @@ export async function decide(env: Env, actor: User, id: string, body: Record<str
 	const most = row.credited_seconds + row.unwitnessed_seconds
 	if (action === 'adjust' && secs > most) throw new Refusal(400, `It can credit at most ${most} seconds: what was witnessed, less earlier submissions, plus what was unwitnessed.`)
 	const accepted = action === 'approve' ? Math.min(secs, row.unwitnessed_seconds) : action === 'adjust' ? Math.max(0, secs - row.credited_seconds) : 0
-	const final = action === 'approve' ? row.credited_seconds + accepted : action === 'adjust' ? secs : 0
+	// Approving may also accept time for gaps with commits, each up to its most.
+	let gapped = 0
+	const asked = Array.isArray(body.gaps) ? body.gaps.map(Number) : []
+	if (asked.some((n) => !Number.isInteger(n) || n < 0)) throw new Refusal(400, 'Give the seconds for each gap as a whole number.')
+	if (action === 'approve' && asked.some((n) => n > 0)) {
+		const obj = await env.REPORTS.get(row.snapshot_key)
+		const gaps = obj ? ((JSON.parse(await gunzip(obj)) as Snapshot).commit_gaps ?? []) : []
+		asked.forEach((n, i) => (gapped += Math.min(n, gaps[i]?.most ?? 0)))
+	}
+	const final = action === 'approve' ? row.credited_seconds + accepted + gapped : action === 'adjust' ? secs : 0
 	if (actor.level === 2) {
 		if (row.state !== 'pending') throw new Refusal(403, 'It is already decided. A neoadmin can decide it again.')
-		if (action === 'adjust' || accepted > 0) throw new Refusal(403, 'Only a neoadmin can accept unwitnessed time or adjust a submission.')
+		if (action === 'adjust' || accepted > 0 || gapped > 0) throw new Refusal(403, 'Only a neoadmin can accept unwitnessed time, accept gaps with commits, or adjust a submission.')
 	}
 	const state = { approve: 'approved', adjust: 'adjusted', reject: 'rejected' }[action]
 	const now = Date.now()
 	await env.DB.batch([
-		env.DB.prepare(`UPDATE submissions SET accepted_seconds = ?, final_seconds = ?, state = ?, decided_by = ?, decided_at = ?, note = ? WHERE id = ?`)
-			.bind(accepted, final, state, actor.slack_id, now, note, id),
+		env.DB.prepare(`UPDATE submissions SET accepted_seconds = ?, gap_seconds = ?, final_seconds = ?, state = ?, decided_by = ?, decided_at = ?, note = ? WHERE id = ?`)
+			.bind(accepted, gapped, final, state, actor.slack_id, now, note, id),
 		env.DB.prepare('INSERT INTO staff_log (at, by_slack_id, action, slack_id, detail) VALUES (?, ?, ?, ?, ?)')
-			.bind(now, actor.slack_id, action, row.slack_id, `${id}: ${state}, ${final}s credited (${accepted}s unwitnessed accepted). ${note}`),
+			.bind(now, actor.slack_id, action, row.slack_id, `${id}: ${state}, ${final}s credited (${accepted}s unwitnessed and ${gapped}s of gaps with commits accepted). ${note}`),
 	])
 }
 

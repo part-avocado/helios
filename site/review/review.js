@@ -1080,6 +1080,7 @@ async function submissionPage(arg) {
 	const rows = recs.map((r) => `<tr><td>${esc(exact(r.t))}</td><td>${late(r.late_ms)}</td><td>${esc(r.tool)}</td><td>${event(r)}</td><td>${esc(r.computer)}</td>
 		<td>${r.human ? `${r.real ?? 0}/${r.judged ?? 0} words${r.low ? ', low effort' : ''}` : ''}</td><td>${r.in || r.out ? `${num(r.in ?? 0)} / ${num(r.out ?? 0)}` : ''}</td><td>${r.added || r.removed ? `+${r.added ?? 0} −${r.removed ?? 0}` : ''}</td></tr>`)
 	const flags = d.flags.map((f) => `<li>${esc(f.text)}</li>`).join('')
+	const gaps = d.commit_gaps ?? []
 	return head(esc(s.project_name), `<span class="status">${esc(s.id)}</span>`) + `
 	<div class="panel">
 		<div class="sub-stats">
@@ -1088,7 +1089,7 @@ async function submissionPage(arg) {
 			<div><span class="muted">In earlier submissions</span><b>${dur(s.earlier_overlap_seconds)}</b></div>
 			<div><span class="muted">Credited</span><b>${dur(s.credited_seconds)}</b></div>
 			${s.capped_seconds ? `<div><span class="muted">Over the cap</span><b>${dur(s.capped_seconds)}</b></div>` : ''}
-			<div><span class="muted">Accepted by hand</span><b>${dur(s.accepted_seconds)}</b></div>
+			<div><span class="muted">Accepted by hand</span><b>${dur(s.accepted_seconds + (s.gap_seconds ?? 0))}</b></div>
 			${s.final_seconds != null ? `<div><span class="muted">Final</span><b>${dur(s.final_seconds)}</b></div>` : ''}
 			<div><span class="muted">Prompts</span><b>${num(s.prompts)}</b></div>
 		</div>
@@ -1097,6 +1098,14 @@ async function submissionPage(arg) {
 		${s.state !== 'pending' && s.decided_by ? `<p><span class="status">${esc(s.state[0].toUpperCase() + s.state.slice(1))}</span> by ${esc(s.decided_by)}${s.decided_at ? `, ${esc(when(s.decided_at))}` : ''}${s.note ? `: ${esc(s.note)}` : ''}</p>` : ''}
 	</div>
 	${flags ? `<div class="panel"><h2>Look at first</h2><ul>${flags}</ul></div>` : ''}
+	${gaps.length ? `<div class="panel">
+		<h2>Gaps with commits <small>${plural(gaps.length, 'gap')}</small></h2>
+		<p class="muted">Time between credited stretches that holds commits GitHub has, dated as claimed: perhaps coding by hand between prompts. It earns nothing unless a neoadmin accepts it when approving, up to ${dur(2 * 3600)} a gap. A commit's time is set by its author, so weigh it with the rest.</p>
+		<div class="table-scroll"><table class="data left stack">
+			<tr><th>Gap</th><th>Length</th><th>Commits</th></tr>
+			${gaps.map((g, i) => `<tr><td>${i + 1}. ${esc(exact(g.start))} to ${esc(exact(g.end))}</td><td>${dur(Math.round((g.end - g.start) / 1000))}</td><td>${g.commits.map((c) => `${esc(exact(c.t))} ${repoURL ? `<a href="${esc(repoURL)}/commit/${esc(c.sha)}" rel="nofollow noopener"><code>${esc(c.sha.slice(0, 7))}</code></a>` : `<code>${esc(c.sha.slice(0, 7))}</code>`} +${num(c.added)} −${num(c.removed)}`).join('<br>')}</td></tr>`).join('')}
+		</table></div>
+	</div>` : ''}
 	<div class="panel">
 		<h2>Timeline</h2>
 		${crop}
@@ -1107,6 +1116,7 @@ async function submissionPage(arg) {
 		<h2>${s.state === 'pending' ? 'Decide' : 'Decide again'}</h2>
 		<form class="rv-form" data-form="decide" data-id="${esc(s.id)}">
 			${me.level < 2 ? `${s.unwitnessed_seconds > 0 ? `<label>Unwitnessed seconds to accept, if approved, at most ${num(s.unwitnessed_seconds)}<input name="accept" type="number" min="0" max="${s.unwitnessed_seconds}" value="${s.state === 'pending' ? 0 : s.accepted_seconds}"></label>` : ''}
+			${gaps.map((g, i) => `<label>Gap ${i + 1}, seconds to accept if approved, at most ${num(g.most)}<input name="gap-${i}" type="number" min="0" max="${g.most}" value="0"></label>`).join('')}
 			<label>Seconds in all, if adjusted, at most ${num(s.credited_seconds + s.unwitnessed_seconds)}<input name="total" type="number" min="0" max="${s.credited_seconds + s.unwitnessed_seconds}" value="${s.final_seconds ?? s.credited_seconds}"></label>` : ''}
 			<label class="grow">Why, for the person to read<input name="note" placeholder="Such as matching commits" required></label>
 			<div class="rv-actions">
@@ -1115,7 +1125,7 @@ async function submissionPage(arg) {
 				<button class="btn danger" name="action" value="reject">Reject</button>
 			</div>
 		</form>
-		<p class="muted fine">Approving credits what was witnessed${me.level < 2 ? ', plus any unwitnessed time accepted. Adjusting sets what it credits in all' : ''}. Rejecting credits nothing; its time still counts as covered, so submitting again won't credit it.</p>
+		<p class="muted fine">Approving credits what was witnessed${me.level < 2 ? ', plus any unwitnessed time and gaps with commits accepted. Adjusting sets what it credits in all' : ''}. Rejecting credits nothing; its time still counts as covered, so submitting again won't credit it.</p>
 		<p class="msg" hidden></p>
 	</div>` : ''}
 	<div class="panel">
@@ -1242,7 +1252,8 @@ view.addEventListener('submit', (e) => {
 	if (kind === 'decide') {
 		const action = e.submitter?.value ?? 'approve'
 		const seconds = action === 'approve' ? Number(fields.accept ?? 0) : action === 'adjust' ? Number(fields.total) : 0
-		act(form, () => send('POST', `/submissions/${encodeURIComponent(form.dataset.id)}/decide`, { action, seconds, note: fields.note }))
+		const gaps = Object.keys(fields).filter((k) => k.startsWith('gap-')).sort((a, b) => a.slice(4) - b.slice(4)).map((k) => Number(fields[k] || 0))
+		act(form, () => send('POST', `/submissions/${encodeURIComponent(form.dataset.id)}/decide`, { action, seconds, gaps, note: fields.note }))
 	}
 	if (kind === 'key') {
 		act(form, async () => {

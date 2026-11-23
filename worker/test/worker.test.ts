@@ -1319,6 +1319,49 @@ test('reviewers approve, adjust, or reject a submission, and a rejection keeps c
 	assert.deepEqual(results.map((r) => r.action), ['approve', 'adjust', 'adjust', 'reject'])
 })
 
+test('gaps between prompts that hold commits GitHub found are listed, and a neoadmin may accept them', async () => {
+	const cookie = await signIn('handcoder')
+	const { api_key: key } = await me(cookie)
+	const now = Date.now()
+	const min = 60_000
+	const rec = (ago: number, event: string, extra: object = {}) => JSON.stringify({ t: new Date(now - ago * min).toISOString(), tool: 'claude-code', event, session: 'h1', project: 'github.com/kid/hand', human: event === 'UserPromptSubmit', judged: 6, real: 6, ...extra })
+	const commit = (ago: number, sha: string) => JSON.stringify({ t: new Date(now - ago * min).toISOString(), tool: 'git', event: 'commit', session: sha, git: 'github.com/kid/hand', sha, added: 40, removed: 4 })
+	const [found, missing, early] = ['f'.repeat(40), 'e'.repeat(40), '9'.repeat(40)]
+	// Three prompt clusters: 100 to 98 minutes ago, 62 to 58, and 10 to 3. A commit GitHub lacks sits in the first gap; one it has, in the second.
+	const lines = [rec(100, 'UserPromptSubmit'), rec(98, 'Stop'), commit(80, missing), rec(62, 'UserPromptSubmit'), rec(60, 'Stop'), rec(58, 'UserPromptSubmit'), commit(30, found), commit(40, early), rec(5, 'UserPromptSubmit'), rec(3, 'Stop')]
+	assert.equal((await call('/api/v1/events', { method: 'POST', key, body: lines.join('\n') })).status, 200)
+	// What the hourly check would have found: one commit there, one not, one dated a day before its claimed time.
+	const env = await server.getWorker<{ DB: { prepare(sql: string): { bind(...v: unknown[]): { first<T>(): Promise<T | null>; run(): Promise<unknown> } } } }>().getEnv()
+	const id = (await env.DB.prepare('SELECT id FROM users WHERE slack_id = ?').bind('UHANDCODER').first<{ id: number }>())!.id
+	const at = (ago: number) => Math.floor((now - ago * min) / 1000) * 1000
+	const recent = [
+		{ sha: found, t: at(30), added: 40, removed: 4, seen: now, found: true, author_t: at(30) },
+		{ sha: early, t: at(40), added: 40, removed: 4, seen: now, found: true, author_t: at(40) - 86400_000 },
+		{ sha: missing, t: at(80), added: 40, removed: 4, seen: now, found: false },
+	]
+	await env.DB.prepare('INSERT OR REPLACE INTO project_git (user_id, project_key, claimed, found, checked_at, recent) VALUES (?, ?, 3, 2, ?, ?)').bind(id, 'github.com/kid/hand', now, JSON.stringify(recent)).run()
+
+	const submitIt = async () => (await (await call('/api/v1/submissions', { method: 'POST', key, body: JSON.stringify({ project: 'github.com/kid/hand' }) })).json()) as { id: string; credited_seconds: number; unwitnessed_seconds: number }
+	const sub = await submitIt()
+	const admin = await signIn('admin')
+	type Page = { commit_gaps: { start: number; end: number; most: number; commits: { sha: string }[] }[] }
+	const page = (await (await call(`/api/review/submissions/${sub.id}`, { cookie: admin })).json()) as Page
+	// Only the second gap, from the prompt 58 minutes ago to 5 minutes before the one 5 minutes ago: 48 minutes, with only the commit GitHub has and dates as claimed.
+	assert.deepEqual(page.commit_gaps.map((g) => [(now - g.start) / min, (now - g.end) / min, g.most, g.commits.map((c) => c.sha)]), [[58, 10, 48 * 60, [found]]])
+
+	// A reviewer may not accept it; a neoadmin may, up to the gap.
+	assert.equal((await call('/api/review/team', { method: 'POST', cookie: admin, origin: SITE, body: JSON.stringify({ slack_id: 'UGAPREVIEW', level: 2 }) })).status, 200)
+	const decide = (as: string, body: object) => call(`/api/review/submissions/${sub.id}/decide`, { method: 'POST', cookie: as, origin: SITE, body: JSON.stringify(body) })
+	assert.equal((await decide(await signIn('gapreview'), { action: 'approve', gaps: [600], note: 'Hand coding.' })).status, 403)
+	assert.equal((await decide(admin, { action: 'approve', gaps: [-1], note: 'x' })).status, 400)
+	assert.equal((await decide(admin, { action: 'approve', gaps: [999_999, 500], note: 'The commit matches the gap.' })).status, 200)
+	const own = ((await (await call('/api/v1/submissions', { key })).json()) as { submissions: { id: string; accepted_seconds: number; final_seconds: number }[] }).submissions.find((x) => x.id === sub.id)!
+	assert.deepEqual([own.accepted_seconds, own.final_seconds], [48 * 60, sub.credited_seconds + 48 * 60], 'clamped to the gap; an index with no gap adds nothing')
+	// Submitting again lists no gap a submission already listed.
+	const again = await submitIt()
+	assert.deepEqual(((await (await call(`/api/review/submissions/${again.id}`, { cookie: admin })).json()) as Page).commit_gaps, [])
+})
+
 test('the site keeps every prompt record in R2 and credits only time it saw arrive', async () => {
 	const cookie = await signIn('recorder')
 	const { api_key: key } = await me(cookie)
