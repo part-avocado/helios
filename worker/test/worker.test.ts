@@ -1055,6 +1055,10 @@ test('every profile is public by default, and shows no name, Slack ID, or folder
 	assert.equal(profile_public, true)
 	const settings = (body: object) => call('/api/profile', { method: 'POST', cookie, origin: SITE, body: JSON.stringify(body) })
 	const profile = (h: string) => call(`/api/public/v1/users/${h}`)
+	const badge = async (h: string, project?: string) => {
+		const res = await call(`/api/public/v1/users/${h}/badge.svg${project ? `?project=${encodeURIComponent(project)}` : ''}`)
+		return res.status === 200 ? { type: res.headers.get('Content-Type'), cache: res.headers.get('Cache-Control'), svg: await res.text() } : res.status
+	}
 	const named = async (h: string) => {
 		const p = (await (await profile(h)).json()) as { projects: { name: string; repo: string | null }[]; other_projects: { count: number; engaged_seconds: number } }
 		return { names: p.projects.map((x) => [x.name, x.repo]), other: p.other_projects }
@@ -1084,10 +1088,28 @@ test('every profile is public by default, and shows no name, Slack ID, or folder
 	assert.match(await page.text(), /profile\.js/)
 	assert.equal((await call('/@u-000000000000')).status, 404)
 	assert.equal((await profile('u-000000000000')).status, 404)
+	// Its badge shows the same hours, in all or in a project it names, and nothing it doesn't.
+	const all = await badge(handle)
+	assert.ok(typeof all === 'object')
+	assert.deepEqual([all.type, all.cache], ['image/svg+xml; charset=utf-8', 'public, max-age=300'])
+	assert.match(all.svg, /<text[^>]*>teardrop<\/text><text[^>]*>1 hour<\/text>/)
+	const one = await badge(handle, 'github.com/kid/site')
+	assert.match(typeof one === 'object' ? one.svg : '', /teardrop: site<\/text><text[^>]*>1 hour</)
+	assert.equal(await badge(handle, 'game'), 404, 'a folder the profile only counts')
+	assert.equal(await badge(handle, '/home/kid/game'), 404)
+	assert.equal(await badge('u-000000000000'), 404)
 
 	// The owner names or hides each project, but only their own.
 	assert.equal((await settings({ projects: { '/home/kid/game': true, 'github.com/kid/site': false } })).status, 200)
 	assert.deepEqual(await named(handle), { names: [['game', null]], other: { count: 1, engaged_seconds: 3600 } })
+	assert.match(String(((await badge(handle, 'game')) as { svg: string }).svg), /teardrop: game<\/text><text[^>]*>30 min</)
+	assert.equal(await badge(handle, 'github.com/kid/site'), 404, 'a project the owner hid')
+	// A project's name is the computer's to send, so it is escaped.
+	const marked = { key: 'github.com/kid/x', name: '<b>&x"</b>' }
+	assert.equal((await call('/api/v1/reports', { method: 'POST', key, body: computer()({ engaged_seconds: 60, blocks: [{ ...block(now - 1000), project: marked }], projects: [{ project: marked, engaged_seconds: 60 }], days: [] }) })).status, 200)
+	const escaped = String(((await badge(handle, 'github.com/kid/x')) as { svg: string }).svg)
+	assert.match(escaped, /teardrop: &lt;b&gt;&amp;x&quot;&lt;\/b&gt;/)
+	assert.doesNotMatch(escaped, /<b>/)
 	assert.equal((await settings({ projects: { '/home/other/thing': true } })).status, 404)
 	assert.equal((await settings({ projects: { 'github.com/kid/site': 'yes' } })).status, 400)
 
@@ -1104,7 +1126,7 @@ test('every profile is public by default, and shows no name, Slack ID, or folder
 
 	// A private profile, a ban, and a deleted account each look like no profile at all.
 	assert.equal((await settings({ public: false })).status, 200)
-	assert.deepEqual([(await profile('kid-codes')).status, (await call('/@kid-codes')).status], [404, 404])
+	assert.deepEqual([(await profile('kid-codes')).status, (await call('/@kid-codes')).status, await badge('kid-codes')], [404, 404, 404])
 	assert.equal((await settings({ public: true })).status, 200)
 	const admin = await signIn('admin')
 	const ban = (await (await call('/api/review/bans', { method: 'POST', cookie: admin, origin: SITE, body: JSON.stringify({ slack_id: 'UKID', reason: 'Faked hours' }) })).json()) as { id: number }

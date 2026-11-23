@@ -5,7 +5,7 @@
 // read nothing.
 import { keyHash, type User, userKeyUser } from './auth.ts'
 import { json, randomToken, Refusal } from './http.ts'
-import { profileJSON } from './profile.ts'
+import { profileBadge, profileJSON } from './profile.ts'
 import { tradeCode } from './signin.ts'
 import { computers, personDays, personProjects, projectBlocks } from './reports.ts'
 import { banMessage } from './staff.ts'
@@ -86,6 +86,9 @@ async function answer(request: Request, env: Env, url: URL): Promise<Response> {
 	// Anyone's public profile, with no key.
 	const profile = /^GET \/users\/([^/]+)$/.exec(call)
 	if (profile) return profileJSON(env, profile[1]!)
+	// Its badge, for a README.
+	const badge = /^GET \/users\/([^/]+)\/badge\.svg$/.exec(call)
+	if (badge) return profileBadge(env, decodeURIComponent(badge[1]!), url.searchParams.get('project'))
 	if (!/^Bearer tdp_/.test(request.headers.get('Authorization') ?? '')) {
 		throw new Refusal(401, 'Send a read key as a bearer token. Make one on your teardrop site under Settings, then API.')
 	}
@@ -122,5 +125,5 @@ async function answer(request: Request, env: Env, url: URL): Promise<Response> {
 		const since = url.searchParams.get('since') ?? ''
 		return json({ days: Object.keys(perDay).sort().filter((d) => d >= since).map((date) => ({ date, engaged_seconds: perDay[date] })) })
 	}
-	throw new Refusal(404, 'Not found. The calls are GET /me, /projects, /days, and /users/{handle}, and POST /token.')
+	throw new Refusal(404, 'Not found. The calls are GET /me, /projects, /days, /users/{handle}, and /users/{handle}/badge.svg, and POST /token.')
 }

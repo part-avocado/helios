@@ -65,6 +65,11 @@ function showProfile(p) {
 	$('profile-link').href = url
 	$('handle').value = p.handle
 	$('profile-public').checked = p.public
+	// A private profile has no badge: it answers "not found", as the profile does.
+	const badge = `${location.origin}/api/public/v1/users/${p.handle}/badge.svg`
+	$('badge').hidden = !p.public
+	$('badge-img').src = p.public ? `${badge}?v=${Date.now()}` : ''
+	$('badge-md').textContent = `[![teardrop](${badge})](${url})`
 	$('profile-projects').innerHTML = p.projects.map((x) => `<div class="item">
 			<div class="grow"><b>${esc(x.name)}</b>
 				<div class="sub">${x.repo ? esc(x.repo) : 'A folder on your computer'} - ${dur(x.engaged_seconds)}</div></div>

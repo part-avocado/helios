@@ -54,6 +54,48 @@ export async function profileJSON(env: Env, handle: string): Promise<Response> {
 	return res
 }
 
+/** escapeXML makes text safe inside SVG text and attributes. */
+const escapeXML = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[c]!)
+
+/** hoursText is a badge's figure: minutes under an hour, then whole hours. */
+const hoursText = (seconds: number) => {
+	const h = Math.round(seconds / 3600)
+	return seconds < 3600 ? `${Math.round(seconds / 60)} min` : h === 1 ? '1 hour' : `${h.toLocaleString('en-US')} hours`
+}
+
+/**
+ * profileBadge answers GET /api/public/v1/users/{handle}/badge.svg: a badge
+ * for a README with the hours the public profile shows, in all or, with
+ * `project`, in one project it names, given by repository or name. It shows
+ * nothing the profile doesn't: a private profile or a project it doesn't
+ * name is "not found".
+ */
+export async function profileBadge(env: Env, handle: string, project: string | null): Promise<Response> {
+	const user = await visibleOwner(env, handle)
+	if (!user) throw new Refusal(404, 'No such profile.')
+	let label = 'teardrop', seconds: number
+	if (project) {
+		const [projects, choices] = await Promise.all([personProjects(env, user.id), shownProjects(env, user.id)])
+		const p = projects.find((x) => isShown(x.key, choices) && (repo(x.key) === project || x.name === project))
+		if (!p) throw new Refusal(404, 'That profile names no such project.')
+		label = `teardrop: ${p.name}`
+		seconds = p.engaged_seconds
+	} else {
+		seconds = (await computers(env, user.id)).reduce((sum, c) => sum + c.engaged_seconds, 0)
+	}
+	const value = hoursText(seconds)
+	// Widths as for 11px Verdana, near enough: about 7 pixels a character.
+	const w = (s: string) => Math.round(s.length * 7 + 12)
+	const lw = w(label), vw = w(value)
+	const [l, v] = [escapeXML(label), escapeXML(value)]
+	const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${lw + vw}" height="20" role="img" aria-label="${l}: ${v}"><title>${l}: ${v}</title>
+<clipPath id="r"><rect width="${lw + vw}" height="20" rx="3"/></clipPath>
+<g clip-path="url(#r)"><rect width="${lw}" height="20" fill="#555"/><rect x="${lw}" width="${vw}" height="20" fill="#2f81f7"/></g>
+<g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="11"><text x="${lw / 2}" y="14">${l}</text><text x="${lw + vw / 2}" y="14">${v}</text></g>
+</svg>`
+	return new Response(svg, { headers: { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'public, max-age=300' } })
+}
+
 /** ownProfile is what the owner sees of their profile in Settings: every project, and whether it is named. */
 export async function ownProfile(env: Env, user: User) {
 	const [projects, choices] = await Promise.all([personProjects(env, user.id), shownProjects(env, user.id)])
