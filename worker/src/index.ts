@@ -158,7 +158,8 @@ async function route(request: Request, env: Env): Promise<Response> {
 	// A profile's live view: whether its owner is at it now, never which project.
 	const liveProfile = request.method === 'GET' ? /^\/api\/public\/v1\/users\/([^/]+)\/live$/.exec(path) : null
 	if (liveProfile) {
-		const owner = await visibleOwner(env, decodeURIComponent(liveProfile[1]!))
+		// Handles are [a-z0-9-], so there is nothing to decode, and bad encoding is no one.
+		const owner = await visibleOwner(env, liveProfile[1]!)
 		if (!owner) throw new Refusal(404, 'No such profile.')
 		return liveView(env, owner.id, request, 'public')
 	}

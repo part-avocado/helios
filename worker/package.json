@@ -4,7 +4,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "wrangler d1 migrations apply DB --local && wrangler dev",
-		"deploy": "wrangler deploy && wrangler d1 migrations apply DB --remote",
+		"deploy": "node scripts/deploy.ts",
 		"check": "wrangler types --strict-vars false --env-file .dev.vars.example && tsc --noEmit && tsc --noEmit -p test",
 		"test": "node --test \"test/*.test.ts\""
 	},

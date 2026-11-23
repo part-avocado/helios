@@ -161,14 +161,17 @@ export async function createSyncKey(env: Env, user: User, name: string, replace 
 	name = name.trim().slice(0, 60)
 	if (!name) throw new Refusal(400, 'Name the key after the computer or tool that will use it, so you can tell your keys apart.')
 	if (replace) await env.DB.prepare('DELETE FROM sync_keys WHERE user_id = ? AND name = ?').bind(user.id, name).run()
-	const have = await env.DB.prepare('SELECT COUNT(*) AS n FROM sync_keys WHERE user_id = ?').bind(user.id).first<{ n: number }>()
-	if ((have?.n ?? 0) >= MAX_SYNC_KEYS) throw new Refusal(409, `You have ${MAX_SYNC_KEYS} sync keys, which is the most one person can have. Revoke one under Settings, then Setup.`)
 	const key = newKey()
 	const hint = key.slice(0, 9)
-	const row = await env.DB.prepare('INSERT INTO sync_keys (user_id, name, hash, hint, created_at) VALUES (?, ?, ?, ?, ?) RETURNING id')
+	// Counted in the same statement, so two made at once can't both pass the limit.
+	const row = await env.DB.prepare(
+		`INSERT INTO sync_keys (user_id, name, hash, hint, created_at) SELECT ?1, ?2, ?3, ?4, ?5
+		 WHERE (SELECT COUNT(*) FROM sync_keys WHERE user_id = ?1) < ${MAX_SYNC_KEYS} RETURNING id`,
+	)
 		.bind(user.id, name, await keyHash(key), hint, Date.now())
 		.first<{ id: number }>()
-	return { id: row!.id, name, hint, key }
+	if (!row) throw new Refusal(409, `You have ${MAX_SYNC_KEYS} sync keys, which is the most one person can have. Revoke one under Settings, then Setup.`)
+	return { id: row.id, name, hint, key }
 }
 
 /** revokeSyncKey deletes one of a person's sync keys, which stops working at once. */

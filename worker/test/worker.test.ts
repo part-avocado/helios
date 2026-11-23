@@ -1129,6 +1129,7 @@ test('every profile is public by default, and shows no name, Slack ID, or folder
 	assert.equal((await profile('u-000000000000')).status, 404)
 	// A handle that isn't even valid percent-encoding is no one too.
 	assert.equal((await call('/api/public/v1/users/%E0/badge.svg')).status, 404)
+	assert.equal((await call('/api/public/v1/users/%E0/live')).status, 404)
 	// Its badge shows the same hours, in all or in a project it names, and nothing it doesn't.
 	const all = await badge(handle)
 	assert.ok(typeof all === 'object')
@@ -1348,6 +1349,9 @@ test('reviewers approve, adjust, or reject a submission, and a rejection keeps c
 	type Row = { id: string; state: string; decided_by?: string; name?: string; slack_id?: string; handle: string }
 	const seen = ((await (await call(`/api/review/submissions/${first.id}`, { cookie: rev })).json()) as { submission: Row }).submission
 	assert.deepEqual([seen.state, seen.decided_by, seen.name, seen.slack_id, seen.handle], ['approved', undefined, undefined, undefined, (await me(cookie)).handle])
+	// Nor the harness's session IDs, which for Amp name a thread that may name the repository: sessions are numbered.
+	const sessions = ((await (await call(`/api/review/submissions/${first.id}`, { cookie: rev })).json()) as { records: { session: string }[] }).records.map((r) => r.session)
+	assert.deepEqual([...new Set(sessions)].sort(), ['session 1', 'session 2'])
 	const listed = ((await (await call('/api/review/submissions', { cookie: rev })).json()) as { submissions: Row[] }).submissions
 	assert.ok(listed.length && listed.every((x) => x.decided_by === undefined && x.slack_id === undefined && x.name === undefined))
 	assert.equal(((await (await call(`/api/review/submissions/${first.id}`, { cookie: superadmin })).json()) as { submission: Row }).submission.decided_by, 'UREVIEWS')
@@ -1737,12 +1741,12 @@ test('a person has several sync keys at once, and revoking one leaves the rest',
 	assert.equal((await make('')).status, 400, 'a key is named')
 	assert.equal((await call('/api/sync-keys', { method: 'POST', cookie, origin: 'https://evil.example', body: '{"name":"x"}' })).status, 403)
 	const laptop = (await (await make('laptop')).json()) as { id: number; key: string; hint: string }
-	const server = (await (await make('build server')).json()) as { id: number; key: string }
+	const build = (await (await make('build server')).json()) as { id: number; key: string }
 	assert.ok(laptop.key.startsWith('tdk_') && laptop.key.startsWith(laptop.hint))
-	assert.deepEqual([await works(account), await works(laptop.key), await works(server.key)], [true, true, true])
+	assert.deepEqual([await works(account), await works(laptop.key), await works(build.key)], [true, true, true])
 	// Records sent with any of them are the person's.
 	const t = new Date().toISOString()
-	const sent = await call('/api/v1/events', { method: 'POST', key: server.key, body: JSON.stringify({ t, tool: 'cursor', event: 'turn_end', session: 's', project: 'p' }) })
+	const sent = await call('/api/v1/events', { method: 'POST', key: build.key, body: JSON.stringify({ t, tool: 'cursor', event: 'turn_end', session: 's', project: 'p' }) })
 	assert.deepEqual(await sent.json(), { stored: 0, records: 1 })
 	const listed = await keys()
 	assert.deepEqual(listed.map((k) => k.name), ['build server', 'laptop'])
@@ -1751,17 +1755,29 @@ test('a person has several sync keys at once, and revoking one leaves the rest',
 
 	// Revoking one stops it alone.
 	assert.equal((await call(`/api/sync-keys/${laptop.id}`, { method: 'DELETE', cookie, origin: SITE })).status, 200)
-	assert.deepEqual([await works(account), await works(laptop.key), await works(server.key)], [true, false, true])
+	assert.deepEqual([await works(account), await works(laptop.key), await works(build.key)], [true, false, true])
 	// A new account key leaves the others working too.
 	const fresh = ((await (await call('/api/key', { method: 'POST', cookie, origin: SITE })).json()) as { api_key: string }).api_key
-	assert.deepEqual([await works(account), await works(fresh), await works(server.key)], [false, true, true])
+	assert.deepEqual([await works(account), await works(fresh), await works(build.key)], [false, true, true])
 	// No one revokes another person's key.
 	const other = await signIn('notmine')
-	assert.equal((await call(`/api/sync-keys/${server.id}`, { method: 'DELETE', cookie: other, origin: SITE })).status, 404)
-	assert.ok(await works(server.key))
+	assert.equal((await call(`/api/sync-keys/${build.id}`, { method: 'DELETE', cookie: other, origin: SITE })).status, 404)
+	assert.ok(await works(build.key))
+	// Fifty keys beside the account's own, and no more.
+	for (let i = 0; i < 49; i++) assert.equal((await make(`key ${i}`)).status, 200)
+	assert.equal((await make('one too many')).status, 409)
+	// A login past the limit says so, and isn't used up: once a key is revoked, polling again connects it.
+	const login = (await (await server.fetch(SITE + '/api/v1/login', { method: 'POST', body: JSON.stringify({ computer: 'td-0123456789ab' }), headers: { 'CF-Connecting-IP': '203.0.113.50' } })).json()) as { code: string; user_code: string }
+	await server.fetch(SITE + '/connect', { method: 'POST', body: new URLSearchParams({ user_code: login.user_code, decision: 'allow' }).toString(), headers: { Cookie: cookie, Origin: SITE, 'Content-Type': 'application/x-www-form-urlencoded' } })
+	const full = await call(`/api/v1/login/${login.code}`)
+	assert.equal(full.status, 409)
+	assert.match(await full.text(), /50 sync keys/)
+	assert.equal((await call(`/api/sync-keys/${(await keys())[0]!.id}`, { method: 'DELETE', cookie, origin: SITE })).status, 200)
+	const done = (await (await call(`/api/v1/login/${login.code}`)).json()) as { status: string; key: string }
+	assert.deepEqual([done.status, await works(done.key)], ['done', true])
 	// Deleting the account stops every one.
 	assert.equal((await call('/api/account', { method: 'DELETE', cookie, origin: SITE })).status, 200)
-	assert.equal(await works(server.key), false)
+	assert.equal(await works(build.key), false)
 })
 
 test('teardrop login connects a computer once, only by a typed code, and never for a banned account', async () => {

@@ -301,8 +301,9 @@ export async function submission(env: Env, id: string, level: number) {
 				.bind(row.user_id, JSON.stringify(days))
 				.all<{ day: string; witnessed_seconds: number }>()
 		: { results: [] }
-	// Computers are numbered, not named, for a reviewer.
+	// Computers and sessions are numbered, not named, for a reviewer: an Amp session is a thread ID, which may name the repository.
 	const computers = [...new Set(recs.map((r) => r.computer))]
+	const sessions = [...new Set(recs.map((r) => `${r.tool}\0${r.session}`))]
 	return {
 		submission: forReviewer(row, level),
 		witnessed: snapshot?.witnessed ?? [],
@@ -313,7 +314,8 @@ export async function submission(env: Env, id: string, level: number) {
 		days: snapshot?.days ?? [],
 		flags: flags(recs, dayTotals),
 		records: recs.map((r) => ({
-			t: r.t, late_ms: r.arrived - r.t, tool: r.tool, event: r.event, session: r.session, human: r.human,
+			t: r.t, late_ms: r.arrived - r.t, tool: r.tool, event: r.event, human: r.human,
+			session: level === 2 ? `session ${sessions.indexOf(`${r.tool}\0${r.session}`) + 1}` : r.session,
 			computer: level === 2 ? `computer ${computers.indexOf(r.computer) + 1}` : r.computer,
 			judged: r.judged, real: r.real, low: r.low, repeat_print: r.sim, in: r.in, out: r.out, added: r.added, removed: r.removed, sha: level === 2 ? undefined : r.sha,
 		})),
@@ -362,7 +364,6 @@ export async function decide(env: Env, actor: User, id: string, body: Record<str
 	const gapped = perGap.reduce((n, x) => n + x, 0)
 	const final = action === 'approve' ? row.credited_seconds + accepted + gapped : action === 'adjust' ? secs : 0
 	if (actor.level === 2) {
-		if (row.state !== 'pending') throw new Refusal(403, 'It is already decided. A neoadmin can decide it again.')
 		if (action === 'adjust' || accepted > 0 || gapped > 0) throw new Refusal(403, 'Only a neoadmin can accept unwitnessed time, accept gaps with commits, or adjust a submission.')
 	}
 	const state = { approve: 'approved', adjust: 'adjusted', reject: 'rejected' }[action]
@@ -374,7 +375,8 @@ export async function decide(env: Env, actor: User, id: string, body: Record<str
 		env.DB.prepare(`INSERT INTO staff_log (at, by_slack_id, action, slack_id, detail) SELECT ?, ?, ?, ?, ? WHERE changes() > 0`)
 			.bind(now, actor.slack_id, action, row.slack_id, `${id}: ${state}, ${final}s credited (${accepted}s unwitnessed and ${gapped}s of gaps with commits accepted). ${note}`),
 	])
-	if (!done!.meta.changes) throw new Refusal(409, 'Someone decided it meanwhile. Reload it to see how.')
+	// The one check of a reviewer's that it is still pending, as the decision lands.
+	if (!done!.meta.changes) throw new Refusal(403, 'It is already decided. A neoadmin can decide it again.')
 }
 
 /** An old review server's record.json line, as `teardrop export-records` prints it. */

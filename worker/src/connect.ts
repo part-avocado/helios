@@ -74,8 +74,14 @@ export async function pollLogin(env: Env, code: string): Promise<Response> {
 	if (!user) throw gone
 	if (user.ban) throw new Refusal(403, 'This account is banned, so no computer can be connected to it.')
 	// A computer that logs in again gets a new key, and its old one stops.
-	const { key } = await createSyncKey(env, user, row.computer_id, true)
-	return json({ status: 'done', key, name: user.name, handle: user.handle })
+	// If none can be made, such as past the limit, the login waits to be polled again.
+	try {
+		const { key } = await createSyncKey(env, user, row.computer_id, true)
+		return json({ status: 'done', key, name: user.name, handle: user.handle })
+	} catch (e) {
+		await env.DB.prepare('UPDATE cli_logins SET collected_at = NULL WHERE hash = ?').bind(hash).run()
+		throw e
+	}
 }
 
 /** connect answers GET and POST /connect, where a signed-in person allows a login by its code. */
