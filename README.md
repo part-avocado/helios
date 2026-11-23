@@ -23,7 +23,9 @@ checksum, puts it on your PATH, and runs `teardrop setup`. To update later,
 run `teardrop update` (or the installer again): it downloads the latest
 release, checks its checksum, replaces the installed teardrop, and runs setup
 again. `teardrop update -check` only says whether a newer version is out, and
-`teardrop update v0.5.0` installs that version, even if it is older. No admin
+`teardrop update v0.5.0` installs that version, even if it is older. Once a
+day a background sync checks for a newer release, and `teardrop` prints one
+line when there is one; nothing updates by itself. No admin
 rights are needed. It installs to `~/.local/bin`, or
 `%LOCALAPPDATA%\Programs\teardrop` on Windows.
 
@@ -276,7 +278,11 @@ curl -H "Authorization: Bearer tdr_..." "https://<your-site>/api/review/person?s
 
 The log stays when a person deletes their account; the reports kept in full go.
 Set a `GITHUB_TOKEN` secret to have the hourly cron check claimed commits
-against GitHub. `npm test` runs the Worker's tests in the Workers runtime.
+against GitHub. Set the `MIN_VERSION` variable, such as `v0.6.0`, to have the
+CLI API answer older teardrops (and ones too old to say their version) with
+426 and "run `teardrop update`"; their records wait on their computers until
+then, and arrive late, so keep it as low as the fix you need. Empty, the
+default, answers every version. `npm test` runs the Worker's tests in the Workers runtime.
 
 #### Public API
 

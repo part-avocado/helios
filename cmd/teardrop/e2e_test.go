@@ -73,6 +73,10 @@ func TestE2E(t *testing.T) {
 			}
 			return
 		}
+		// The site may refuse versions below its MIN_VERSION, so every call says which this is.
+		if r.Header.Get("X-Teardrop-Version") == "" {
+			t.Errorf("%s %s did not say teardrop's version", r.Method, r.URL.Path)
+		}
 		if r.Header.Get("Authorization") != "Bearer tdk_e2e" {
 			http.Error(w, "bad key", http.StatusUnauthorized)
 			return

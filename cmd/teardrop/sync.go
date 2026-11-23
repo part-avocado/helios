@@ -94,6 +94,7 @@ func post(server, key, path string, body []byte) ([]byte, error) {
 	req.ContentLength = int64(len(body))
 	req.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(body)), nil }
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Teardrop-Version", version)
 	if key != "" {
 		req.Header.Set("Authorization", "Bearer "+key)
 	}
@@ -162,6 +163,7 @@ func runSync(args []string) {
 	if *background {
 		err := syncQueued(dataDir(), once)
 		keepError("sync", err)
+		checkForUpdate(&http.Client{Timeout: 10 * time.Second}, releasesURL)
 		check(err)
 		return
 	}
@@ -171,13 +173,19 @@ func runSync(args []string) {
 	if *quiet {
 		return
 	}
+	// A site from before whoami answers 404; then there is nothing to compare.
+	// With nothing to send, whoami is the one call that hears the site
+	// refuse this version.
+	who, status, whoErr := whoami(&http.Client{Timeout: 10 * time.Second}, srv, k)
+	if status == http.StatusUpgradeRequired {
+		check(whoErr)
+	}
 	id, _ := thisComputer()
 	fmt.Printf("Sent %s from this computer (%s); %d were new to the site.\n", plural(total, "record"), id, sent)
 	if future > 0 {
 		fmt.Printf("The site refused %s dated more than 5 minutes ahead of its clock.\n", plural(future, "record"))
 	}
-	// A site from before whoami answers 404; then there is nothing to compare.
-	if who, _, err := whoami(&http.Client{Timeout: 10 * time.Second}, srv, k); err == nil {
+	if whoErr == nil {
 		if w := clockWarning(who.Skew); w != "" {
 			fmt.Println(w)
 		}

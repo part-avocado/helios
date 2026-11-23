@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -250,4 +251,33 @@ func replaceExecutable(target string, binary []byte) error {
 	}
 	os.Remove(old)
 	return nil
+}
+
+// checkForUpdate looks up the latest release at most once a day and keeps
+// the answer in the data folder, for updateNotice. Background syncs call it,
+// so it never slows a command a person runs.
+func checkForUpdate(client *http.Client, releases string) {
+	notice := filepath.Join(dataDir(), "update-available")
+	if !releaseVersion.MatchString(version) || !due(filepath.Join(dataDir(), "update-checked"), 24*time.Hour) {
+		return
+	}
+	latest, err := latestVersion(client, releases)
+	switch {
+	case err != nil:
+	case newer(latest, version):
+		os.WriteFile(notice, []byte(latest+"\n"), 0o600)
+	default:
+		os.Remove(notice)
+	}
+}
+
+// updateNotice is one line saying a newer release is out, or "" when this
+// teardrop is that release or newer, such as right after `teardrop update`.
+func updateNotice() string {
+	b, _ := os.ReadFile(filepath.Join(dataDir(), "update-available"))
+	latest := strings.TrimSpace(string(b))
+	if !releaseVersion.MatchString(version) || !newer(latest, version) {
+		return ""
+	}
+	return fmt.Sprintf("teardrop %s is out (this is %s). Run `teardrop update`.", latest, version)
 }

@@ -63,6 +63,10 @@
 		// Where the commit check asks GitHub; tests point it elsewhere. The
 		// check needs a GITHUB_TOKEN secret, and is off without one.
 		"GITHUB_API": "https://api.github.com",
+		// The oldest teardrop, such as "v0.6.0", the CLI API answers. Older
+		// ones, and ones too old to say their version, are told to run
+		// `teardrop update`. Empty answers every version.
+		"MIN_VERSION": "",
 		// Local testing only: signs every visitor in as this Slack user ID. Set
 		// it in .dev.vars. It is ignored on any address but localhost.
 		"DEV_LOGIN": ""

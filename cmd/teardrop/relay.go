@@ -208,6 +208,8 @@ func relayRequestWith(client *http.Client, method, address, key string, body []b
 		req.Header[k] = v
 	}
 	req.Header.Set("Authorization", "Bearer "+key)
+	// The site may refuse versions older than its MIN_VERSION.
+	req.Header.Set("X-Teardrop-Version", version)
 	res, err := client.Do(req)
 	if err != nil {
 		return 0, err

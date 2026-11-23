@@ -97,7 +97,7 @@
 	<h3>Windows (PowerShell)</h3>
 	<pre><code>irm https://raw.githubusercontent.com/part-avocado/teardrop/main/install.ps1 | iex</code></pre>
 	<p>The installer downloads the right binary, checks it against the release's <code>checksums.txt</code>, and installs it without admin rights to <code>~/.local/bin</code>, or <code>%LOCALAPPDATA%\Programs\teardrop</code> on Windows. It adds that folder to your PATH, then runs <code>teardrop setup</code>. Open a new terminal afterwards so the PATH change applies.</p>
-	<p>To update later, run <code>teardrop update</code>, or run the install command again. <code>teardrop update v0.5.0</code> installs one version in particular. These optional environment variables change what the installer does:</p>
+	<p>To update later, run <code>teardrop update</code>, or run the install command again. <code>teardrop update v0.5.0</code> installs one version in particular. Once a day, a background sync checks for a newer release, and <code>teardrop</code> prints one line when there is one; teardrop never updates itself. These optional environment variables change what the installer does:</p>
 	<table>
 		<tr><th>Variable</th><th>Effect</th></tr>
 		<tr><td><code>TEARDROP_VERSION</code></td><td>Install a specific release, such as <code>v0.1.0</code>.</td></tr>
@@ -301,6 +301,7 @@ npm run dev</code></pre>
 		<tr><td><code>HCA_CLIENT_ID</code>, <code>HCA_CLIENT_SECRET</code></td><td>Your Hack Club Auth app.</td></tr>
 		<tr><td><code>ADMINS</code></td><td>Slack user IDs of the superadmins, separated by commas. They add everyone else who reviews, in <a href="#review-app">the review app</a>.</td></tr>
 		<tr><td><code>GITHUB_TOKEN</code></td><td>Optional secret. Lets the hourly check ask GitHub which claimed commits exist. Without it, commits are linked but not checked.</td></tr>
+		<tr><td><code>MIN_VERSION</code></td><td>Optional variable, such as <code>v0.6.0</code>. Older teardrops, and ones too old to say their version, are told to run <code>teardrop update</code> and can't sync until they do. Their records wait on their computers and arrive late, so late that their time isn't credited, so raise it only for a fix that needs it. Empty answers every version.</td></tr>
 	</table>
 	<p>To change a secret later, edit it in the dashboard. For your own domain, add a <a href="https://developers.cloudflare.com/workers/configuration/routing/custom-domains/">custom domain</a> to the Worker and use it in the redirect URI. Cloudflare accepts uploads of up to 100 MB.</p>
 

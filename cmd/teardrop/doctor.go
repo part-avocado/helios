@@ -156,6 +156,8 @@ func diagnose(claudeDir, codexDir string, client *http.Client, releases string) 
 			}
 		case status == http.StatusUnauthorized:
 			add(finding{"Site", levelFix, server + " does not know this computer's sync key", "Run `teardrop login -server " + server + "` to connect it again."})
+		case status == http.StatusUpgradeRequired:
+			add(finding{"Site", levelFix, strings.TrimPrefix(err.Error(), "server said 426 Upgrade Required: "), "Run `teardrop update`."})
 		case status == http.StatusForbidden:
 			add(finding{"Site", levelFix, strings.TrimPrefix(err.Error(), "server said 403 Forbidden: "), ""})
 		case status == http.StatusNotFound:

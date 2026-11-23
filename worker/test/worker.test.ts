@@ -150,6 +150,34 @@ test('a server without its secrets says so', async () => {
 	}
 })
 
+test('MIN_VERSION sends older and unversioned clients to teardrop update', async () => {
+	const site = createTestHarness({
+		workers: [{ configPath: new URL('../wrangler.jsonc', import.meta.url), vars: { DEV_LOGIN: 'UDEV', MIN_VERSION: 'v0.6.0' }, secrets: { SESSION_SECRET: 'x', HCA_CLIENT_ID: 'a', HCA_CLIENT_SECRET: 'b', ADMINS: '' } }],
+	})
+	try {
+		await site.listen()
+		const env = await site.getWorker<{ DB: { prepare(sql: string): { run(): Promise<unknown> } } }>().getEnv()
+		const migrations = new URL('../migrations/', import.meta.url)
+		for (const file of readdirSync(migrations).sort()) {
+			for (const statement of unstable_splitSqlQuery(readFileSync(new URL(file, migrations), 'utf8'))) await env.DB.prepare(statement).run()
+		}
+		const { api_key: key } = (await (await site.fetch('/api/me')).json()) as { api_key: string }
+		const whoami = (version?: string) =>
+			site.fetch('/api/v1/whoami', { headers: { Authorization: `Bearer ${key}`, ...(version ? { 'X-Teardrop-Version': version } : {}) } })
+		// v0.10.0 is newer than v0.6.0, though it sorts before it as text.
+		for (const version of ['v0.6.0', 'v0.10.0', 'v1.0.0', 'dev']) assert.equal((await whoami(version)).status, 200, version)
+		for (const version of ['v0.5.9', 'v0.0.1', undefined, 'v0.6']) {
+			const res = await whoami(version)
+			assert.equal(res.status, 426, String(version))
+			assert.match(await res.text(), /teardrop v0\.6\.0 or newer\. Run `teardrop update`/)
+		}
+		// The key is checked first, so a stranger learns nothing about the version.
+		assert.equal((await site.fetch('/api/v1/whoami', { headers: { Authorization: 'Bearer tdk_nope' } })).status, 401)
+	} finally {
+		await site.close()
+	}
+})
+
 test('DEV_LOGIN signs visitors in on localhost only', async () => {
 	const local = (await (await server.fetch('/api/me')).json()) as { slack_id: string }
 	assert.equal(local.slack_id, 'UDEV')

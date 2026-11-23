@@ -265,7 +265,25 @@ async function needKey(request: Request, env: Env, url: URL): Promise<User> {
 		throw new Refusal(401, `This server needs your sync key. Run \`teardrop login -server ${url.origin}\` to connect this computer.`)
 	}
 	if (user.ban) throw new Refusal(403, banMessage())
+	if (tooOld(request.headers.get('X-Teardrop-Version'), env.MIN_VERSION)) {
+		throw new Refusal(426, `This site needs teardrop ${env.MIN_VERSION} or newer. Run \`teardrop update\`, then sync again; your records wait on your computer meanwhile.`)
+	}
 	return user
+}
+
+/**
+ * tooOld reports whether the CLI version sent is below min. A build that is
+ * not a release, which says "dev", is let through. A version is the client's
+ * own claim, so this keeps out old bugs, not anyone determined.
+ */
+export function tooOld(sent: string | null, min: string): boolean {
+	const parse = (v: string | null) => /^v(\d+)\.(\d+)\.(\d+)$/.exec(v ?? '')?.slice(1).map(Number)
+	const want = parse(min)
+	if (!want || sent === 'dev') return false
+	const have = parse(sent)
+	if (!have) return true
+	for (let i = 0; i < 3; i++) if (have[i]! !== want[i]!) return have[i]! < want[i]!
+	return false
 }
 
 /**

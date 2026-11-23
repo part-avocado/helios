@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // releases stands in for GitHub's releases pages: "latest" redirects to the
@@ -113,5 +114,51 @@ func TestUpdate(t *testing.T) {
 				t.Errorf("left behind %v", left)
 			}
 		})
+	}
+}
+
+func TestUpdateNotice(t *testing.T) {
+	t.Setenv("TEARDROP_DATA_DIR", t.TempDir())
+	latest, asked := "v0.10.0", 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked++
+		http.Redirect(w, r, "/tag/"+latest, http.StatusFound)
+	}))
+	defer srv.Close()
+	defer func(v string) { version = v }(version)
+
+	version = "v0.9.0"
+	checkForUpdate(srv.Client(), srv.URL)
+	// v0.10.0 is newer, though it sorts before v0.9.0 as text.
+	if got := updateNotice(); !strings.Contains(got, "v0.10.0 is out") {
+		t.Errorf("notice after a newer release came out: %q", got)
+	}
+	checkForUpdate(srv.Client(), srv.URL)
+	if asked != 1 {
+		t.Errorf("asked GitHub %d times in a day, want 1", asked)
+	}
+	// Right after `teardrop update`, this is the release the notice names.
+	version = "v0.10.0"
+	if got := updateNotice(); got != "" {
+		t.Errorf("notice once updated: %q", got)
+	}
+
+	// A day later, nothing newer: the notice is cleared.
+	stamp := filepath.Join(dataDir(), "update-checked")
+	old := time.Now().Add(-25 * time.Hour)
+	os.Chtimes(stamp, old, old)
+	version = "v0.9.0"
+	latest = "v0.9.0"
+	checkForUpdate(srv.Client(), srv.URL)
+	if asked != 2 || updateNotice() != "" {
+		t.Errorf("asked %d times, notice %q; want 2 and none", asked, updateNotice())
+	}
+
+	// A build that isn't a release, such as `go build`, neither asks nor nags.
+	version = "dev"
+	os.Chtimes(stamp, old, old)
+	checkForUpdate(srv.Client(), srv.URL)
+	if asked != 2 {
+		t.Error("a dev build asked for the latest release")
 	}
 }

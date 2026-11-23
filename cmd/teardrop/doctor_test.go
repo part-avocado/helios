@@ -53,6 +53,9 @@ func TestDoctor(t *testing.T) {
 			s.whoami, s.name, s.level, s.detail = refuse(404, "Not found"), "Site", levelNote, "older than this teardrop"
 		}),
 		with(func(s *state) {
+			s.whoami, s.name, s.level, s.detail, s.failsDoc = refuse(426, "This site needs teardrop v0.6.0 or newer."), "Site", levelFix, "This site needs teardrop v0.6.0 or newer.", true
+		}),
+		with(func(s *state) {
 			s.whoami, s.name, s.level, s.detail, s.failsDoc = at(-9*time.Minute), "Clock", levelFix, "9 minutes behind", true
 		}),
 		with(func(s *state) { s.whoami, s.name, s.level, s.detail = at(40*time.Second), "Clock", levelOK, "matches" }),

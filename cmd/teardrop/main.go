@@ -167,6 +167,9 @@ func main() {
 	if e, ok := readLastError(); ok {
 		fmt.Printf("\nThe last background %s failed %s. Run `teardrop doctor` to see why.\n", e.Command, ago(e.Time))
 	}
+	if n := updateNotice(); n != "" {
+		fmt.Println("\n" + n)
+	}
 }
 
 func printEmpty(out io.Writer, since string, anyLogs bool) {
