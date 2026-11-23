@@ -193,11 +193,43 @@ export function totals(all_: Rec[], from: number, to: number): Totals {
 
 /** A day with more witnessed time than this, across a person's computers, is worth a look. */
 const LONG_DAY = 16 * 3600
+/** A prompt sent this soon after the agent's reply was sent before the reply could be read. */
+const QUICK = 15_000
+/** No break this long in an active stretch this long is a stretch no one works. */
+const BREAK = 2 * 3600_000
+const MARATHON = 16 * 3600_000
+/** More credited time than this in any 24 hours. */
+const ROLLING_DAY = 14 * 3600_000
 
-/** Reasons a reviewer should look at a submission first. */
+/** Reasons a reviewer should look at a submission first. None changes what is credited. */
 export interface Flag {
-	kind: 'long-day' | 'steady-gaps' | 'no-turn-ends' | 'no-tokens' | 'clamped'
+	kind: 'long-day' | 'steady-gaps' | 'even-gaps' | 'no-turn-ends' | 'no-tokens' | 'clamped' | 'quick-replies' | 'unanswered' | 'no-break' | 'rolling-day'
 	text: string
+}
+
+const pct = (n: number) => `${Math.round(n * 100)}%`
+const hours = (ms: number) => `${Math.round((ms / 3600_000) * 10) / 10} hours`
+
+/** sessionsOf groups timed records by tool and session, each in time order. */
+function sessionsOf(recs: Rec[]): Rec[][] {
+	const by = new Map<string, Rec[]>()
+	for (const r of recs) {
+		const k = `${r.tool}\0${r.session}`
+		by.set(k, [...(by.get(k) ?? []), r])
+	}
+	return [...by.values()].map((l) => l.sort((a, b) => a.t - b.t))
+}
+
+/** mostIn returns the most credited time in any 24 hours, from merged, sorted spans. */
+function mostIn(spans: { start: number; end: number }[], window: number): number {
+	let most = 0
+	for (let i = 0; i < spans.length; i++) {
+		const until = spans[i]!.start + window
+		let sum = 0
+		for (let j = i; j < spans.length && spans[j]!.start < until; j++) sum += Math.min(spans[j]!.end, until) - spans[j]!.start
+		most = Math.max(most, sum)
+	}
+	return most
 }
 
 /** flags looks for what a script that sends records live would leave behind. */
@@ -212,7 +244,44 @@ export function flags(all: (Rec & { event: string })[], dayTotals: { day: string
 		const mean = gaps.reduce((n, g) => n + g, 0) / gaps.length
 		const sd = Math.sqrt(gaps.reduce((n, g) => n + (g - mean) ** 2, 0) / gaps.length)
 		if (sd / mean < 0.05) out.push({ kind: 'steady-gaps', text: `The gaps between ${gaps.length + 1} prompts barely vary (about ${Math.round(mean / 1000)} seconds each).` })
+		// People's gaps vary by their whole length or more; a script with some jitter still varies little.
+		else if (gaps.length >= 20 && sd / mean < 0.15) out.push({ kind: 'even-gaps', text: `The gaps between ${gaps.length + 1} prompts vary little: about ${Math.round(mean / 1000)} seconds, give or take ${Math.round(sd / 1000)}.` })
 	}
+	// Turns: a prompt that follows the agent's reply, in one session.
+	let turns = 0, quick = 0, asked = 0, unanswered = 0
+	for (const list of sessionsOf(recs)) {
+		list.forEach((r, i) => {
+			if (!r.human) return
+			asked++
+			const prev = list[i - 1], next = list[i + 1]
+			if (prev && !prev.human) {
+				turns++
+				if (r.t - prev.t < QUICK) quick++
+			}
+			// The session's last prompt may still be running; one followed by another prompt went unanswered.
+			if (next?.human) unanswered++
+		})
+	}
+	if (turns >= 30 && quick / turns > 0.3) out.push({ kind: 'quick-replies', text: `${pct(quick / turns)} of ${turns} prompts came within 15 seconds of the agent's reply, before it could be read.` })
+	if (asked >= 20 && unanswered < asked && unanswered / asked > 0.25) out.push({ kind: 'unanswered', text: `${pct(unanswered / asked)} of ${asked} prompts were followed by another prompt before the agent answered.` })
+	// Activity across every session: stretches with no 2-hour break, and credited time in any 24 hours.
+	const times = recs.map((r) => r.t).sort((a, b) => a - b)
+	let longest = 0
+	for (let i = 1, from = times[0] ?? 0; i <= times.length; i++) {
+		if (i === times.length || times[i]! - times[i - 1]! >= BREAK) {
+			longest = Math.max(longest, times[i - 1]! - from)
+			from = times[i] ?? 0
+		}
+	}
+	if (longest > MARATHON) out.push({ kind: 'no-break', text: `Active for ${hours(longest)} with no break of 2 hours.` })
+	const spans: { start: number; end: number }[] = []
+	for (const st of sessionsOf(recs).flatMap((l) => credit(l)).sort((a, b) => a.start - b.start)) {
+		const last = spans.at(-1)
+		if (last && st.start <= last.end) last.end = Math.max(last.end, st.end)
+		else spans.push({ start: st.start, end: st.end })
+	}
+	const most = mostIn(spans, 24 * 3600_000)
+	if (most > ROLLING_DAY) out.push({ kind: 'rolling-day', text: `${hours(most)} credited within 24 hours.` })
 	if (prompts.length >= 5 && !recs.some((r) => !r.human)) out.push({ kind: 'no-turn-ends', text: `${prompts.length} prompts and no turn ends: the agent never answered.` })
 	// Amp's plugins report tokens with every turn end.
 	const silent = recs.filter((r) => !r.human && r.tool === 'amp' && r.event === 'agent.end' && !r.in && !r.out)
