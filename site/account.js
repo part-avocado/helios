@@ -135,7 +135,7 @@ function renderSetup(el, key) {
 			<h3>Connect it to your account</h3>
 			<p>Open a new terminal and run this once. It shows a code to type on this site, then uploads your hours, and teardrop syncs again each time a reply finishes in Claude Code or Amp, or you stop one.</p>
 			<div class="cmdbox">${cmd(connect)}</div>
-			<p class="fine">Only type a code that your own terminal shows. Anyone whose code you type can upload hours to your account.</p>
+			<p class="fine">Only type a code that your own terminal shows. Anyone whose code you type gets your sync key: they can submit and read your submissions.</p>
 		</div></li>
 		<li><div>
 			<h3>Check your tools</h3>

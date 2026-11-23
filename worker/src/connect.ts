@@ -7,7 +7,8 @@
 // Someone could start a login and send the code to another person, to get
 // their key. So the code must be typed, not followed from a link; the page
 // says what allowing gives away and names the computer; a login lasts 10
-// minutes and gives the key once.
+// minutes and gives the key once. The allow page also says when and from
+// where the login was asked for, which a code sent by someone else won't match.
 import { keyHash, sameOrigin, sessionUser, userByID } from './auth.ts'
 import { json, readText, redirect, Refusal, randomToken } from './http.ts'
 import { esc, page } from './signin.ts'
@@ -33,15 +34,18 @@ export async function startLogin(request: Request, env: Env, url: URL): Promise<
 	const pick = crypto.getRandomValues(new Uint8Array(8))
 	const short = Array.from(pick, (b) => LETTERS[b % LETTERS.length]).join('')
 	const now = Date.now()
+	const cf = request.cf as { city?: string; country?: string } | undefined
+	const place = [cf?.city, cf?.country].filter((p) => typeof p === 'string' && p).join(', ').slice(0, 200) || null
 	await env.DB.batch([
 		// Logins no one allowed are forgotten a day after they expire; allowed ones stay as a record.
 		env.DB.prepare('DELETE FROM cli_logins WHERE expires_at < ? AND allowed_at IS NULL').bind(now - 86400_000),
-		env.DB.prepare('INSERT INTO cli_logins (hash, user_code_hash, computer_id, created_at, expires_at) VALUES (?, ?, ?, ?, ?)').bind(
+		env.DB.prepare('INSERT INTO cli_logins (hash, user_code_hash, computer_id, created_at, expires_at, place) VALUES (?, ?, ?, ?, ?, ?)').bind(
 			await keyHash(code),
 			await keyHash(short),
 			computer,
 			now,
 			now + LIFETIME,
+			place,
 		),
 	])
 	return json({ code, user_code: `${short.slice(0, 4)}-${short.slice(4)}`, url: `${url.origin}/connect`, expires_in: LIFETIME / 1000, interval: 2 })
@@ -78,9 +82,9 @@ export async function connect(request: Request, env: Env): Promise<Response> {
 	const form = new URLSearchParams(await readText(request, 4 << 10))
 	const short = typed(form.get('user_code') ?? '')
 	const row = short.length === 8
-		? await env.DB.prepare('SELECT hash, computer_id, expires_at, allowed_at, denied_at FROM cli_logins WHERE user_code_hash = ?')
+		? await env.DB.prepare('SELECT hash, computer_id, created_at, expires_at, allowed_at, denied_at, place FROM cli_logins WHERE user_code_hash = ?')
 				.bind(await keyHash(short))
-				.first<{ hash: string; computer_id: string; expires_at: number; allowed_at: number | null; denied_at: number | null }>()
+				.first<{ hash: string; computer_id: string; created_at: number; expires_at: number; allowed_at: number | null; denied_at: number | null; place: string | null }>()
 		: null
 	if (!row || Date.now() > row.expires_at || row.allowed_at != null || row.denied_at != null) {
 		return codePage(400, 'That code is not one teardrop is waiting for. Check it against your terminal, or run `teardrop login` again: a code lasts 10 minutes.')
@@ -90,7 +94,7 @@ export async function connect(request: Request, env: Env): Promise<Response> {
 		await env.DB.prepare('UPDATE cli_logins SET denied_at = ? WHERE hash = ? AND allowed_at IS NULL').bind(Date.now(), row.hash).run()
 		return page(200, 'Not connected', '<p class="muted">The computer was not connected. Your terminal will say so.</p>')
 	}
-	if (decision !== 'allow') return allowPage(short, row.computer_id, user.name || user.slack_id)
+	if (decision !== 'allow') return allowPage(short, row.computer_id, row.created_at, row.place, user.name || user.slack_id)
 	const allowed = await env.DB.prepare('UPDATE cli_logins SET user_id = ?, allowed_at = ? WHERE hash = ? AND allowed_at IS NULL AND denied_at IS NULL')
 		.bind(user.id, Date.now(), row.hash)
 		.run()
@@ -109,11 +113,13 @@ function codePage(status: number, error: string): Response {
 		<p class="fine muted">Only type a code from your own terminal. If someone sent you a code, don’t: it would give them your account.</p>`)
 }
 
-function allowPage(short: string, computer: string, who: string): Response {
+function allowPage(short: string, computer: string, asked: number, place: string | null, who: string): Response {
+	const minutes = Math.floor((Date.now() - asked) / 60_000)
+	const when = minutes < 1 ? 'just now' : `${minutes} minute${minutes === 1 ? '' : 's'} ago`
 	return page(200, 'Connect this computer?', `
-		<p class="muted">Computer <b class="site">${esc(computer)}</b> asked to connect to your account. Check that <code>teardrop login</code> shows the same ID.</p>
+		<p class="muted">Computer <b class="site">${esc(computer)}</b> asked to connect to your account ${when}${place ? `, from near <b>${esc(place)}</b>` : ''}. Check that <code>teardrop login</code> shows the same ID, and that you ran it then and there. If you didn't, cancel: someone sent you their code.</p>
 		<ul class="grants">
-			<li>It gets your sync key, so it can send records and submit projects as you</li>
+			<li>It gets your sync key, so it can send records, submit projects as you, and read your submissions and reviewers' notes</li>
 			<li>Making a new key under Settings disconnects it, and every other computer</li>
 		</ul>
 		<form method="post" action="/connect">

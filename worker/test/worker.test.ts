@@ -1707,7 +1707,9 @@ test('teardrop login connects a computer once, only by a typed code, and never f
 	assert.equal((await pollKey(login.code)).status, 'pending')
 	// Typed loosely, the code shows the computer to check before connecting.
 	const check = await form({ user_code: login.user_code.replace('-', ' ').toLowerCase() })
-	assert.deepEqual([check.status, /td-abcdef012345/.test(await check.text())], [200, true])
+	const checkPage = await check.text()
+	assert.deepEqual([check.status, /td-abcdef012345/.test(checkPage)], [200, true])
+	assert.match(checkPage, /asked to connect to your account just now/, 'the page says when the login was asked for')
 	assert.equal((await pollKey(login.code)).status, 'pending')
 	assert.equal((await form({ user_code: login.user_code, decision: 'allow' })).status, 200)
 	assert.deepEqual(await pollKey(login.code), { status: 'done', key: api_key, name: '<b>connector</b>', handle: (await me(cookie)).handle })
