@@ -189,7 +189,7 @@ func runHook(args []string) {
 		// can't look the folder up, so the repository goes with it, without
 		// any sign-in the remote holds.
 		if remote := gitOut(ev.Cwd, "config", "--get", "remote.origin.url"); remote != "" {
-			ev.Git = normalizeRemote(remote)
+			ev.Git = nameProject(ev.Cwd, remote).Key
 		}
 		if err := queueRelay(relayOutbox, ev); err != nil {
 			fmt.Fprintln(os.Stderr, "teardrop hook:", err)

@@ -317,6 +317,19 @@ func syncSoon(now bool) {
 // due reports whether the run that stamp records is more than every old, or
 // there was none. If so it records one now, so parallel hooks start one run.
 func due(stamp string, every time.Duration) bool {
+	// Only one process at a time reads and writes the stamp, so two that
+	// start at once don't both find it due. A lock left by one that died
+	// is taken over after a minute.
+	lock := stamp + ".lock"
+	if info, err := os.Stat(lock); err == nil && time.Since(info.ModTime()) > time.Minute {
+		os.Remove(lock)
+	}
+	f, err := os.OpenFile(lock, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return false // another is deciding now
+	}
+	f.Close()
+	defer os.Remove(lock)
 	if info, err := os.Stat(stamp); err == nil && time.Since(info.ModTime()) < every {
 		return false
 	}

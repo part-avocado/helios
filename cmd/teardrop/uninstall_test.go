@@ -38,6 +38,21 @@ func TestRemoveInstallerLines(t *testing.T) {
 		})
 	}
 
+	// The installer wrote the folder as it was given: with a trailing slash,
+	// or by a symlink to where teardrop runs from. Both are this teardrop's.
+	real := t.TempDir()
+	link := filepath.Join(t.TempDir(), "bin")
+	if err := os.Symlink(real, link); err == nil {
+		for _, written := range []string{real + "/", link} {
+			path := filepath.Join(t.TempDir(), ".zshrc")
+			os.WriteFile(path, []byte("a\n"+installerMark+`export PATH="`+written+`:$PATH"`+"\n"), 0o644)
+			if removed, err := removeInstallerLines(path, real); !removed || err != nil {
+				got, _ := os.ReadFile(path)
+				t.Errorf("a line for %q: removed %v, err %v, file now %q", written, removed, err, got)
+			}
+		}
+	}
+
 	// The fish file is the installer's own, so it goes once it is empty.
 	fish := filepath.Join(t.TempDir(), "teardrop.fish")
 	os.WriteFile(fish, []byte(installerMark+`fish_add_path "`+dir+`"`+"\n"), 0o644)

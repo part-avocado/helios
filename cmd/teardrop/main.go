@@ -386,6 +386,9 @@ func resolveProject(cwd, gitURL string) (timeline.Project, string) {
 
 // nameProject names the project in the folder root by its git remote, when it has one.
 func nameProject(root, gitURL string) timeline.Project {
+	if dir, ok := localRemote(gitURL); ok {
+		return timeline.Project{Key: folderKey(dir), Name: filepath.Base(dir)}
+	}
 	if gitURL != "" {
 		key := normalizeRemote(gitURL)
 		return timeline.Project{Key: key, Name: filepath.Base(key)}
@@ -412,6 +415,22 @@ func folderKey(root string) string {
 		return "home"
 	}
 	return "~/" + filepath.ToSlash(rel)
+}
+
+// localRemote returns the folder a remote names when it is one on this
+// computer, such as /home/ada/x.git, file:///home/ada/x, or C:\\x.git, less .git.
+func localRemote(u string) (string, bool) {
+	u = strings.TrimSpace(u)
+	if rest, ok := strings.CutPrefix(u, "file://"); ok {
+		u = filepath.FromSlash(rest)
+		if len(u) > 2 && u[0] == filepath.Separator && u[2] == ':' {
+			u = u[1:] // file:///C:/x on Windows
+		}
+	}
+	if u == "" || !filepath.IsAbs(u) && !strings.HasPrefix(u, "/") {
+		return "", false
+	}
+	return strings.TrimSuffix(filepath.Clean(u), ".git"), true
 }
 
 // normalizeRemote maps git@host:o/r.git and https://host/o/r to host/o/r.

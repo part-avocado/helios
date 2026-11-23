@@ -105,4 +105,11 @@ func TestFolderKey(t *testing.T) {
 	if p := nameProject(filepath.Join(home, "code", "app"), "git@github.com:Kid/App.git"); p.Key != "github.com/kid/app" {
 		t.Errorf("remote project key %q", p.Key)
 	}
+	// A remote that is a folder on this computer is keyed like a folder, so it doesn't name the home folder either.
+	repos := filepath.Join(home, "repos", "x.git")
+	for _, remote := range []string{repos, "file://" + filepath.ToSlash(repos)} {
+		if p := nameProject(filepath.Join(home, "code", "x"), remote); p.Key != "~/repos/x" || p.Name != "x" {
+			t.Errorf("remote %q: key %q, name %q", remote, p.Key, p.Name)
+		}
+	}
 }

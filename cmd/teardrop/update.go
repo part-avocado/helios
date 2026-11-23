@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -241,9 +242,18 @@ func fetch(client *http.Client, url, label string, limit int64) ([]byte, int, er
 // written beside it and renamed into place, so target is never half-written
 // and a teardrop that is running, such as a hook, keeps its old file.
 func replaceExecutable(target string, binary []byte) error {
-	next, old := target+".new", target+".old"
+	old := target + ".old"
 	os.Remove(old) // left by an earlier update on Windows
-	if err := os.WriteFile(next, binary, 0o755); err != nil {
+	f, err := os.CreateTemp(filepath.Dir(target), "teardrop-*.new")
+	if err != nil {
+		return err
+	}
+	next := f.Name()
+	_, err = f.Write(binary)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
 		os.Remove(next)
 		return err
 	}
@@ -335,14 +345,20 @@ func autoUpdate(client *http.Client, releases, exe, latest string) error {
 	if err != nil {
 		return err
 	}
-	try := exe + ".try"
-	if runtime.GOOS == "windows" {
-		try = strings.TrimSuffix(exe, ".exe") + ".try.exe"
-	}
-	if err := os.WriteFile(try, binary, 0o755); err != nil {
+	// A name of its own, so two updates at once can't run or delete each other's.
+	f, err := os.CreateTemp(filepath.Dir(exe), "teardrop-*.try"+filepath.Ext(exe))
+	if err != nil {
 		return err
 	}
+	try := f.Name()
 	defer os.Remove(try)
+	_, err = f.Write(binary)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return err
+	}
 	os.Chmod(try, 0o755)
 	cmd := exec.Command(try, "-version")
 	done := make(chan struct{})
@@ -366,7 +382,8 @@ func autoUpdate(client *http.Client, releases, exe, latest string) error {
 		return err
 	}
 	// Windows keeps the running one as .old already, until it can be deleted.
-	if runtime.GOOS != "windows" {
+	// One that is already this release, from an update that ran meanwhile, isn't kept.
+	if runtime.GOOS != "windows" && !bytes.Equal(previous, binary) {
 		os.WriteFile(exe+".old", previous, 0o755)
 	}
 	os.WriteFile(filepath.Join(dataDir(), "update-installed"), []byte(version+" "+latest+"\n"), 0o600)

@@ -111,6 +111,10 @@ func TestSetCursorHooks(t *testing.T) {
 	if !sameJSON(back, []byte(theirs)) {
 		t.Errorf("after removal: %s", back)
 	}
+	// Removing from a Cursor with no hooks file leaves it without one.
+	if _, changed, _ := setCursorHooks(nil, "", false); changed {
+		t.Error("removing hooks from no file would write one")
+	}
 	if _, _, err := setCursorHooks([]byte(`[1]`), cmd, true); err == nil {
 		t.Error("an unrecognized file was overwritten")
 	}

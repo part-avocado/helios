@@ -54,14 +54,21 @@ func runUninstall(args []string) {
 
 	if exeErr == nil {
 		dir := filepath.Dir(exe)
+		found := false
 		for _, p := range shellProfiles() {
 			removed, err := removeInstallerLines(p, dir)
 			switch {
 			case err != nil:
+				found = true
 				fmt.Printf("\n  Could not edit %s: %v. Delete the lines under %q in it.\n", p, err, strings.TrimSpace(installerMark))
 			case removed:
+				found = true
 				fmt.Printf("\n  Removed the installer's PATH line from %s\n", p)
 			}
+		}
+		// Windows has install.ps1's Path entry; Git Bash's install.sh line names the folder its own way.
+		if !found {
+			fmt.Printf("\n  Found no installer PATH line for %s in your shell's startup files. If you added one, delete it.\n", dir)
 		}
 		if runtime.GOOS == "windows" {
 			removeWindowsPath(dir)
@@ -144,8 +151,7 @@ func removeInstallerLines(path, dir string) (bool, error) {
 		if n := strings.IndexByte(line, '\n'); n >= 0 {
 			line = line[:n+1]
 		}
-		// install.sh writes export PATH="dir:$PATH", or fish_add_path "dir".
-		if !strings.Contains(line, `"`+dir+`:`) && !strings.Contains(line, `"`+dir+`"`) {
+		if !sameDir(installerDir(line), dir) {
 			from = end // another install's line; leave it
 			continue
 		}
@@ -161,6 +167,31 @@ func removeInstallerLines(path, dir string) (bool, error) {
 	}
 	info, _ := os.Stat(path)
 	return true, os.WriteFile(path, []byte(s), info.Mode().Perm())
+}
+
+// installerDir is the folder an installer line adds to PATH: install.sh
+// writes export PATH="dir:$PATH", or fish_add_path "dir".
+func installerDir(line string) string {
+	_, rest, _ := strings.Cut(line, `"`)
+	if d, _, ok := strings.Cut(rest, `:$PATH"`); ok {
+		return d
+	}
+	d, _, _ := strings.Cut(rest, `"`)
+	return d
+}
+
+// sameDir is whether written, as the installer wrote it, is dir, which
+// teardropPath resolved: written may end in a slash or go through a symlink.
+func sameDir(written, dir string) bool {
+	if written == "" {
+		return false
+	}
+	if filepath.Clean(written) == filepath.Clean(dir) {
+		return true
+	}
+	a, err1 := filepath.EvalSymlinks(written)
+	b, err2 := filepath.EvalSymlinks(dir)
+	return err1 == nil && err2 == nil && a == b
 }
 
 // removeWindowsPath takes dir out of the user's Path, where install.ps1 put it.

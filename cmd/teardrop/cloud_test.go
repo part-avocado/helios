@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -147,5 +149,26 @@ func TestDue(t *testing.T) {
 	}
 	if !due(stamp, 0) {
 		t.Error("a run was not due once enough time had passed")
+	}
+}
+
+// Two background syncs that start at once don't both find the check due,
+// which would run two updates over the same files.
+func TestDueOnce(t *testing.T) {
+	stamp := filepath.Join(t.TempDir(), "update-checked")
+	var wg sync.WaitGroup
+	var got atomic.Int32
+	for range 50 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if due(stamp, time.Hour) {
+				got.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	if n := got.Load(); n != 1 {
+		t.Errorf("%d of 50 at once found it due, want 1", n)
 	}
 }

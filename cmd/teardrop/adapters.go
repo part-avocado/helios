@@ -251,6 +251,9 @@ var cursorEvents = []string{"beforeSubmitPrompt", "stop", "sessionStart", "sessi
 // keeping every other hook. It returns the new file and whether it changed.
 func setCursorHooks(file []byte, command string, install bool) ([]byte, bool, error) {
 	var doc map[string]json.RawMessage
+	if len(strings.TrimSpace(string(file))) == 0 && !install {
+		return file, false, nil // no hooks to remove, and no file to make
+	}
 	if len(strings.TrimSpace(string(file))) == 0 {
 		doc = map[string]json.RawMessage{"version": json.RawMessage("1")}
 	} else if err := json.Unmarshal(file, &doc); err != nil || doc == nil {
