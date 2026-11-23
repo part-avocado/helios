@@ -215,14 +215,18 @@ export class UserHub extends DurableObject<Env> {
 		await this.flush()
 	}
 
+	/** The submissions waiting in this hub, run one after another. */
+	private submits: Promise<unknown> = Promise.resolve()
+
 	/**
-	 * submit makes one of the person's submissions, with nothing else running
-	 * in this hub meanwhile: no other submission, and no record arriving
-	 * between writing the working copy to R2 and reading it back. A refusal
-	 * is returned, since an error loses its status on the way back.
+	 * submit makes one of the person's submissions, after the ones already
+	 * waiting, so two at once can't both credit the same time or both fit
+	 * under a cap. Records keep arriving meanwhile: blocking them would hold
+	 * up every hook of the person's for as long as a big project takes. A
+	 * refusal is returned, since an error loses its status on the way back.
 	 */
 	async submit(user: User, body: Record<string, unknown>): Promise<{ row?: SubmissionRow; refused?: { status: number; message: string } }> {
-		return this.ctx.blockConcurrencyWhile(async () => {
+		const run = this.submits.then(async () => {
 			await this.flush()
 			try {
 				return { row: await makeSubmission(this.env, user, body) }
@@ -231,6 +235,9 @@ export class UserHub extends DurableObject<Env> {
 				throw e
 			}
 		})
+		// One that fails doesn't stop the ones after it.
+		this.submits = run.catch(() => {})
+		return run
 	}
 
 	/**
