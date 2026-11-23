@@ -191,9 +191,10 @@ func TestSyncQueued(t *testing.T) {
 		t.Errorf("nothing ended during the sync: %d runs, want 1", runs)
 	}
 
-	// While another sync holds the lock, this one leaves it to that one.
+	// While another sync holds the lock, this one leaves it to that one, and
+	// says so, so it doesn't clear that sync's kept error.
 	os.WriteFile(lock, nil, 0o600)
-	if runs = 0; syncQueued(dir, func() error { runs++; return nil }) != nil || runs != 0 {
+	if runs = 0; !errors.Is(syncQueued(dir, func() error { runs++; return nil }), errSyncBusy) || runs != 0 {
 		t.Errorf("another sync was running: %d runs, want none", runs)
 	}
 	// A lock left by a sync that died is taken over.

@@ -141,15 +141,26 @@ func TestDoctor(t *testing.T) {
 	}
 }
 
-// A background sync's error is kept until a later run succeeds.
+// A background command's error is kept until a later run of that same
+// command succeeds: another command's success says nothing about it.
 func TestKeepError(t *testing.T) {
 	t.Setenv("TEARDROP_DATA_DIR", t.TempDir())
-	keepError("relay", errors.New("server said 401"))
-	if e, ok := readLastError(); !ok || e.Command != "relay" || e.Message != "server said 401" {
-		t.Fatalf("kept %+v, %v", e, ok)
+	keepError("sync", errors.New("server said 500"))
+	keepError("relay", nil)
+	if e, ok := readLastError(); !ok || e.Command != "sync" || e.Message != "server said 500" {
+		t.Fatalf("a relay that worked cleared the sync's error: kept %+v, %v", e, ok)
+	}
+	time.Sleep(10 * time.Millisecond)
+	keepError("update", errors.New("download failed"))
+	if e, _ := readLastError(); e.Command != "update" {
+		t.Fatalf("the newest error is shown first, got %+v", e)
+	}
+	keepError("update", nil)
+	if e, _ := readLastError(); e.Command != "sync" {
+		t.Fatalf("after the update worked, the sync's error remains, got %+v", e)
 	}
 	keepError("sync", nil)
 	if _, ok := readLastError(); ok {
-		t.Error("a successful run left the error")
+		t.Error("a successful run left its error")
 	}
 }

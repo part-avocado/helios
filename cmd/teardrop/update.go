@@ -293,6 +293,7 @@ func checkForUpdate(client *http.Client, releases, exe string) {
 			if err := autoUpdate(client, releases, exe, latest); err != nil {
 				keepError("update", fmt.Errorf("could not update to %s by itself: %w", latest, err))
 			} else {
+				keepError("update", nil)
 				os.Remove(notice)
 			}
 		}

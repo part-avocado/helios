@@ -35,8 +35,9 @@ type finding struct {
 	Fix    string // what to run or do, for a note or a fix
 }
 
-// lastErrorFile holds the last background sync or relay error, as JSON.
-const lastErrorFile = "last-error"
+// lastErrorPrefix names the files that hold each background command's
+// last error, as JSON: last-error-sync, last-error-relay, last-error-update.
+const lastErrorPrefix = "last-error-"
 
 type lastError struct {
 	Time    time.Time `json:"t"`
@@ -44,10 +45,13 @@ type lastError struct {
 	Message string    `json:"message"`
 }
 
-// keepError records what a sync or relay run in the background ended with:
-// an error stays until a later run succeeds, since nobody sees their output.
+// keepError records what a command run in the background ended with: an
+// error stays until a later run of the same command succeeds, since nobody
+// sees their output. Each command keeps its own, so a relay that works
+// doesn't hide a sync that keeps failing.
 func keepError(command string, err error) {
-	path := filepath.Join(dataDir(), lastErrorFile)
+	os.Remove(filepath.Join(dataDir(), "last-error")) // one file for all, before v0.10
+	path := filepath.Join(dataDir(), lastErrorPrefix+command)
 	if err == nil {
 		os.Remove(path)
 		return
@@ -56,11 +60,18 @@ func keepError(command string, err error) {
 	os.WriteFile(path, b, 0o600)
 }
 
-// readLastError returns the kept error, if there is one.
+// readLastError returns the newest kept error, if there is one.
 func readLastError() (lastError, bool) {
-	var e lastError
-	b, err := os.ReadFile(filepath.Join(dataDir(), lastErrorFile))
-	return e, err == nil && json.Unmarshal(b, &e) == nil
+	var newest lastError
+	found := false
+	paths, _ := filepath.Glob(filepath.Join(dataDir(), lastErrorPrefix+"*"))
+	for _, p := range paths {
+		var e lastError
+		if b, err := os.ReadFile(p); err == nil && json.Unmarshal(b, &e) == nil && (!found || e.Time.After(newest.Time)) {
+			newest, found = e, true
+		}
+	}
+	return newest, found
 }
 
 func runDoctor(args []string) {

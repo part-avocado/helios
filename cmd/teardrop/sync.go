@@ -163,7 +163,11 @@ func runSync(args []string) {
 	}
 	if *background {
 		err := syncQueued(dataDir(), once)
-		keepError("sync", err)
+		if errors.Is(err, errSyncBusy) {
+			err = nil // the running sync keeps its own outcome
+		} else {
+			keepError("sync", err)
+		}
 		exe, _ := teardropPath()
 		checkForUpdate(&http.Client{Timeout: 5 * time.Minute}, releasesURL, exe)
 		check(err)
@@ -242,6 +246,7 @@ func journalRaws(journal []sources.JournalEvent) []sources.Raw {
 // lost: its hook leaves a note in dir (sync-wanted), and the sync that is
 // running goes again once it is done.
 func syncQueued(dir string, sync func() error) error {
+	ran := false
 	lock := filepath.Join(dir, "sync.lock")
 	for i := 0; i < 5; i++ {
 		if info, err := os.Stat(lock); err == nil && time.Since(info.ModTime()) > syncLockStale {
@@ -249,9 +254,13 @@ func syncQueued(dir string, sync func() error) error {
 		}
 		f, err := os.OpenFile(lock, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 		if err != nil {
-			return nil // another sync is running, and will see the note
+			if ran {
+				return nil
+			}
+			return errSyncBusy // another sync is running, and will see the note
 		}
 		f.Close()
+		ran = true
 		started := time.Now()
 		err = sync()
 		os.Remove(lock)
@@ -264,6 +273,9 @@ func syncQueued(dir string, sync func() error) error {
 	}
 	return nil
 }
+
+// errSyncBusy is syncQueued finding another sync running, which then syncs for it.
+var errSyncBusy = errors.New("another sync is running")
 
 // syncSoon starts a background sync when a server is set. With now, because
 // a turn just ended, it starts one at once. Otherwise it starts one only if
