@@ -7,6 +7,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -44,11 +45,34 @@ func TestE2E(t *testing.T) {
 	var mu sync.Mutex
 	var bodies [][]byte
 	var records []map[string]any
-	site := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var loginComputer string
+	allowed := false // set once the person types the code on the site
+	var site *httptest.Server
+	site = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		mu.Lock()
 		bodies = append(bodies, b)
 		mu.Unlock()
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/login":
+			var in struct{ Computer string }
+			json.Unmarshal(b, &in)
+			mu.Lock()
+			loginComputer = in.Computer
+			mu.Unlock()
+			fmt.Fprintf(w, `{"code":"tdl_e2e","user_code":"BCDF-GHJK","url":%q,"expires_in":15,"interval":1}`, site.URL+"/connect")
+			return
+		case r.URL.Path == "/api/v1/login/tdl_e2e":
+			mu.Lock()
+			ok := allowed
+			mu.Unlock()
+			if ok {
+				w.Write([]byte(`{"status":"done","key":"tdk_e2e","name":"Ada"}`))
+			} else {
+				w.Write([]byte(`{"status":"pending"}`))
+			}
+			return
+		}
 		if r.Header.Get("Authorization") != "Bearer tdk_e2e" {
 			http.Error(w, "bad key", http.StatusUnauthorized)
 			return
@@ -109,7 +133,36 @@ func TestE2E(t *testing.T) {
 		t.Fatalf("setup did not install a hook running %s:\n%s", exe, settings)
 	}
 
-	run("", "sync", "-server", site.URL, "-key", "tdk_e2e")
+	// login prints a code; the person types it on the site and allows the
+	// computer it names. teardrop then keeps the key and syncs, and never
+	// shows the key.
+	login := exec.Command(exe, "login", "-server", site.URL, "-no-open")
+	login.Env, login.Dir = env, project
+	pipe, _ := login.StdoutPipe()
+	login.Stderr = login.Stdout
+	if err := login.Start(); err != nil {
+		t.Fatal(err)
+	}
+	var loginOut strings.Builder
+	lines := bufio.NewScanner(pipe)
+	for lines.Scan() {
+		line := lines.Text()
+		loginOut.WriteString(line + "\n")
+		mu.Lock()
+		if strings.TrimSpace(line) == "BCDF-GHJK" && strings.Contains(loginOut.String(), "("+loginComputer+")") {
+			allowed = true
+		}
+		mu.Unlock()
+	}
+	if err := login.Wait(); err != nil {
+		t.Fatalf("teardrop login: %v\n%s", err, loginOut.String())
+	}
+	if !allowed || !strings.HasPrefix(loginComputer, "td-") {
+		t.Fatalf("login never showed the code with this computer's ID (%q):\n%s", loginComputer, loginOut.String())
+	}
+	if out := loginOut.String(); !strings.Contains(out, "Connected to Ada's account") || !strings.Contains(out, "Sent") || strings.Contains(out, "tdk_e2e") {
+		t.Fatalf("teardrop login printed:\n%s", out)
+	}
 
 	// Claude Code runs the hook with its stdout read through a pipe. The
 	// hook returns at once, and its background relay and sync reach the

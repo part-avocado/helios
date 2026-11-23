@@ -1339,3 +1339,57 @@ test('old log rows move to R2, and reviewers still read every one', async () => 
 	const all = (await (await call(`/api/review/log?id=${id}`, { cookie: admin })).json()) as { log: unknown[] }
 	assert.equal(all.log.length, 451)
 })
+
+test('teardrop login connects a computer once, only by a typed code, and never for a banned account', async () => {
+	const cookie = await signIn('connector')
+	const { api_key } = await me(cookie)
+	const start = async () => {
+		const res = await call('/api/v1/login', { method: 'POST', body: JSON.stringify({ computer: 'td-abcdef012345' }) })
+		assert.equal(res.status, 200)
+		return (await res.json()) as { code: string; user_code: string; url: string }
+	}
+	const pollKey = async (code: string) => (await (await call(`/api/v1/login/${code}`)).json()) as { status?: string; key?: string; error?: string }
+	const form = (fields: Record<string, string>, as = cookie, origin: string | undefined = SITE) =>
+		server.fetch(SITE + '/connect', { method: 'POST', body: new URLSearchParams(fields).toString(), headers: { Cookie: as, ...(origin ? { Origin: origin } : {}), 'Content-Type': 'application/x-www-form-urlencoded' }, redirect: 'manual' })
+
+	assert.equal((await call('/api/v1/login', { method: 'POST', body: '{"computer":"laptop"}' })).status, 400, 'a login names its computer')
+	const login = await start()
+	assert.match(login.user_code, /^[B-DF-HJ-NP-TV-XZ2-9]{4}-[B-DF-HJ-NP-TV-XZ2-9]{4}$/)
+	assert.equal(login.url, `${SITE}/connect`)
+	assert.equal((await pollKey(login.code)).status, 'pending')
+
+	// Allowing takes a session, this site's own form, and the typed code; the code alone in a link does nothing.
+	assert.equal((await call('/connect')).headers.get('Location'), '/login?next=%2Fconnect')
+	assert.equal((await call(`/connect?user_code=${login.user_code}`, { cookie })).status, 200)
+	assert.equal((await pollKey(login.code)).status, 'pending')
+	assert.equal((await form({ user_code: login.user_code, decision: 'allow' }, cookie, 'https://evil.example')).status, 403)
+	assert.equal((await form({ user_code: 'BBBB-BBBB', decision: 'allow' })).status, 400)
+	assert.equal((await pollKey(login.code)).status, 'pending')
+	// Typed loosely, the code shows the computer to check before connecting.
+	const check = await form({ user_code: login.user_code.replace('-', ' ').toLowerCase() })
+	assert.deepEqual([check.status, /td-abcdef012345/.test(await check.text())], [200, true])
+	assert.equal((await pollKey(login.code)).status, 'pending')
+	assert.equal((await form({ user_code: login.user_code, decision: 'allow' })).status, 200)
+	assert.deepEqual(await pollKey(login.code), { status: 'done', key: api_key, name: '<b>connector</b>', handle: (await me(cookie)).handle })
+	assert.equal((await call(`/api/v1/login/${login.code}`)).status, 410, 'the key is given once')
+	assert.equal((await form({ user_code: login.user_code, decision: 'allow' })).status, 400, 'a code is allowed once')
+
+	// Cancelled, or left too long, a login gives nothing.
+	const denied = await start()
+	await form({ user_code: denied.user_code, decision: 'deny' })
+	assert.equal((await pollKey(denied.code)).status, 'denied')
+	const late = await start()
+	const env = await server.getWorker<{ DB: { prepare(sql: string): { bind(...v: unknown[]): { run(): Promise<unknown> } } } }>().getEnv()
+	await env.DB.prepare('UPDATE cli_logins SET expires_at = ? WHERE computer_id = ? AND allowed_at IS NULL AND denied_at IS NULL').bind(Date.now() - 1, 'td-abcdef012345').run()
+	assert.equal((await form({ user_code: late.user_code, decision: 'allow' })).status, 400)
+	assert.equal((await call(`/api/v1/login/${late.code}`)).status, 410)
+
+	// A banned account connects nothing, and a login allowed before the ban gives no key after it.
+	const before = await start()
+	assert.equal((await form({ user_code: before.user_code, decision: 'allow' })).status, 200)
+	const neo = await signIn('admin')
+	const banned = await call('/api/review/bans', { method: 'POST', cookie: neo, origin: SITE, body: JSON.stringify({ slack_id: 'UCONNECTOR', reason: 'test' }) })
+	assert.equal(banned.status, 200, await banned.text())
+	assert.equal((await call(`/api/v1/login/${before.code}`)).status, 403)
+	assert.equal((await call('/connect', { cookie })).status, 403)
+})

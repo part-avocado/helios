@@ -7,6 +7,7 @@ import { clearSession, finishSignIn, keyUser, reviewKeyUser, rotateKey, sameOrig
 import { cloudComputer, holdEvents, MAX_EVENTS_BYTES, readEvents } from './events.ts'
 import { json, jsonText, readText, redirect, Refusal } from './http.ts'
 import { checkGit } from './git.ts'
+import { connect, pollLogin, startLogin } from './connect.ts'
 import { relayRecords } from './records.ts'
 import { accept, importRecords, listSubmissions, submission, submit } from './submissions.ts'
 export { UserHub } from './hub.ts'
@@ -117,6 +118,9 @@ async function route(request: Request, env: Env): Promise<Response> {
 		// dropped_future tells the CLI its clock runs fast, which it says.
 		return json({ stored, records: records.stored, ...(records.future ? { dropped_future: records.future } : {}) })
 	}
+	// `teardrop login`: the CLI asks to connect, then polls until its person allows it at /connect.
+	if (call === 'POST /api/v1/login') return startLogin(request, env, url)
+	if (request.method === 'GET' && path.startsWith('/api/v1/login/')) return pollLogin(env, path.slice('/api/v1/login/'.length))
 	// Who a sync key belongs to, and this site's clock, for the CLI to compare its own against.
 	if (call === 'GET /api/v1/whoami') {
 		const user = await needKey(request, env, url)
@@ -142,6 +146,7 @@ async function route(request: Request, env: Env): Promise<Response> {
 
 	// Sign in with teardrop: another site asks for a read key, and the person allows it.
 	if (path === '/authorize' && (request.method === 'GET' || request.method === 'POST')) return authorize(request, env, url)
+	if (path === '/connect' && (request.method === 'GET' || request.method === 'POST')) return connect(request, env)
 
 	// The review app decides who may open it, as for anyone who asks for it by name.
 	if (request.method === 'GET' && REVIEW_ALIASES.has(page)) {

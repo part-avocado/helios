@@ -121,7 +121,7 @@ function allowPage(ask: Ask, user: User): Response {
 }
 
 /** page is a page of its own, with the look of the sign-in page. */
-function page(status: number, title: string, body: string): Response {
+export function page(status: number, title: string, body: string): Response {
 	const html = `<!doctype html>
 <html lang="en">
 <head>
@@ -152,7 +152,7 @@ function page(status: number, title: string, body: string): Response {
 	return new Response(html, { status, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } })
 }
 
-const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
+export const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 
 /**
  * tradeCode answers POST /api/public/v1/token: a code from /authorize, with

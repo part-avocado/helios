@@ -8,6 +8,7 @@
 //	teardrop dashboard   open a live dashboard in the browser
 //	teardrop calibrate   show how the time model's caps treat your logs
 //	teardrop export   write a signed report to upload on the website
+//	teardrop login -server URL   connect this computer to your account on the website
 //	teardrop sync     send your records to your account on the website
 //	teardrop submit <project>   submit a project's hours, from the records the site holds
 //	teardrop status   show whether this computer is set up and sending
@@ -46,6 +47,7 @@ const usage = `Usage: teardrop [flags]        show your AI coding timeline (-l k
        teardrop dashboard       open a live dashboard of your stats in the browser
        teardrop calibrate       show how the time model's caps treat your logs; uploads nothing
        teardrop export          write a signed report to upload on the website, under Settings
+       teardrop login -server URL  connect this computer to your account on your teardrop site
        teardrop sync            upload your signed counts (time, prompts, tokens, lines; no text) to your account on the website
        teardrop submit <project>  submit a project's hours for review; the site uses the records it already has, nothing is uploaded
        teardrop status          show whether this computer is set up and sending
@@ -86,6 +88,9 @@ func main() {
 			return
 		case "submit":
 			runSubmit(os.Args[2:])
+			return
+		case "login":
+			runLogin(os.Args[2:])
 			return
 		case "doctor":
 			runDoctor(os.Args[2:])

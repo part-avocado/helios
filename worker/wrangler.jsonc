@@ -21,6 +21,7 @@
 			"/auth/*",
 			"/logout",
 			"/authorize",
+			"/connect",
 			"/login",
 			"/login.html",
 			"/dashboard",
