@@ -341,11 +341,12 @@ async function loadSubmissions() {
 	const { submissions } = await api('/api/submissions')
 	$('submissions-panel').hidden = !submissions.length
 	const when = (ms) => `${fmtDay.format(ms)}, ${hm.format(ms)}`
-	$('submissions').innerHTML = '<tr><th>Submitted</th><th>Project</th><th>Credited</th><th>Unwitnessed</th><th>Accepted</th><th>Review</th><th>Notes</th></tr>' +
+	$('submissions').innerHTML = '<tr><th>Submitted</th><th>Project</th><th>Credited</th><th>Unwitnessed</th><th>Accepted</th><th>Final</th><th>Review</th><th>Notes</th></tr>' +
 		submissions.map((s) => {
 			const notes = [s.submitter_note && `<div><span class="muted">Yours:</span> ${esc(s.submitter_note)}</div>`, s.note && `<div><span class="muted">Reviewer:</span> ${esc(s.note)}</div>`].filter(Boolean).join('')
-			const state = s.imported ? 'Imported' : s.state === 'decided' && s.decided_at ? `Decided ${fmtShort.format(s.decided_at)}` : 'Waiting'
-			return `<tr><td>${when(s.received_at)}</td><td title="${esc(s.project_key)}">${esc(s.project_name)}</td><td>${dur(s.credited_seconds)}</td><td>${dur(s.unwitnessed_seconds)}</td><td>${dur(s.accepted_seconds)}</td><td>${state}</td><td>${notes}</td></tr>`
+			const decided = { approved: 'Approved', adjusted: 'Adjusted', rejected: 'Rejected' }[s.state]
+			const state = s.imported ? 'Imported' : decided ? `${decided}${s.decided_at ? ' ' + fmtShort.format(s.decided_at) : ''}` : 'Waiting'
+			return `<tr><td>${when(s.received_at)}</td><td title="${esc(s.project_key)}">${esc(s.project_name)}</td><td>${dur(s.credited_seconds)}</td><td>${dur(s.unwitnessed_seconds)}</td><td>${dur(s.accepted_seconds)}</td><td>${s.final_seconds == null ? '' : `<b>${dur(s.final_seconds)}</b>`}</td><td>${state}</td><td>${notes}</td></tr>`
 		}).join('')
 	labelCells()
 }

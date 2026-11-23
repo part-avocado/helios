@@ -2,8 +2,8 @@
 // holds: the project's time across the person's computers, split into what
 // the site witnessed (records that reached it within 5 minutes of the time
 // they claim) and what it didn't. Only witnessed time is credited, less what
-// earlier submissions of the project covered. A neoadmin may accept
-// unwitnessed time by hand. Nothing is uploaded with a submission, and no
+// earlier submissions of the project covered. A reviewer approves,
+// adjusts, or rejects each one. Nothing is uploaded with a submission, and no
 // prompt text is ever on the site.
 import type { User } from './auth.ts'
 import { dayKey } from './hub.ts'
@@ -26,6 +26,8 @@ export interface SubmissionRow {
 	earlier_overlap_seconds: number
 	credited_seconds: number
 	accepted_seconds: number
+	/** What it finally credits, once decided. */
+	final_seconds: number | null
 	prompts: number
 	tokens_in: number
 	tokens_out: number
@@ -146,7 +148,7 @@ export async function submit(env: Env, user: User, body: Record<string, unknown>
 	const row: SubmissionRow = {
 		id, user_id: user.id, project_key: key, project_name: nameOf(key), received_at: Date.now(),
 		witnessed_seconds: seconds(witnessed), unwitnessed_seconds: seconds(unwitnessed),
-		earlier_overlap_seconds: seconds(witnessed) - seconds(credited), credited_seconds: seconds(credited), accepted_seconds: 0,
+		earlier_overlap_seconds: seconds(witnessed) - seconds(credited), credited_seconds: seconds(credited), accepted_seconds: 0, final_seconds: null,
 		prompts: recs.filter((r) => r.human && !r.sha).length, tokens_in: recs.reduce((n, r) => n + (r.in ?? 0), 0), tokens_out: recs.reduce((n, r) => n + (r.out ?? 0), 0),
 		state: 'pending', decided_by: null, decided_at: null, note: null, submitter_note: note, snapshot_key: snapshotKey, imported: 0,
 	}
@@ -168,7 +170,7 @@ export async function submit(env: Env, user: User, body: Record<string, unknown>
 export async function ownSubmissions(env: Env, userID: number) {
 	const { results } = await env.DB.prepare(
 		`SELECT id, project_key, project_name, received_at, witnessed_seconds, unwitnessed_seconds, earlier_overlap_seconds, credited_seconds,
-			accepted_seconds, prompts, state, decided_at, note, submitter_note, imported
+			accepted_seconds, final_seconds, prompts, state, decided_at, note, submitter_note, imported
 		 FROM submissions WHERE user_id = ? ORDER BY received_at DESC LIMIT 200`,
 	)
 		.bind(userID)
@@ -226,21 +228,46 @@ export async function submission(env: Env, id: string, level: number) {
 	}
 }
 
-/** accept credits unwitnessed time of a submission by hand, which a neoadmin or superadmin may do, with a note. */
-export async function accept(env: Env, actor: User, id: string, body: Record<string, unknown>): Promise<void> {
-	const row = await env.DB.prepare('SELECT s.user_id, s.unwitnessed_seconds, u.slack_id FROM submissions s JOIN users u ON u.id = s.user_id WHERE s.id = ?')
+export type Action = 'approve' | 'adjust' | 'reject'
+
+/**
+ * decide settles a submission, with a note kept in the staff log:
+ *
+ *   approve credits what was witnessed, plus any unwitnessed time accepted.
+ *   adjust sets what it finally credits, at most witnessed plus unwitnessed.
+ *   reject credits nothing.
+ *
+ * A reviewer may approve or reject a pending submission. Accepting
+ * unwitnessed time, adjusting, and deciding again take a neoadmin. A rejected
+ * submission still covers its time, so submitting the project again can't
+ * credit it.
+ */
+export async function decide(env: Env, actor: User, id: string, body: Record<string, unknown>): Promise<void> {
+	const row = await env.DB.prepare('SELECT s.state, s.credited_seconds, s.unwitnessed_seconds, u.slack_id FROM submissions s JOIN users u ON u.id = s.user_id WHERE s.id = ?')
 		.bind(id)
-		.first<{ user_id: number; unwitnessed_seconds: number; slack_id: string }>()
+		.first<{ state: string; credited_seconds: number; unwitnessed_seconds: number; slack_id: string }>()
 	if (!row) throw new Refusal(404, 'No such submission.')
-	const secs = Number(body.seconds)
+	const action = body.action as Action
+	if (!['approve', 'adjust', 'reject'].includes(action)) throw new Refusal(400, 'Say whether to approve, adjust, or reject it.')
+	const secs = body.seconds == null || body.seconds === '' ? 0 : Number(body.seconds)
 	const note = typeof body.note === 'string' ? body.note.trim().slice(0, 1000) : ''
-	if (!Number.isInteger(secs) || secs < 0) throw new Refusal(400, 'Say how many seconds of unwitnessed time to accept, as a whole number.')
-	if (!note) throw new Refusal(400, 'Say why, in a note: it is kept with the change.')
-	const accepted = Math.min(secs, row.unwitnessed_seconds)
+	if (!Number.isInteger(secs) || secs < 0) throw new Refusal(400, 'Give the seconds as a whole number.')
+	if (!note) throw new Refusal(400, 'Say why, in a note: the person reads it, and it is kept with the decision.')
+	const most = row.credited_seconds + row.unwitnessed_seconds
+	if (action === 'adjust' && secs > most) throw new Refusal(400, `It can credit at most ${most} seconds: what was witnessed, less earlier submissions, plus what was unwitnessed.`)
+	const accepted = action === 'approve' ? Math.min(secs, row.unwitnessed_seconds) : action === 'adjust' ? Math.max(0, secs - row.credited_seconds) : 0
+	const final = action === 'approve' ? row.credited_seconds + accepted : action === 'adjust' ? secs : 0
+	if (actor.level === 2) {
+		if (row.state !== 'pending') throw new Refusal(403, 'It is already decided. A neoadmin can decide it again.')
+		if (action === 'adjust' || accepted > 0) throw new Refusal(403, 'Only a neoadmin can accept unwitnessed time or adjust a submission.')
+	}
+	const state = { approve: 'approved', adjust: 'adjusted', reject: 'rejected' }[action]
 	const now = Date.now()
 	await env.DB.batch([
-		env.DB.prepare(`UPDATE submissions SET accepted_seconds = ?, state = 'decided', decided_by = ?, decided_at = ?, note = ? WHERE id = ?`).bind(accepted, actor.slack_id, now, note, id),
-		env.DB.prepare('INSERT INTO staff_log (at, by_slack_id, action, slack_id, detail) VALUES (?, ?, ?, ?, ?)').bind(now, actor.slack_id, 'accept', row.slack_id, `${id}: accepted ${accepted}s unwitnessed. ${note}`),
+		env.DB.prepare(`UPDATE submissions SET accepted_seconds = ?, final_seconds = ?, state = ?, decided_by = ?, decided_at = ?, note = ? WHERE id = ?`)
+			.bind(accepted, final, state, actor.slack_id, now, note, id),
+		env.DB.prepare('INSERT INTO staff_log (at, by_slack_id, action, slack_id, detail) VALUES (?, ?, ?, ?, ?)')
+			.bind(now, actor.slack_id, action, row.slack_id, `${id}: ${state}, ${final}s credited (${accepted}s unwitnessed accepted). ${note}`),
 	])
 }
 
@@ -287,10 +314,10 @@ export async function importRecords(env: Env, body: string): Promise<{ imported:
 		const credited = Number(r.credited_seconds) || 0
 		const done = await env.DB.prepare(
 			`INSERT OR IGNORE INTO submissions (id, user_id, project_key, project_name, received_at, witnessed_seconds, unwitnessed_seconds, earlier_overlap_seconds,
-				credited_seconds, prompts, state, snapshot_key, imported)
-			 VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, 0, 'decided', ?, 1)`,
+				credited_seconds, final_seconds, prompts, state, snapshot_key, imported)
+			 VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?, 0, 'approved', ?, 1)`,
 		)
-			.bind('old-' + id, owner.user_id, key, snapshot.project.name, Date.parse(String(r.received_at)) || Date.now(), seconds(witnessed), credited, snapshotKey)
+			.bind('old-' + id, owner.user_id, key, snapshot.project.name, Date.parse(String(r.received_at)) || Date.now(), seconds(witnessed), credited, credited, snapshotKey)
 			.run()
 		imported += done.meta.changes
 	}

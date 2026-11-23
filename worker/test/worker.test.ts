@@ -1178,14 +1178,14 @@ test('a submission credits only witnessed time, and only once', async () => {
 	const list = (await (await call('/api/review/submissions', { cookie: admin })).json()) as { submissions: { id: string; accepted_seconds: number; project_key?: string }[] }
 	assert.equal(list.submissions.find((s) => s.id === first.id)!.accepted_seconds, 240)
 	const env = await server.getWorker<{ DB: { prepare(sql: string): { first<T>(): Promise<T | null> } } }>().getEnv()
-	assert.ok(await env.DB.prepare(`SELECT 1 FROM staff_log WHERE action = 'accept'`).first())
+	assert.ok(await env.DB.prepare(`SELECT 1 FROM staff_log WHERE action = 'approve'`).first())
 
 	// The person sees their own submissions, newest first, by sync key or on the site: the decision and its note, not who made it.
-	type Own = { id: string; state: string; credited_seconds: number; accepted_seconds: number; note: string | null; submitter_note: string | null; decided_at: number | null; decided_by?: string }
+	type Own = { id: string; state: string; credited_seconds: number; accepted_seconds: number; final_seconds: number | null; note: string | null; submitter_note: string | null; decided_at: number | null; decided_by?: string }
 	const byKey = ((await (await call('/api/v1/submissions', { key })).json()) as { submissions: Own[] }).submissions
 	const bySession = ((await (await call('/api/submissions', { cookie })).json()) as { submissions: Own[] }).submissions
 	assert.deepEqual(bySession, byKey)
-	assert.deepEqual(byKey.map((x) => [x.state, x.credited_seconds, x.accepted_seconds, x.submitter_note]), [['pending', 30, 0, 'The level editor.'], ['decided', 240, 240, null]])
+	assert.deepEqual(byKey.map((x) => [x.state, x.credited_seconds, x.accepted_seconds, x.final_seconds, x.submitter_note]), [['pending', 30, 0, null, 'The level editor.'], ['approved', 240, 240, 480, null]])
 	assert.equal(byKey[1]!.id, first.id)
 	assert.equal(byKey[1]!.note, 'Offline on a train; commits match.')
 	assert.ok(byKey[1]!.decided_at)
@@ -1198,6 +1198,55 @@ test('a submission credits only witnessed time, and only once', async () => {
 	// A banned account can't submit.
 	assert.equal((await call('/api/review/bans', { method: 'POST', cookie: admin, origin: SITE, body: JSON.stringify({ slack_id: 'USUBMITTER', reason: 'test' }) })).status, 200)
 	assert.equal((await submitIt()).status, 403)
+})
+
+test('reviewers approve, adjust, or reject a submission, and a rejection keeps covering its time', async () => {
+	const cookie = await signIn('decided')
+	const { api_key: key } = await me(cookie)
+	const now = Date.now()
+	const line = (t: number, event: string, extra: object = {}) => JSON.stringify({ t: new Date(t).toISOString(), tool: 'claude-code', event, session: 'd1', project: 'github.com/kid/app', ...extra })
+	const post = (lines: string[]) => call('/api/v1/events', { method: 'POST', key, body: lines.join('\n') })
+	const submitIt = async () => (await (await call('/api/v1/submissions', { method: 'POST', key, body: JSON.stringify({ project: 'github.com/kid/app' }) })).json()) as { id: string; credited_seconds: number; unwitnessed_seconds: number; earlier_overlap_seconds: number }
+	// 240 seconds witnessed, and 240 sent 3 hours late.
+	await post([line(now - 290_000, 'UserPromptSubmit', { human: true, judged: 6, real: 6 }), line(now - 170_000, 'Stop'), line(now - 50_000, 'UserPromptSubmit', { human: true, judged: 5, real: 5 })])
+	const old = now - 3 * 3600_000
+	await post([line(old, 'UserPromptSubmit', { human: true, session: 'd0' }), line(old + 120_000, 'Stop', { session: 'd0' }), line(old + 240_000, 'UserPromptSubmit', { human: true, session: 'd0' })])
+	const first = await submitIt()
+	assert.deepEqual([first.credited_seconds, first.unwitnessed_seconds], [240, 240])
+
+	const superadmin = await signIn('admin')
+	assert.equal((await call('/api/review/team', { method: 'POST', cookie: superadmin, origin: SITE, body: JSON.stringify({ slack_id: 'UREVIEWS', level: 2 }) })).status, 200)
+	const rev = await signIn('reviews')
+	const decide = (as: string, id: string, body: object) => call(`/api/review/submissions/${id}/decide`, { method: 'POST', cookie: as, origin: SITE, body: JSON.stringify(body) })
+	const final = async (id: string) => ((await (await call('/api/v1/submissions', { key })).json()) as { submissions: { id: string; state: string; final_seconds: number | null; accepted_seconds: number }[] }).submissions.find((s) => s.id === id)!
+
+	// Every decision needs a known action and a note.
+	assert.equal((await decide(superadmin, first.id, { action: 'approve' })).status, 400)
+	assert.equal((await decide(superadmin, first.id, { action: 'pay', note: 'x' })).status, 400)
+	assert.equal((await decide(superadmin, 'sub-nope', { action: 'reject', note: 'x' })).status, 404)
+	// A reviewer may not accept unwitnessed time or adjust, nor use the old accept route.
+	assert.equal((await decide(rev, first.id, { action: 'approve', seconds: 60, note: 'Looks fine.' })).status, 403)
+	assert.equal((await decide(rev, first.id, { action: 'adjust', seconds: 100, note: 'Trim.' })).status, 403)
+	assert.equal((await call(`/api/review/submissions/${first.id}/accept`, { method: 'POST', cookie: rev, origin: SITE, body: JSON.stringify({ seconds: 0, note: 'x' }) })).status, 403)
+	assert.equal((await final(first.id)).state, 'pending')
+	// A reviewer approves a pending one: what was witnessed, nothing more. Then it is decided, and theirs to leave.
+	assert.equal((await decide(rev, first.id, { action: 'approve', note: 'Matches the commits.' })).status, 200)
+	assert.deepEqual(await final(first.id), { ...(await final(first.id)), state: 'approved', final_seconds: 240, accepted_seconds: 0 })
+	assert.equal((await decide(rev, first.id, { action: 'reject', note: 'Changed my mind.' })).status, 403)
+	// A neoadmin adjusts: never above witnessed plus unwitnessed, and anything above what was witnessed is accepted time.
+	assert.equal((await decide(superadmin, first.id, { action: 'adjust', seconds: 481, note: 'Too much.' })).status, 400)
+	assert.equal((await decide(superadmin, first.id, { action: 'adjust', seconds: 300, note: 'One late stretch was real.' })).status, 200)
+	assert.deepEqual(await final(first.id), { ...(await final(first.id)), state: 'adjusted', final_seconds: 300, accepted_seconds: 60 })
+	assert.equal((await decide(superadmin, first.id, { action: 'adjust', seconds: 100, note: 'Half was idle.' })).status, 200)
+	assert.deepEqual(await final(first.id), { ...(await final(first.id)), final_seconds: 100, accepted_seconds: 0 })
+	// Rejected, it credits nothing, and still covers its time: submitting again credits none of it.
+	assert.equal((await decide(superadmin, first.id, { action: 'reject', note: 'Replayed records.' })).status, 200)
+	assert.deepEqual(await final(first.id), { ...(await final(first.id)), state: 'rejected', final_seconds: 0, accepted_seconds: 0 })
+	const again = await submitIt()
+	assert.deepEqual([again.credited_seconds, again.earlier_overlap_seconds], [0, 240])
+	const env = await server.getWorker<{ DB: { prepare(sql: string): { all<T>(): Promise<{ results: T[] }> } } }>().getEnv()
+	const { results } = await env.DB.prepare(`SELECT action FROM staff_log WHERE detail LIKE '${first.id}:%' ORDER BY id`).all<{ action: string }>()
+	assert.deepEqual(results.map((r) => r.action), ['approve', 'adjust', 'adjust', 'reject'])
 })
 
 test('the site keeps every prompt record in R2 and credits only time it saw arrive', async () => {

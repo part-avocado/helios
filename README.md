@@ -186,8 +186,10 @@ Nothing is uploaded: the site makes the submission from the per-prompt
 records your hooks already sent it. Only time whose records reached the site
 within 5 minutes of when they happened is credited ("witnessed"); time that
 arrived late, such as history from before the hooks were set up, is listed
-but not credited unless a neoadmin accepts it with a note. Submitting a
-project again is fine: time an earlier submission covered is credited once.
+but not credited unless a neoadmin accepts it. A reviewer approves, adjusts,
+or rejects each submission, with a note the person reads; adjusting and
+accepting late time take a neoadmin. Submitting a project again is fine: time
+an earlier submission covered is never credited again, even if it was rejected.
 
 Every account has a public profile at `/@handle`, which anyone can open
 without signing in: the handle, the month they joined, hours in the past

@@ -368,7 +368,8 @@ func runSubmit(args []string) {
 }
 
 // listSubmissions prints the person's submissions, newest first, with what
-// each credited and, once a reviewer has decided, what they accepted and why.
+// each credited and, once a reviewer has approved, adjusted, or rejected it,
+// what it finally credits and why.
 func listSubmissions(client *http.Client, srv, key string, out io.Writer) error {
 	var r struct {
 		Submissions []struct {
@@ -377,6 +378,7 @@ func listSubmissions(client *http.Client, srv, key string, out io.Writer) error 
 			Credited      int64  `json:"credited_seconds"`
 			Unwitnessed   int64  `json:"unwitnessed_seconds"`
 			Accepted      int64  `json:"accepted_seconds"`
+			Final         *int64 `json:"final_seconds"`
 			State         string `json:"state"`
 			Decided       *int64 `json:"decided_at"`
 			Note          string `json:"note"`
@@ -391,14 +393,17 @@ func listSubmissions(client *http.Client, srv, key string, out io.Writer) error 
 		return nil
 	}
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "SUBMITTED\tPROJECT\tCREDITED\tUNWITNESSED\tACCEPTED\tSTATE")
+	fmt.Fprintln(w, "SUBMITTED\tPROJECT\tCREDITED\tUNWITNESSED\tACCEPTED\tFINAL\tSTATE")
 	for _, s := range r.Submissions {
-		state := "waiting for review"
-		if s.State == "decided" && s.Decided != nil {
-			state = "decided " + time.UnixMilli(*s.Decided).Format("Jan 2")
+		state, final := "waiting for review", "-"
+		if s.Final != nil {
+			state, final = s.State, dur(time.Duration(*s.Final)*time.Second)
+			if s.Decided != nil {
+				state += " " + time.UnixMilli(*s.Decided).Format("Jan 2")
+			}
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", time.UnixMilli(s.Received).Format("Jan 2 15:04"), s.Project,
-			dur(time.Duration(s.Credited)*time.Second), dur(time.Duration(s.Unwitnessed)*time.Second), dur(time.Duration(s.Accepted)*time.Second), state)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", time.UnixMilli(s.Received).Format("Jan 2 15:04"), s.Project,
+			dur(time.Duration(s.Credited)*time.Second), dur(time.Duration(s.Unwitnessed)*time.Second), dur(time.Duration(s.Accepted)*time.Second), final, state)
 	}
 	w.Flush()
 	var notes []string

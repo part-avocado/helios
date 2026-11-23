@@ -40,7 +40,7 @@ const LEVELS = ['Superadmin', 'Neoadmin', 'Reviewer']
 const CAN = [
 	'read every account, add and remove neoadmins and reviewers, and ban anyone but another superadmin',
 	'read every account, add and remove reviewers, and ban members and reviewers',
-	'look a person up by Slack ID and read their total and work-block timeline for each project',
+	'look a person up by Slack ID, read their total and work-block timeline for each project, and approve or reject waiting submissions',
 ]
 // Who is signed in: {name, slack_id, level}.
 let me = null
@@ -978,7 +978,7 @@ async function team() {
 		</div>
 	</div>`
 	const list = (level, none) => t.reviewers.filter((r) => r.level === level).map(row).join('') || `<div class="item"><div class="grow muted">${none}</div></div>`
-	const ACTIONS = { add: 'added', change: 'changed', remove: 'removed', ban: 'banned', unban: 'lifted the ban on', permanent: 'made permanent the ban on' }
+	const ACTIONS = { add: 'added', change: 'changed', remove: 'removed', ban: 'banned', unban: 'lifted the ban on', permanent: 'made permanent the ban on', approve: 'approved a submission by', adjust: 'adjusted a submission by', reject: 'rejected a submission by', accept: 'accepted time for' }
 	return head('Reviewers', lookup()) + `<div class="panel">
 		<p class="muted">To add someone, change their level, or remove them, open their account: look them up above, or choose them below. In Slack: open their profile, choose ⋮, then Copy member ID. They don't need to have signed in before.</p>
 		<h2>Superadmins ${badge(0)}</h2>
@@ -1026,10 +1026,10 @@ async function submissionList() {
 		<td>${me.level < 2 ? `<a href="#/person/id:${x.user_id}">${esc(x.name)}</a>` : esc(x.handle ? '@' + x.handle : '')}</td>
 		<td>${esc(ago(x.received_at))}</td>
 		<td>${dur(x.witnessed_seconds)}</td><td>${dur(x.unwitnessed_seconds)}</td>
-		<td><b>${dur(x.credited_seconds + x.accepted_seconds)}</b></td>
+		<td><b>${dur(x.final_seconds ?? x.credited_seconds)}</b></td>
 		<td>${x.imported ? 'imported' : esc(x.state)}</td></tr>`)
 	return head('Submissions') + `<div class="panel">
-		<p class="muted">A submission is made on the site from the records it already holds. Only time whose records reached the site within 5 minutes of when they happened is credited, less what earlier submissions of the project covered. A neoadmin can accept unwitnessed time by hand, with a note.</p>
+		<p class="muted">A submission is made on the site from the records it already holds. Only time whose records reached the site within 5 minutes of when they happened is credited, less what earlier submissions of the project covered. Each one is approved, adjusted, or rejected, with a note the person reads. A reviewer can approve what was witnessed or reject a waiting submission; a neoadmin can also accept unwitnessed time, adjust what it credits, and decide again.</p>
 		<div class="table-scroll"><table class="data left stack">
 			<tr><th>Project</th><th>Person</th><th>Received</th><th>Witnessed</th><th>Unwitnessed</th><th>Credited</th><th>State</th></tr>
 			${rows.join('') || '<tr><td colspan="7" class="muted">No submissions yet.</td></tr>'}
@@ -1077,11 +1077,12 @@ async function submissionPage(arg) {
 			<div><span class="muted">In earlier submissions</span><b>${dur(s.earlier_overlap_seconds)}</b></div>
 			<div><span class="muted">Credited</span><b>${dur(s.credited_seconds)}</b></div>
 			<div><span class="muted">Accepted by hand</span><b>${dur(s.accepted_seconds)}</b></div>
+			${s.final_seconds != null ? `<div><span class="muted">Final</span><b>${dur(s.final_seconds)}</b></div>` : ''}
 			<div><span class="muted">Prompts</span><b>${num(s.prompts)}</b></div>
 		</div>
 		${me.level < 2 ? `<p class="muted">By <a href="#/person/id:${s.user_id}">${esc(s.name)}</a>, ${esc(s.project_key)}, received ${esc(when(s.received_at))}.</p>` : `<p class="muted">Received ${esc(when(s.received_at))}.</p>`}
 		${s.submitter_note ? `<p>Their note: ${esc(s.submitter_note)}</p>` : ''}
-		${s.note ? `<p>Accepted by ${esc(s.decided_by)}: ${esc(s.note)}</p>` : ''}
+		${s.state !== 'pending' && s.decided_by ? `<p><span class="status">${esc(s.state[0].toUpperCase() + s.state.slice(1))}</span> by ${esc(s.decided_by)}${s.decided_at ? `, ${esc(when(s.decided_at))}` : ''}${s.note ? `: ${esc(s.note)}` : ''}</p>` : ''}
 	</div>
 	${flags ? `<div class="panel"><h2>Look at first</h2><ul>${flags}</ul></div>` : ''}
 	<div class="panel">
@@ -1090,13 +1091,19 @@ async function submissionPage(arg) {
 		<div class="sub-line" data-t0="${t0}" data-t1="${t1}" title="Drag across to crop to that stretch">${bars(unwitnessed, 'unwitnessed')}${bars(witnessed, 'witnessed')}${marks}</div>
 		<p class="muted fine">${esc(exact(t0))} to ${esc(exact(t1))}. Green is witnessed time, amber unwitnessed. Tall marks are prompts; red marks reached the site more than 5 minutes late.${outside ? ` ${plural(outside, 'record')} outside this stretch ${outside === 1 ? 'is' : 'are'} listed below but not drawn.` : ''}</p>
 	</div>
-	${me.level < 2 && s.unwitnessed_seconds > 0 ? `<div class="panel" data-area>
-		<h2>Accept unwitnessed time</h2>
-		<form class="rv-form" data-form="accept" data-id="${esc(s.id)}">
-			<label>Seconds to accept, at most ${num(s.unwitnessed_seconds)} (${dur(s.unwitnessed_seconds)})<input name="seconds" type="number" min="0" max="${s.unwitnessed_seconds}" value="${s.accepted_seconds || s.unwitnessed_seconds}" required></label>
-			<label class="grow">Why<input name="note" placeholder="Such as matching commits" required></label>
-			<button class="btn">Accept</button>
+	${!s.imported && (me.level < 2 || s.state === 'pending') ? `<div class="panel" data-area>
+		<h2>${s.state === 'pending' ? 'Decide' : 'Decide again'}</h2>
+		<form class="rv-form" data-form="decide" data-id="${esc(s.id)}">
+			${me.level < 2 ? `${s.unwitnessed_seconds > 0 ? `<label>Unwitnessed seconds to accept, if approved, at most ${num(s.unwitnessed_seconds)}<input name="accept" type="number" min="0" max="${s.unwitnessed_seconds}" value="${s.state === 'pending' ? 0 : s.accepted_seconds}"></label>` : ''}
+			<label>Seconds in all, if adjusted, at most ${num(s.credited_seconds + s.unwitnessed_seconds)}<input name="total" type="number" min="0" max="${s.credited_seconds + s.unwitnessed_seconds}" value="${s.final_seconds ?? s.credited_seconds}"></label>` : ''}
+			<label class="grow">Why, for the person to read<input name="note" placeholder="Such as matching commits" required></label>
+			<div class="rv-actions">
+				<button class="btn primary" name="action" value="approve">Approve</button>
+				${me.level < 2 ? '<button class="btn" name="action" value="adjust">Adjust</button>' : ''}
+				<button class="btn danger" name="action" value="reject">Reject</button>
+			</div>
 		</form>
+		<p class="muted fine">Approving credits what was witnessed${me.level < 2 ? ', plus any unwitnessed time accepted. Adjusting sets what it credits in all' : ''}. Rejecting credits nothing; its time still counts as covered, so submitting again won't credit it.</p>
 		<p class="msg" hidden></p>
 	</div>` : ''}
 	<div class="panel">
@@ -1220,7 +1227,11 @@ view.addEventListener('submit', (e) => {
 	}
 	if (kind === 'add') act(form, () => send('POST', '/team', fields))
 	if (kind === 'ban') act(form, () => send('POST', '/bans', fields))
-	if (kind === 'accept') act(form, () => send('POST', `/submissions/${encodeURIComponent(form.dataset.id)}/accept`, { seconds: Number(fields.seconds), note: fields.note }))
+	if (kind === 'decide') {
+		const action = e.submitter?.value ?? 'approve'
+		const seconds = action === 'approve' ? Number(fields.accept ?? 0) : action === 'adjust' ? Number(fields.total) : 0
+		act(form, () => send('POST', `/submissions/${encodeURIComponent(form.dataset.id)}/decide`, { action, seconds, note: fields.note }))
+	}
 	if (kind === 'key') {
 		act(form, async () => {
 			const made = await send('POST', '/keys', fields)

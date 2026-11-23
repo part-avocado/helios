@@ -9,7 +9,7 @@ import { json, jsonText, readText, redirect, Refusal } from './http.ts'
 import { checkGit } from './git.ts'
 import { connect, pollLogin, startLogin } from './connect.ts'
 import { relayRecords } from './records.ts'
-import { accept, importRecords, listSubmissions, ownSubmissions, submission, submit } from './submissions.ts'
+import { decide, importRecords, listSubmissions, ownSubmissions, submission, submit } from './submissions.ts'
 export { UserHub } from './hub.ts'
 import { ownProfile, updateProfile, visibleOwner } from './profile.ts'
 import { createUserKey, publicAPI, revokeUserKey, userKeys } from './public.ts'
@@ -334,9 +334,12 @@ async function reviewAPI(request: Request, env: Env, url: URL): Promise<Response
 		return json(await importRecords(env, await readText(request, 16 << 20)))
 	}
 	if (request.method === 'GET' && path.startsWith('/submissions/')) return json(await submission(env, rest('/submissions/'), level))
-	if (request.method === 'POST' && /^\/submissions\/[^/]+\/accept$/.test(path)) {
-		need(actor, 1)
-		await accept(env, actor, path.split('/')[2]!, await body())
+	// Every level decides; decide refuses what a reviewer may not do. The old
+	// accept route approves, accepting unwitnessed time, as before.
+	if (request.method === 'POST' && /^\/submissions\/[^/]+\/(decide|accept)$/.test(path)) {
+		const [, , id, verb] = path.split('/')
+		if (verb === 'accept') need(actor, 1)
+		await decide(env, actor, id!, verb === 'accept' ? { ...(await body()), action: 'approve' } : await body())
 		return json({})
 	}
 	// A reviewer gets a person's totals per project. Those above get everything.

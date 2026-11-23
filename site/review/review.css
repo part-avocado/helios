@@ -100,6 +100,8 @@ body[data-page="home"] .rv-main::before { content: ""; position: fixed; inset: 0
 .rv-form input[name="slack_id"] { width: 170px; font-family: var(--mono); font-size: 14px; }
 .rv-form input:focus, .rv-form select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 .rv-form + .msg { margin-top: 12px; }
+.rv-actions { display: flex; gap: 8px; }
+.rv-form + .fine { margin-top: 12px; }
 .rv-form + .msg + .list, .rv-form + .list { margin-top: 18px; }
 table.data.left td, table.data.left th { text-align: left; white-space: normal; }
 table.data.left td:first-child, table.data.left td:last-child { white-space: nowrap; }
