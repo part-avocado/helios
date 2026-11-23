@@ -59,7 +59,7 @@ function liveText(s, withProject) {
 	const today = s.today && s.today.witnessed_seconds ? ` - ${dur(s.today.witnessed_seconds)} witnessed today` : ''
 	if (!s.working) return today ? `Today: ${today.slice(3)}` : ''
 	const where = withProject && s.working.project ? ` in <b>${esc(s.working.project.split('/').pop())}</b>` : ''
-	return `<span class="dot live"></span>Working now${where} with ${esc(s.working.tool)}${today}`
+	return `<span class="dot live"></span><span>Working now${where} with ${esc(s.working.tool)}${today}</span>`
 }
 
 // ago says how long before now a time was, such as "3 minutes ago".

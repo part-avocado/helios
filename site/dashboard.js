@@ -140,6 +140,7 @@ function render() {
 		(listed.slice(0, pick ? 100 : 25).map((b) =>
 			`<tr><td>${fmtDay.format(b.s)}, ${hm.format(b.s)}–${hm.format(b.e)}</td><td>${esc(b.project.name)}</td><td>${dur(b.engaged_seconds)}</td><td>${dur((b.e - b.s) / 1000)}</td><td>${b.prompts}</td><td>${count(b.tokens_in)}/${count(b.tokens_out)}</td><td>${b.tools.map((t) => `<span class="tag">${esc(t)}</span>`).join('')}</td></tr>`).join('') ||
 			`<tr><td colspan="7" class="muted">${pick ? 'No work blocks in this range.' : 'No activity in this range.'}</td></tr>`)
+	labelCells()
 }
 
 // renderChips shows what is picked, each with a way to clear it.

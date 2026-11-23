@@ -47,6 +47,22 @@ if (links.length) {
 	}
 }
 
+// Docs on a phone: the contents start folded and fold again once a link in
+// them is chosen, and a button back to the top shows once they have scrolled
+// out of view. On a wide screen they stay open beside the page.
+const contents = document.querySelector('.doc-toc')
+if (contents) {
+	const phone = matchMedia('(max-width: 860px)')
+	const fold = () => (contents.open = !phone.matches)
+	fold()
+	phone.addEventListener('change', fold)
+	contents.addEventListener('click', (e) => {
+		if (phone.matches && e.target.closest('a')) contents.open = false
+	})
+	const toTop = document.querySelector('.to-top')
+	new IntersectionObserver(([e]) => (toTop.hidden = e.isIntersecting)).observe(contents.closest('aside'))
+}
+
 // Docs: search. Each heading starts a section, and typing lists the sections
 // that hold every word typed, the ones that name it in their heading first.
 // ⌘K or Ctrl K opens it.

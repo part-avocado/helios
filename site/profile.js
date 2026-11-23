@@ -42,6 +42,7 @@ function render(p) {
 		rows.push(`<tr><td class="muted">${n} other ${n === 1 ? 'project' : 'projects'}</td><td>${dur(p.other_projects.engaged_seconds)}</td></tr>`)
 	}
 	$('projects').innerHTML = '<tr><th>Project</th><th>Engaged</th></tr>' + (rows.join('') || '<tr><td colspan="2" class="muted">No projects yet.</td></tr>')
+	labelCells()
 	$('notice').hidden = true
 	$('content').hidden = false
 	// Start on the latest weeks, which is what the eye wants on a narrow screen. Only a shown element scrolls.

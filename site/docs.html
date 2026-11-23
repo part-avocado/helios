@@ -43,7 +43,8 @@
 		<kbd aria-hidden="true">Ctrl K</kbd>
 	</div>
 	<div class="doc-results" id="doc-results" role="listbox" aria-label="Search results" hidden></div>
-	<div class="doc-toc">
+	<details class="doc-toc" open>
+	<summary>Contents</summary>
 	<div class="group">Getting started</div>
 	<a href="#quick-start">Quick start</a>
 	<a href="#install">Install</a>
@@ -63,6 +64,7 @@
 	<a href="#amp-cloud">Amp cloud threads</a>
 	<a href="#copilot-cursor">Copilot and Cursor</a>
 	<a href="#own-harness">Add your own harness</a>
+	<a href="#lines">Lines of code</a>
 	<div class="group">Reference</div>
 	<a href="#commands">Commands and flags</a>
 	<a href="#files">Files and folders</a>
@@ -74,7 +76,7 @@
 	<a href="#privacy">Privacy</a>
 	<a href="#troubleshooting">Troubleshooting</a>
 	<a href="#uninstall">Uninstall</a>
-	</div>
+	</details>
 </aside>
 <article>
 	<h1>teardrop docs</h1>
@@ -353,6 +355,7 @@ npm run dev</code></pre>
 	<h2 id="uninstall">Uninstall</h2>
 	<p>Run <code>teardrop setup -remove-hooks</code> first. It removes the Claude Code hooks and the Amp plugin and leaves your other settings as they were. Then delete the <code>teardrop</code> binary and, if you want, the journal folder.</p>
 </article>
+<a class="to-top" href="#" hidden><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 10l5-5 5 5"/></svg>Top</a>
 </div>
 
 <footer><div class="wrap">

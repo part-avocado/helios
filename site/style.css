@@ -13,10 +13,21 @@
 /* Docs */
 .docs { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 56px; padding-top: 56px; padding-bottom: 96px; }
 .docs aside { position: sticky; top: 96px; align-self: start; max-height: calc(100vh - 120px); overflow-y: auto; font-size: 14px; }
+/* The sidebar scrolls when it is taller than the window. An end with more past it is shaded. */
+.docs aside { --more: color-mix(in srgb, var(--text) 16%, transparent); background:
+	linear-gradient(var(--bg) 40%, transparent) top / 100% 36px no-repeat local,
+	linear-gradient(transparent, var(--bg) 60%) bottom / 100% 36px no-repeat local,
+	linear-gradient(var(--more), transparent) top / 100% 14px no-repeat scroll,
+	linear-gradient(transparent, var(--more)) bottom / 100% 14px no-repeat scroll; }
 .docs aside a { display: block; color: var(--muted); padding: 5px 0 5px 14px; border-left: 1px solid var(--line); }
 .docs aside a:hover, .docs aside a.active { color: var(--text); border-left: 1px solid var(--accent); text-decoration: none; }
 .docs aside .group { margin: 20px 0 8px; font-size: 13px; font-weight: 600; color: var(--text); }
-.docs aside .group:first-child { margin-top: 0; }
+.docs aside .group:first-child, .doc-toc > summary + .group { margin-top: 0; }
+.doc-toc > summary { display: none; }
+/* Back to the top of the docs, once the contents have scrolled away on a phone */
+.to-top { position: fixed; right: 16px; bottom: 16px; z-index: 20; display: inline-flex; align-items: center; gap: 6px; height: 40px; padding: 0 16px 0 12px; border: 1px solid var(--line-2); border-radius: 999px; background: var(--panel); color: var(--text); font-size: 14px; font-weight: 500; box-shadow: 0 6px 20px rgb(0 0 0 / 0.3); }
+.to-top:hover { text-decoration: none; border-color: var(--accent); }
+.to-top svg { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .doc-search { position: relative; margin-bottom: 14px; }
 .doc-search svg { position: absolute; left: 11px; top: 50%; translate: 0 -50%; fill: none; stroke: var(--faint); stroke-width: 1.6; stroke-linecap: round; pointer-events: none; }
 .doc-search input { width: 100%; height: 36px; padding: 0 44px 0 32px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); font: 14px var(--sans); color: var(--text); transition: border-color 0.15s, box-shadow 0.15s; }
@@ -48,7 +59,16 @@
 .docs th { color: var(--muted); font-weight: 500; font-size: 13px; background: var(--panel-2); }
 @media (max-width: 860px) {
 	.docs { grid-template-columns: minmax(0, 1fr); gap: 24px; padding-top: 32px; } /* minmax(0, …) lets wide code blocks scroll instead of widening the page */
-	.docs aside { position: static; max-height: none; }
+	.docs aside { position: static; max-height: 45vh; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); }
+	/* The contents fold away under one line (site.js), so the page starts with its title. */
+	.doc-toc > summary { display: list-item; padding: 4px 2px; font-weight: 600; color: var(--text); cursor: pointer; }
+	.doc-toc[open] > summary { margin-bottom: 12px; }
+	.doc-search { margin-bottom: 10px; }
+}
+@media (max-width: 640px) {
+	.docs td:first-child { overflow-wrap: anywhere; }
+	.docs td:first-child code { white-space: normal; }
+	.docs th, .docs td { padding: 8px 10px; }
 }
 
 /* Dashboard */
@@ -135,7 +155,27 @@ a.link { font-size: 13px; }
 .tip em { display: block; margin-top: 3px; font-style: normal; font-size: 12px; color: var(--accent); }
 table.data th:first-child, table.data td:first-child, #blocks th:nth-child(2), #blocks td:nth-child(2) { text-align: left; }
 table.data th { color: var(--muted); font-weight: 500; font-size: 13px; }
-.table-scroll { overflow-x: auto; }
+.table-scroll { overflow-x: auto; background: linear-gradient(to right, var(--panel) 30%, transparent) left / 32px 100% no-repeat local, linear-gradient(to left, var(--panel) 30%, transparent) right / 32px 100% no-repeat local, radial-gradient(farthest-side at 0 50%, rgb(0 0 0 / 0.35), transparent) left / 12px 100% no-repeat scroll, radial-gradient(farthest-side at 100% 50%, rgb(0 0 0 / 0.35), transparent) right / 12px 100% no-repeat scroll; }
+/* On a phone a table with more columns than fit stacks: each row is a card,
+   its first cell the title and the rest a run of named values, the names
+   put on the cells by tables.js. The tr in each selector outranks a page's
+   own rules for its columns. */
+@media (max-width: 640px) {
+	table.data.stack, table.data.stack thead, table.data.stack tbody { display: block; }
+	table.data.stack tr { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; padding: 11px 0; border-bottom: 1px solid var(--line); }
+	table.data.stack tr:last-child { border-bottom: 0; }
+	table.data.stack tr:has(th) { display: none; }
+	table.data.stack tr > td:nth-child(n) { display: block; min-width: 0; max-width: 100%; padding: 0; border: 0; overflow: visible; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+	table.data.stack tr > td:first-child { flex: 0 0 100%; font-weight: 600; }
+	table.data.stack tr > td:not(:first-child)::before { content: attr(data-label); margin-right: 6px; font-size: 12px; font-weight: 400; color: var(--muted); }
+	table.data.stack tr > td:empty { display: none; }
+	table.data.stack tr.pick, table.data.stack tr.sel { margin: 0 -8px; padding-left: 8px; padding-right: 8px; border-radius: 6px; }
+	table.data.stack tr.sel { background: var(--accent-soft); }
+	table.data.stack tr.sel td, table.data.stack tr.pick:hover td { background: none; }
+	.table-scroll.tall th { position: static; }
+	/* A tall list of cards scrolls on its own: an end with more past it is shaded. */
+	.table-scroll.tall { background: linear-gradient(var(--panel) 30%, transparent) top / 100% 40px no-repeat local, linear-gradient(transparent, var(--panel) 70%) bottom / 100% 40px no-repeat local, radial-gradient(farthest-side at 50% 0, color-mix(in srgb, var(--text) 22%, transparent), transparent) top / 100% 20px no-repeat scroll, radial-gradient(farthest-side at 50% 100%, color-mix(in srgb, var(--text) 22%, transparent), transparent) bottom / 100% 20px no-repeat scroll; }
+}
 .empty { text-align: center; padding: 56px 24px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
 .empty h2 { margin-top: 0; font: 700 28px/1.2 var(--sans); letter-spacing: -0.02em; }
 .drop { display: block; padding: 28px; text-align: center; border: 1.5px dashed var(--line-2); border-radius: var(--radius); cursor: pointer; background: var(--bg); color: var(--muted); }
@@ -216,13 +256,15 @@ table.data th { color: var(--muted); font-weight: 500; font-size: 13px; }
 @media (max-width: 760px) {
 	.settings { grid-template-columns: minmax(0, 1fr); gap: 16px; }
 	.side { position: static; display: flex; overflow-x: auto; scrollbar-width: none; }
-	.side a { flex: none; padding: 8px 10px; font-size: 14px; }
+	.side a { flex: none; padding: 8px 8px; font-size: 13px; }
+	.side { mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent); }
 	.side svg { display: none; } /* so all four fit across a phone */
 	.pane { padding: 22px 18px 24px; }
 	.list .item { flex-wrap: wrap; }
 }
 @media (max-width: 520px) {
 	.dash { padding-top: 28px; }
+	.stat .value { font-size: 22px; white-space: normal; overflow-wrap: anywhere; }
 	.waiting { text-align: left; }
 }
 

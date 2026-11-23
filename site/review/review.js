@@ -62,9 +62,15 @@ const badge = (level) => `<span class="badge l${level}">${LEVELS[level]}</span>`
 const named = (name, slack) => `${name ? `<b>${esc(name)}</b> ` : ''}<code>${esc(slack)}</code>`
 const head = (title, extra = '') => `<div class="dash-head"><h1>${title}</h1>${extra}</div>`
 const notice = (title, text) => `<div class="empty"><h2>${esc(title)}</h2><p class="muted">${esc(text)}</p></div>`
-const LOOKUP = `<form class="lookup" role="search" data-form="lookup">
-	<input name="slack" aria-label="Slack ID" placeholder="Slack ID, such as U012ABCDEF" autocomplete="off" spellcheck="false" required>
+// lookup is the search box at the top of a page. Whoever has the list of
+// people finds one by name or Slack ID, as in Home's box. A reviewer has no
+// list, and types a Slack ID.
+const lookup = () => `<form class="lookup" role="search" data-form="find">
+	<input name="q" autocomplete="off" spellcheck="false" required ${me.level === 2
+		? 'aria-label="Slack ID" placeholder="Slack ID, such as U012ABCDEF"'
+		: 'aria-label="Search people" placeholder="Name or Slack ID" role="combobox" aria-expanded="false" aria-autocomplete="list"'}>
 	<button class="btn">Look up</button>
+	${me.level === 2 ? '' : '<div class="rv-found" role="listbox" hidden></div>'}
 </form>`
 
 function say(el, text, ok = false) {
@@ -75,10 +81,14 @@ function say(el, text, ok = false) {
 
 // ---- Home
 
-// Everyone that Home's search box looks through. A reviewer has no list, and looks a person up by Slack ID.
+// Everyone that a search box looks through. A reviewer has no list, and looks a person up by Slack ID.
 let everyone = []
 const SEARCH = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg>'
 const asSlackID = (text) => text.trim().replace(/^<@|>$/g, '').toUpperCase()
+const SLACK_ID = /^[UW][A-Z0-9]{4,}$/
+// The words typed in a search box, and whether a person's name or Slack ID holds them all.
+const wordsIn = (input) => (input?.value ?? '').toLowerCase().split(/\s+/).filter(Boolean)
+const holds = (p, words) => words.every((w) => `${p.name} ${p.slack_id}`.toLowerCase().includes(w))
 const personName = (p) => p.name || (p.deleted_at ? 'Deleted account' : 'No name')
 
 function greeting() {
@@ -107,21 +117,29 @@ async function home() {
 	</div>`
 }
 
-// showFound lists, under the search box, the people whose name or Slack ID
+// showFound lists, under a search box, the people whose name or Slack ID
 // holds every word typed. Someone who never signed in is not among them, so
-// a Slack ID that matches no one can still be looked up.
-function showFound(input) {
-	const box = $('found')
-	const words = input.value.toLowerCase().split(/\s+/).filter(Boolean)
-	const rows = !words.length ? [] : everyone.filter((p) => words.every((w) => `${p.name} ${p.slack_id}`.toLowerCase().includes(w))).slice(0, 8)
+// a Slack ID that matches no one can still be looked up. On People the table
+// is the list: it narrows to who matches, and the box under the search opens
+// only when no one does.
+async function showFound(form) {
+	const input = form.elements.q, box = form.querySelector('.rv-found')
+	if (!everyone.length) everyone = (await api('/people')).people
+	const words = wordsIn(input)
+	const table = view.querySelector('table.people')
+	const hits = table ? drawPeople() : !words.length ? [] : everyone.filter((p) => holds(p, words))
+	const rows = table ? [] : hits.slice(0, 8)
 		.map((p) => `<a role="option" href="#/person/id:${p.id}"><span class="grow"><b>${esc(personName(p))}</b>${p.slack_id ? ` <code>${esc(p.slack_id)}</code>` : ''}</span>${p.banned ? '<span class="badge banned">Banned</span>' : ''}${p.flagged ? `<span class="badge flagged">${num(p.flagged)} flagged</span>` : ''}<small>${dur(p.engaged_seconds)}</small></a>`)
 	const id = asSlackID(input.value)
-	if (!rows.length && /^[UW][A-Z0-9]{4,}$/.test(id)) rows.push(`<a role="option" href="#/person/${encodeURIComponent(id)}"><span class="grow">Look up Slack ID <code>${esc(id)}</code></span></a>`)
+	if (!hits.length && SLACK_ID.test(id)) rows.push(`<a role="option" href="#/person/${encodeURIComponent(id)}"><span class="grow">Look up Slack ID <code>${esc(id)}</code></span></a>`)
 	box.innerHTML = rows.join('') || '<p>No one matches. A Slack ID, such as U012ABCDEF, finds someone who has not signed in.</p>'
 	box.querySelector('a')?.setAttribute('aria-selected', 'true')
-	box.hidden = !words.length
+	box.hidden = !words.length || Boolean(table && hits.length)
 	input.setAttribute('aria-expanded', String(!box.hidden))
 }
+// A search box lists people only for those who have the list. If the list
+// can't be read, a Slack ID typed in full still opens its person.
+const find = (form) => me.level < 2 && showFound(form).catch(() => {})
 
 // toFind puts the cursor in Home's search box, going Home first if need be.
 let findWanted = false
@@ -134,22 +152,48 @@ function toFind() {
 
 // ---- People
 
-async function people() {
-	const { people } = await api('/people')
-	const rows = people.map((p) => `<tr${p.banned ? ' class="is-banned"' : ''}>
+// How People's table is narrowed and ordered, kept while the app is open.
+// The server lists people by their last sync, newest first.
+const listing = { synced: false, by: '' }
+const ORDERS = {
+	'': ['Last sync, newest first', null],
+	name: ['Name', (a, b) => personName(a).localeCompare(personName(b))],
+	engaged: ['Engaged, most first', (a, b) => b.engaged_seconds - a.engaged_seconds],
+	flagged: ['Flagged, most first', (a, b) => b.flagged - a.flagged],
+}
+
+// drawPeople fills People's table: who matches the words in the search box,
+// only those who have synced if asked, in the order chosen. It returns them.
+function drawPeople() {
+	const words = wordsIn(view.querySelector('.lookup input'))
+	const list = everyone.filter((p) => holds(p, words) && (!listing.synced || p.synced_at))
+	if (ORDERS[listing.by][1]) list.sort(ORDERS[listing.by][1])
+	$('people-rows').innerHTML = list.map((p) => `<tr data-id="${p.id}"${p.banned ? ' class="is-banned"' : ''}>
 		<td><a href="#/person/id:${p.id}">${esc(personName(p))}</a>${p.banned ? ' <span class="badge banned">Banned</span>' : ''}</td>
 		<td>${p.slack_id ? `<code>${esc(p.slack_id)}</code>` : '<span class="muted">none</span>'}</td>
 		<td>${dur(p.engaged_seconds)}</td><td>${p.computers}</td>
 		<td>${p.flagged ? `<a class="flag" href="#/person/id:${p.id}">${p.flagged}</a>` : '<span class="muted">0</span>'}</td>
 		<td>${p.synced_at ? esc(ago(p.synced_at)) : '<span class="muted">never</span>'}</td>
-	</tr>`).join('')
-	return head('People', `<span class="status">${plural(people.length, 'person', 'people')}</span>${LOOKUP}`) + `<div class="panel">
-		<div class="table-scroll"><table class="data people">
-			<tr><th>Name</th><th>Slack ID</th><th>Engaged, past year</th><th>Computers</th><th>Flagged</th><th>Last sync</th></tr>
-			${rows || '<tr><td colspan="6" class="muted">No one has signed in yet.</td></tr>'}
+	</tr>`).join('') || `<tr><td colspan="6" class="muted">${everyone.length ? 'No one matches.' : 'No one has signed in yet.'}</td></tr>`
+	$('people-count').textContent = `${list.length < everyone.length ? `${num(list.length)} of ` : ''}${plural(everyone.length, 'person', 'people')}`
+	labelCells(view)
+	return list
+}
+
+async function people() {
+	everyone = (await api('/people')).people
+	afterDraw = drawPeople
+	return head('People', `<span class="status" id="people-count"></span>${lookup()}`) + `<div class="panel">
+		<div class="people-tools">
+			<label class="check"><input type="checkbox" data-people="synced"${listing.synced ? ' checked' : ''}>Only people who have synced</label>
+			<label>Order<select data-people="by">${Object.entries(ORDERS).map(([by, [name]]) => `<option value="${by}"${by === listing.by ? ' selected' : ''}>${name}</option>`).join('')}</select></label>
+		</div>
+		<div class="table-scroll"><table class="data people stack">
+			<thead><tr><th>Name</th><th>Slack ID</th><th>Engaged, past year</th><th>Computers</th><th>Flagged</th><th>Last sync</th></tr></thead>
+			<tbody id="people-rows"></tbody>
 		</table></div>
 	</div>
-	<p class="muted fine">Choose a person to read their computers, their projects, and every report they sent.</p>`
+	<p class="muted fine">Choose a person to read their computers, their projects, and every report they sent. Typing a name or Slack ID in the box above narrows the list.</p>`
 }
 
 // ---- One person
@@ -157,7 +201,7 @@ async function people() {
 function projectTable(projects) {
 	if (!projects.length) return '<p class="muted">No project has time yet.</p>'
 	const total = projects.reduce((sum, p) => sum + p.engaged_seconds, 0)
-	return `<div class="table-scroll"><table class="data left">
+	return `<div class="table-scroll"><table class="data left stack">
 		<tr><th>Project</th><th>Share</th><th>Engaged, past year</th></tr>
 		${projects.map((p) => `<tr><td>${esc(p.name)}</td><td>${Math.round((100 * p.engaged_seconds) / total)}%</td><td>${dur(p.engaged_seconds)}</td></tr>`).join('')}
 	</table></div>`
@@ -173,6 +217,12 @@ const localDay = (ms) => {
 	const d = new Date(ms)
 	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
+// dayAt is the reviewer's midnight starting a YYYY-MM-DD day, k days on.
+const dayAt = (day, k = 0) => {
+	const [y, m, d] = day.split('-').map(Number)
+	return new Date(y, m - 1, d + k).getTime()
+}
+const isDay = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s ?? '')
 const compact = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e4 ? `${Math.round(n / 1e3)}k` : num(n))
 // perLocalDay adds up engaged time by day in the reviewer's time zone. A block
 // that runs past midnight is split, its engaged time spread over its length.
@@ -292,7 +342,9 @@ function blockScatter(blocks) {
 // a share of its own total, so their shapes line up and any can be laid over
 // any other. Where one climbs and the others stay flat is worth a question.
 // Below it, the same series per day. Lightweight Charts by TradingView draws
-// them (vendor/, Apache 2.0).
+// them (vendor/, Apache 2.0). Its license asks for its notice and a link to
+// tradingview.com on the page: the line under the chart is that, in place of
+// the logo, which sat over the bars.
 
 const SERIES = [
 	{ id: 'added', name: 'Lines added', color: 'accent', on: true },
@@ -315,20 +367,18 @@ const fmt = (id, v) => (id === 'engaged' ? dur(v) : num(Math.round(v)))
 // The charts' clock is UTC, so times move by the reviewer's offset to read as theirs.
 const localSec = (ms) => Math.floor(ms / 1000) - new Date(ms).getTimezoneOffset() * 60
 
-// series works out, for one project, each series' running total at every
-// moment something happened, and its total per day.
+// series works out, for one project, each series' amount and running total
+// in every step of time from its first moment to its last: a day, or an hour
+// for a project shorter than ten days. Every step gets a point, quiet ones
+// too, so the chart's evenly spaced points are evenly spaced in time.
 function series(p) {
-	const at = new Map(), days = new Map()
+	const at = new Map()
 	const put = (ms, id, v) => {
 		if (!v) return
 		const t = localSec(ms)
 		const row = at.get(t) ?? {}
 		row[id] = (row[id] ?? 0) + v
 		at.set(t, row)
-		const d = localSec(new Date(ms).setHours(0, 0, 0, 0))
-		const day = days.get(d) ?? {}
-		day[id] = (day[id] ?? 0) + v
-		days.set(d, day)
 	}
 	for (const b of p.blocks) {
 		put(b[B.start], 'added', b[B.added])
@@ -339,12 +389,22 @@ function series(p) {
 		put(b[B.start], 'tokens', b[B.tout])
 	}
 	for (const c of p.commits ?? []) put(c.t, 'committed', c.added)
-	const times = [...at.keys()].sort((a, b) => a - b)
-	const total = Object.fromEntries(SERIES.map(({ id }) => [id, times.reduce((n, t) => n + (at.get(t)[id] ?? 0), 0)]))
+	const moments = [...at.keys()]
+	const first = Math.min(...moments), last = Math.max(...moments)
+	const step = last - first > 10 * 86400 ? 86400 : 3600
+	const slot = (t) => Math.floor(t / step) * step
+	const steps = new Map()
+	if (moments.length) for (let t = slot(first); t <= last; t += step) steps.set(t, {})
+	for (const [t, row] of at) {
+		const into = steps.get(slot(t))
+		for (const id in row) into[id] = (into[id] ?? 0) + row[id]
+	}
+	const times = [...steps.keys()]
+	const total = Object.fromEntries(SERIES.map(({ id }) => [id, times.reduce((n, t) => n + (steps.get(t)[id] ?? 0), 0)]))
 	const run = Object.fromEntries(SERIES.map(({ id }) => [id, []]))
 	const sums = Object.fromEntries(SERIES.map(({ id }) => [id, 0]))
-	for (const t of times) for (const { id } of SERIES) run[id].push((sums[id] += at.get(t)[id] ?? 0))
-	return { times, at, total, run, days: [...days.keys()].sort((a, b) => a - b).map((t) => [t, days.get(t)]) }
+	for (const t of times) for (const { id } of SERIES) run[id].push((sums[id] += steps.get(t)[id] ?? 0))
+	return { times, step, slot, unit: step === 3600 ? 'hour' : 'day', days: times.map((t) => [t, steps.get(t)]), total, run }
 }
 
 // spark is a card's small picture: lines added, engaged time, and lines
@@ -359,11 +419,14 @@ function spark(p) {
 }
 
 // projectCards lists a person's projects, each a link to its own page.
-function projectCards(projects, base) {
+function projectCards(projects, base, c) {
 	if (!projects.length) return '<div class="panel"><p class="muted">No work blocks yet. Their computers have synced none, or synced before blocks were kept.</p></div>'
-	return `<section class="pcards">${projects.map((p, i) => {
+	const shown = projects.map((p, i) => [c.cropped ? cropBlocks(p, c) : p, i]).filter(([p]) => !c.cropped || p.blocks.length || p.commits.length)
+	if (!shown.length) return '<div class="panel"><p class="muted">No project has work on these days.</p></div>'
+	return `<section class="pcards">${shown.map(([p, i]) => {
 		const sum = (k) => p.blocks.reduce((s, b) => s + b[k], 0)
-		return `<a class="pcard" href="${base}/p/${i}">
+		if (c.cropped) p.engaged_seconds = sum(B.engaged)
+		return `<a class="pcard" href="${base}/p/${i}${c.query}">
 			<div class="pcard-top"><b>${esc(p.name)}</b><small>${esc(longDate(p.blocks.at(-1)?.[B.end] ?? Date.now()))}</small></div>
 			${spark(p)}
 			<div class="pcard-nums"><span>${dur(p.engaged_seconds)}</span><span>+${compact(sum(B.added))} lines</span><span>${plural(sum(B.prompts), 'prompt')}</span><span>${plural(p.commits?.length ?? 0, 'commit')}</span></div>
@@ -371,17 +434,76 @@ function projectCards(projects, base) {
 	}).join('')}</section>`
 }
 
-// projectPage is one project, alone: its numbers, the chart, its checks, and its commits.
-function projectPage(name, back, p) {
+// ---- Crops: a stretch of time in the address, ?from=…&to=…
+//
+// Person and project pages crop to whole days (YYYY-MM-DD), a submission to
+// minutes (YYYY-MM-DDTHH:MM), in the reviewer's time zone. Both ends are
+// included, and either may be left open.
+const isMinute = (s) => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(s ?? '')
+const localMinute = (ms) => {
+	const d = new Date(ms)
+	return `${localDay(ms)}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+function readCrop(query, kind) {
+	const q = new URLSearchParams(query)
+	const ok = kind === 'date' ? isDay : isMinute
+	let from = ok(q.get('from')) ? q.get('from') : '', to = ok(q.get('to')) ? q.get('to') : ''
+	if (from && to && from > to) [from, to] = [to, from]
+	const at = (v, end) => (kind === 'date' ? dayAt(v, end ? 1 : 0) : new Date(v).getTime() + (end ? 60_000 : 0))
+	const lo = from ? at(from, false) : -Infinity, hi = to ? at(to, true) : Infinity
+	const query2 = new URLSearchParams({ ...(from && { from }), ...(to && { to }) }).toString()
+	return { kind, from, to, lo, hi, cropped: Boolean(from || to), query: query2 ? '?' + query2 : '' }
+}
+// cropBlocks keeps a project's blocks that touch the crop and its commits made in it.
+const cropBlocks = (p, c) => ({ ...p, blocks: p.blocks.filter((b) => b[B.end] > c.lo && b[B.start] < c.hi), commits: (p.commits ?? []).filter((x) => x.t >= c.lo && x.t < c.hi), cropped: c.cropped })
+// cropBar draws the crop's controls for a page whose data runs from first to
+// last, in the crop's own units. extra is more buttons; whole names the page.
+function cropBar(here, c, first, last, note, extra, whole) {
+	const unit = c.kind === 'date' ? 'days' : 'stretch of time'
+	return `<form class="rv-form pcrop" data-form="crop" data-here="${esc(here)}" data-kind="${c.kind}" data-first="${first}" data-last="${last}">
+		<label>From<input type="${c.kind}" name="from" value="${c.from}" min="${first}" max="${last}"></label>
+		<label>To<input type="${c.kind}" name="to" value="${c.to}" min="${first}" max="${last}"></label>
+		<div class="pcrop-btns">
+			<button class="btn small" type="button" data-crop="earlier" title="The same ${unit}, just before" aria-label="Earlier">◀</button>
+			<button class="btn small" type="button" data-crop="later" title="The same ${unit}, just after" aria-label="Later">▶</button>
+			${extra}
+			${c.cropped ? `<button class="btn small" type="button" data-crop="all">${whole}</button>` : ''}
+		</div>
+		<span class="pcrop-note${c.cropped ? ' on' : ''}">${note}</span>
+	</form>`
+}
+const dayButtons = (what) => [1, 7, 30].map((n) => `<button class="btn small" type="button" data-crop="${n}" title="The last ${n === 1 ? 'day' : `${n} days`} of the crop, or of ${what}">${n}d</button>`).join('')
+// spanOf is the first and last day a person's or project's blocks and commits touch.
+function spanOf(projects) {
+	const moments = projects.flatMap((p) => [...p.blocks.flatMap((b) => [b[B.start], b[B.end]]), ...(p.commits ?? []).map((c) => c.t)])
+	return moments.length ? [localDay(Math.min(...moments)), localDay(Math.max(...moments))] : null
+}
+
+// projectPage is one project, alone: its numbers, the chart, its checks, and
+// its commits. A crop narrows all of them to the blocks that touch its days
+// and the commits made in them.
+function projectPage(name, back, whole, here, query) {
+	const c = readCrop(query, 'date')
+	const p = cropBlocks(whole, c)
+	const { cropped } = p
+	const span = spanOf([whole])
+	const note = cropped
+		? p.blocks.length || p.commits.length
+			? `${plural(p.blocks.length, 'block')} of ${num(whole.blocks.length)}, ${plural(p.commits.length, 'commit')} of ${num(whole.commits?.length ?? 0)}`
+			: 'Nothing on these days.'
+		: 'The whole project.'
+	const crop = span ? cropBar(here, c, ...span, note, dayButtons('the project') + '<button class="btn small" type="button" data-crop="view" title="The days the chart shows now, after scrolling to zoom">Crop to chart</button>', 'Whole project') : ''
 	const bl = p.blocks
 	const sum = (i) => bl.reduce((s, b) => s + b[i], 0)
 	const commits = [...(p.commits ?? [])].sort((a, b) => b.t - a.t)
 	const found = commits.filter((c) => c.found === true).length, missing = commits.filter((c) => c.found === false).length
 	const repo = /^github\.com\//.test(p.key ?? '') ? 'https://' + p.key : ''
+	const { total } = series(p)
 	afterDraw = () => drawProject(p)
 	return `<div class="review project">
-		<nav class="crumbs"><a href="${back}">${esc(name)}</a><span>/</span><b>${esc(p.name)}</b></nav>
+		<nav class="crumbs"><a href="${back}${c.query}">${esc(name)}</a><span>/</span><b>${esc(p.name)}</b></nav>
 		${head(esc(p.name), p.key && p.key !== p.name ? `<span class="status"><code>${esc(p.key)}</code></span>` : '')}
+		${crop}
 		<div class="act-facts">${[
 			['Engaged', dur(sum(B.engaged))],
 			['Blocks', num(bl.length)],
@@ -391,17 +513,17 @@ function projectPage(name, back, p) {
 			['Active', bl.length ? `${esc(longDate(bl[0][B.start]))}<small>to ${esc(longDate(bl.at(-1)[B.end]))}</small>` : '-'],
 		].map(([k, x]) => `<div><span>${k}</span><b>${x}</b></div>`).join('')}</div>
 		<div class="panel pchart-panel">
-			<div class="pchips" role="group" aria-label="Series to draw">${SERIES.map((s) => `<button type="button" data-series="${s.id}" aria-pressed="${shown.has(s.id)}" style="--c: var(--s-${s.id})"><i></i>${s.name}</button>`).join('')}</div>
+			<div class="pchips" role="group" aria-label="Series to draw">${SERIES.map((s) => `<button type="button" data-series="${s.id}" aria-pressed="${shown.has(s.id)}" style="--c: var(--s-${s.id})"${total[s.id] ? '' : ` class="empty" title="${cropped ? 'None on these days' : 'None in this project'}"`}><i></i>${s.name}${total[s.id] ? '' : ': none'}</button>`).join('')}</div>
 			<div class="plegend" id="plegend"></div>
 			<div class="pchart" id="pchart"></div>
-			<p class="muted fine">Top: each series' running total, as a share of its own total, so their shapes line up. Bottom: the same per day. Times are in your time zone. Scroll to zoom, drag to pan, hover for numbers.</p>
+			<p class="muted fine">Top: each series' running total, as a share of its own total, so their shapes line up. Bottom: the same per day, or per hour over less than 10 days. Times are in your time zone. Scroll to zoom, drag to pan, hover for numbers. The chart is drawn by <a href="https://www.tradingview.com/" rel="noopener" target="_blank">TradingView Lightweight Charts™</a>, copyright (c) 2025 TradingView, Inc.</p>
 		</div>
 		<ul class="act-checks">${checks(bl).map(([kind, text, more]) => `<li class="${kind}"><b>${esc(text)}</b>${more ? ` <span>${esc(more)}</span>` : ''}</li>`).join('')}</ul>
 		<div class="act-grid">
 			<figure><figcaption>When they work <small>weekday and hour in your time zone, orange before 6:00</small></figcaption>${punchCard(bl)}</figure>
 			<figure><figcaption>Every block: length and share engaged <small>red: over 4 hours, engaged over 90%</small></figcaption>${blockScatter(bl)}</figure>
 		</div>
-		${commits.length ? `<div class="panel"><h2>Commits <small>newest first, the last ${commits.length} the site kept</small></h2><div class="table-scroll"><table class="data left">
+		${commits.length ? `<div class="panel"><h2>Commits <small>newest first, the last ${commits.length} the site kept</small></h2><div class="table-scroll tall"><table class="data left stack">
 			<tr><th>When</th><th>Lines</th><th>On the host</th>${commits[0].sha ? '<th>Commit</th>' : ''}</tr>
 			${commits.map((c) => `<tr><td>${esc(when(c.t))}</td><td>+${num(c.added)} −${num(c.removed)}</td><td class="${c.found === false ? 'bad' : ''}">${c.found === true ? 'Found' : c.found === false ? 'Not found' : 'Not checked'}</td>${c.sha ? `<td>${repo ? `<a href="${esc(repo)}/commit/${esc(c.sha)}" rel="nofollow noopener" target="_blank"><code>${esc(c.sha.slice(0, 7))}</code></a>` : `<code>${esc(c.sha.slice(0, 7))}</code>`}</td>` : ''}</tr>`).join('')}
 		</table></div></div>` : ''}
@@ -411,6 +533,8 @@ function projectPage(name, back, p) {
 
 // What the chart on the page draws, so the series buttons and the theme switch can reach it.
 let drawn = null
+// Which series the one lower pane shows on a phone.
+let lone = ''
 
 // drawProject draws the open project's chart into #pchart, over the stretch
 // of time given, as a redraw keeps the reviewer's zoom.
@@ -425,44 +549,80 @@ function drawProject(p, range = null) {
 	for (const s of SERIES) el.closest('.panel').style.setProperty('--s-' + s.id, color(s.color))
 	const s = series(p)
 	const on = SERIES.filter(({ id }) => shown.has(id) && s.total[id])
-	const TOP = 280, PANE = 84
-	el.style.height = `${TOP + on.length * PANE + 30}px`
+	// A phone has room for one lower pane, not one per series: its strip is a
+	// list to pick which series it shows.
+	const narrow = el.clientWidth < 600
+	const below = narrow ? on.filter(({ id }) => id === (on.some((x) => x.id === lone) ? lone : on[0].id)) : on
+	// A pane of days or hours is a strip of HEAD for its name, then its bars.
+	const TOP = 280, PANE = 108, HEAD = 28
+	el.style.setProperty('--head', `${HEAD}px`)
+	el.style.height = `${TOP + below.length * PANE + 30}px`
 	const chart = LW.createChart(el, {
 		autoSize: true,
-		layout: { background: { type: 'solid', color: v('panel') }, textColor: v('muted'), fontFamily: v('sans'), fontSize: 12, attributionLogo: true, panes: { separatorColor: v('line'), separatorHoverColor: v('line-2') } },
+		layout: { background: { type: 'solid', color: v('panel') }, textColor: v('muted'), fontFamily: v('sans'), fontSize: 12, attributionLogo: false, panes: { separatorColor: v('line'), separatorHoverColor: v('line-2') } },
 		grid: { vertLines: { visible: false }, horzLines: { color: v('line') } },
 		rightPriceScale: { borderVisible: false },
-		timeScale: { borderColor: v('line'), timeVisible: true, rightOffset: 4 },
+		timeScale: { borderColor: v('line'), timeVisible: s.step === 3600, rightOffset: 4 },
 		crosshair: { mode: 0, vertLine: { color: v('line-2'), labelBackgroundColor: v('panel-2') }, horzLine: { color: v('line-2'), labelBackgroundColor: v('panel-2') } },
 	})
 	const pct = { type: 'custom', minMove: 0.1, formatter: (x) => `${Math.round(x)}%` }
 	const whole = () => ({ priceRange: { minValue: 0, maxValue: 100 } })
 	// The series turned on that have anything to draw: each a line on top, and its own pane of days below.
-	drawn = { chart, p, s, line: {} }
-	on.forEach(({ id, name, color: c }, k) => {
+	drawn = { chart, p, s, line: {}, color: {} }
+	on.forEach(({ id, color: c }) => {
 		const line = chart.addSeries(LW.LineSeries, { color: color(c), lineWidth: 2, lineType: 1, priceFormat: pct, autoscaleInfoProvider: whole, lastValueVisible: false, priceLineVisible: false, crosshairMarkerRadius: 3 })
 		line.setData(s.times.map((t, i) => ({ time: t, value: (100 * s.run[id][i]) / s.total[id] })))
-		const bars = chart.addSeries(LW.HistogramSeries, { color: color(c), priceFormat: { type: 'custom', minMove: 1, formatter: (x) => fmt(id, x) }, lastValueVisible: false, priceLineVisible: false }, k + 1)
-		bars.priceScale().applyOptions({ scaleMargins: { top: 0.2, bottom: 0 } })
-		bars.setData(s.days.filter(([, d]) => d[id]).map(([t, d]) => ({ time: t, value: d[id] })))
 		drawn.line[id] = line
+		drawn.color[id] = color(c)
+		const k = below.findIndex((x) => x.id === id)
+		if (k < 0) return
+		// The bars stop short of the pane's name. The name's strip hides a grid
+		// line behind it, so the scale leaves that line's number out too.
+		const clear = (base) => {
+			const r = base()
+			return r && { ...r, margins: { above: HEAD + 4, below: 0 } }
+		}
+		const bars = chart.addSeries(LW.HistogramSeries, { color: color(c), autoscaleInfoProvider: clear, lastValueVisible: false, priceLineVisible: false }, k + 1)
+		const hidden = (x) => (bars.priceToCoordinate(x) ?? PANE) < HEAD
+		// Engaged time is drawn in hours, so the scale's numbers land on whole hours and quarters, not odd minutes.
+		const per = id === 'engaged' ? 3600 : 1
+		bars.applyOptions({ priceFormat: { type: 'custom', minMove: per === 1 ? 1 : 0.25, formatter: (x) => (hidden(x) ? '' : fmt(id, x * per)) } })
+		bars.priceScale().applyOptions({ scaleMargins: { top: 0, bottom: 0 } })
+		bars.setData(s.days.filter(([, d]) => d[id]).map(([t, d]) => ({ time: t, value: d[id] / per })))
 	})
 	// Each commit is a dot on the committed line, red when the host doesn't have it.
-	if (drawn.line.committed) LW.createSeriesMarkers(drawn.line.committed, (p.commits ?? []).map((c) => ({ time: localSec(c.t), position: 'inBar', shape: 'circle', size: 0.6, color: c.found === false ? v('bad') : color('important') })).sort((a, b) => a.time - b.time))
+	if (drawn.line.committed) LW.createSeriesMarkers(drawn.line.committed, (p.commits ?? []).map((c) => ({ time: s.slot(localSec(c.t)), position: 'inBar', shape: 'circle', size: 0.3, color: c.found === false ? v('bad') : color('important') })).sort((a, b) => a.time - b.time))
 	// The top pane gets TOP of the height and each day pane PANE, however wide the page is.
 	const panes = chart.panes()
 	panes[0]?.setStretchFactor(TOP)
 	for (const pane of panes.slice(1)) pane.setStretchFactor(PANE)
 	chart.priceScale('right', 0).applyOptions({ scaleMargins: { top: 0.06, bottom: 0.04 } })
-	// Each day pane is named in its corner, once the panes are laid out.
-	requestAnimationFrame(() => requestAnimationFrame(() => {
+	// Each lower pane is named in a strip across the top of its plot, put there
+	// once the panes are laid out, and again when the plot changes width or
+	// the reviewer drags a pane taller.
+	el.insertAdjacentHTML('beforeend', below.map(({ id, name }) => narrow && on.length > 1
+		? `<label class="plabel" style="--c: var(--s-${id})" hidden><i></i><select data-pane aria-label="Series this pane shows">${on.map((o) => `<option value="${o.id}"${o.id === id ? ' selected' : ''}>${o.name} per ${s.unit}</option>`).join('')}</select></label>`
+		: `<span class="plabel" style="--c: var(--s-${id})" hidden><i></i>${name} per ${s.unit}</span>`).join(''))
+	const labels = [...el.querySelectorAll('.plabel')]
+	const place = () => {
 		let top = 0
 		panes.forEach((pane, k) => {
-			if (k) el.insertAdjacentHTML('beforeend', `<span class="plabel" style="top:${top + 4}px; --c: var(--s-${on[k - 1].id})"><i></i>${on[k - 1].name} per day</span>`)
+			if (k) {
+				labels[k - 1].style.top = `${top}px`
+				labels[k - 1].style.width = `${chart.timeScale().width()}px`
+				labels[k - 1].hidden = false
+			}
 			top += pane.getHeight() + 1
 		})
-	}))
+	}
+	const later = () => drawn?.chart === chart && requestAnimationFrame(() => requestAnimationFrame(() => drawn?.chart === chart && place()))
+	later()
+	// A page that changes width past a phone's draws again, with the panes that width gets.
+	chart.timeScale().subscribeSizeChange(() => (el.clientWidth < 600 !== narrow ? requestAnimationFrame(redraw) : later()))
+	el.onpointermove = (e) => e.buttons && later()
+	// On a phone, months of days are a solid fence: start on the last 45 steps.
 	if (range) chart.timeScale().setVisibleLogicalRange(range)
+	else if (narrow && s.times.length > 45) chart.timeScale().setVisibleLogicalRange({ from: s.times.length - 45, to: s.times.length + 2 })
 	else chart.timeScale().fitContent()
 	chart.subscribeCrosshairMove((param) => legend(param.time))
 	legend()
@@ -486,13 +646,33 @@ function legend(time) {
 		}
 	}
 	const dayStart = time == null ? null : s.days.findLast(([t]) => t <= time)
-	const sameDay = dayStart && time - dayStart[0] < 86400 ? dayStart[1] : null
-	const label = time == null ? 'Totals' : new Date((time + new Date(time * 1000).getTimezoneOffset() * 60) * 1000).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+	const sameDay = dayStart && time - dayStart[0] < s.step ? dayStart[1] : null
+	const label = time == null ? 'Totals' : new Date((time + new Date(time * 1000).getTimezoneOffset() * 60) * 1000).toLocaleString(undefined, s.step === 3600 ? { dateStyle: 'medium', timeStyle: 'short' } : { dateStyle: 'medium' })
 	box.innerHTML = `<b>${esc(label)}</b>` + SERIES.filter(({ id }) => shown.has(id) && s.total[id]).map(({ id, name }) => {
 		const so = i < 0 ? 0 : s.run[id][i]
-		return `<span style="--c: var(--s-${id})"><i></i>${name} <b>${fmt(id, so)}</b> <small>${Math.round((100 * so) / s.total[id])}%${sameDay ? `, ${fmt(id, sameDay[id] ?? 0)} that day` : ''}</small></span>`
-	}).join('') + SERIES.filter(({ id }) => shown.has(id) && !s.total[id]).map(({ name }) => `<span class="none">${name}: none</span>`).join('')
+		return `<span data-series="${id}" style="--c: var(--s-${id})"><i></i>${name} <b>${fmt(id, so)}</b>${time == null ? '' : `<small>${Math.round((100 * so) / s.total[id])}%${sameDay ? `, ${fmt(id, sameDay[id] ?? 0)} that ${s.unit}` : ''}</small>`}</span>`
+	}).join('')
 }
+
+// focusSeries makes one series' line stand out while its button or legend
+// entry is under the pointer, as the lines often lie on top of each other:
+// it is drawn thicker and last, and the others fade. No id puts them back.
+function focusSeries(id) {
+	if (!drawn) return
+	const one = id in drawn.line
+	for (const [k, line] of Object.entries(drawn.line)) {
+		const c = drawn.color[k]
+		line.applyOptions({ color: one && k !== id && /^#[0-9a-f]{6}$/i.test(c) ? c + '40' : c, lineWidth: one && k === id ? 3 : 2 })
+	}
+	if (one) drawn.line[id].setSeriesOrder(drawn.chart.panes()[0].getSeries().length - 1)
+}
+view.addEventListener('pointerover', (e) => {
+	const el = e.target.closest?.('.pchart-panel [data-series]')
+	if (el) focusSeries(el.dataset.series)
+})
+view.addEventListener('pointerout', (e) => {
+	if (e.target.closest?.('.pchart-panel [data-series]')) focusSeries('')
+})
 
 function clearCharts() {
 	drawn?.chart.remove()
@@ -566,7 +746,7 @@ function unknownView(b) {
 	const ban = b.bans.find((x) => x.active)
 	return `<div class="review">
 		<a class="back" href="#/people"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M10 3L5 8l5 5"/></svg>All people</a>
-		${head(`<code>${esc(slack)}</code>`, `<span class="status">Has not signed in yet</span>${ban ? '<span class="badge banned">Banned</span>' : ''}${LOOKUP}`)}
+		${head(`<code>${esc(slack)}</code>`, `<span class="status">Has not signed in yet</span>${ban ? '<span class="badge banned">Banned</span>' : ''}${lookup()}`)}
 		${ban ? banBanner(ban) : ''}
 		<div class="panels">${accessPanel(slack, b.access)}${banPanel(slack, b.access, b.bans)}</div>
 		<p class="muted fine">No account has this Slack ID yet. What you set here holds from their first sign-in.</p>
@@ -582,20 +762,35 @@ const banBanner = (ban) => `<div class="ban-banner" role="alert">
 
 // projectsSection leads a person's page: a card per project, each opening
 // that project alone. Without work blocks, the synced totals stand in.
-const projectsSection = (b) => `<h2 class="section">Projects <small>${b.activity.length ? 'open one to review it' : ''}</small></h2>` +
-	(b.activity.length ? projectCards(b.activity, open.base) : `<div class="panel">${projectTable(b.projects)}</div>`)
+const projectsSection = (b) => `<h2 class="section">Projects <small>${b.activity.length ? `open one to review it<span class="spark-key"><i class="s-added"></i>lines added<i class="s-engaged"></i>engaged time<i class="s-committed"></i>lines committed</span>` : ''}</small></h2>` +
+	(b.activity.length ? projectCards(b.activity, open.base, open.crop) : `<div class="panel">${projectTable(b.projects)}</div>`)
+
+// personCrop is what a crop on a person's page changes: its bar, their
+// engaged time and projects on those days from the work blocks, and which of
+// the days that don't add up fall in it. The log and account aren't cropped.
+function personCrop(b) {
+	const c = open.crop
+	const span = spanOf(b.activity ?? [])
+	const kept = (b.activity ?? []).map((p) => cropBlocks(p, c)).filter((p) => p.blocks.length || p.commits.length)
+	const engaged = kept.reduce((n, p) => n + p.blocks.reduce((s, x) => s + x[B.engaged], 0), 0)
+	const days = (b.impossible_days ?? []).filter((d) => !c.cropped || (d.slice(0, 10) >= (c.from || '0') && d.slice(0, 10) <= (c.to || '9')))
+	const note = c.cropped ? `${plural(kept.length, 'project')} with work on these days. The log isn't cropped.` : 'Everything they synced.'
+	return { c, engaged, projects: kept.length, days, bar: span ? cropBar(open.base, c, ...span, note, dayButtons('their work'), 'Everything') : '' }
+}
 
 // What a reviewer sees of a person: who they are and each project's total.
 function summaryView(b) {
 	const p = b.person
 	const name = personName(p)
+	const k = personCrop(b)
 	return `<div class="review">
 		<a class="back" href="#/"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M10 3L5 8l5 5"/></svg>Look up someone else</a>
 		${head(esc(name), `<span class="status"><code>${esc(p.slack_id)}</code></span>${b.ban ? '<span class="badge banned">Banned</span>' : ''}`)}
 		${b.ban ? banBanner(b.ban) : ''}
+		${k.bar}
 		<div class="stats">
-			<div class="stat"><div class="label">Engaged, as synced</div><div class="value">${dur(b.engaged_seconds)}</div><div class="hint">in the past year</div></div>
-			<div class="stat"><div class="label">Projects</div><div class="value">${b.projects.length}</div><div class="hint">with time in the past year</div></div>
+			<div class="stat"><div class="label">Engaged, as synced</div><div class="value">${dur(k.c.cropped ? k.engaged : b.engaged_seconds)}</div><div class="hint">${k.c.cropped ? 'on these days, from work blocks' : 'in the past year'}</div></div>
+			<div class="stat"><div class="label">Projects</div><div class="value">${k.c.cropped ? k.projects : b.projects.length}</div><div class="hint">${k.c.cropped ? 'with work on these days' : 'with time in the past year'}</div></div>
 			<div class="stat"><div class="label">Last sync</div><div class="value">${b.synced_at ? esc(ago(b.synced_at)) : 'never'}</div><div class="hint">joined ${esc(longDate(p.created_at))}</div></div>
 			<div class="stat"><div class="label">Flagged reports</div><div class="value${b.flagged_reports ? ' bad' : ''}">${b.flagged_reports}</div><div class="hint">${b.flagged_reports ? 'ask a neoadmin to read them' : 'nothing stood out'}</div></div>
 		</div>
@@ -695,6 +890,8 @@ function fullView(b) {
 	const engaged = computers.reduce((sum, c) => sum + c.engaged_seconds, 0)
 	const ban = b.bans.find((x) => x.active)
 	const banned = Boolean(ban)
+	const k = personCrop(b)
+	const days = k.days
 	const facts = [
 		['Name', esc(name)],
 		['Slack ID', p.slack_id ? `<code>${esc(p.slack_id)}</code>` : 'None'],
@@ -705,15 +902,16 @@ function fullView(b) {
 	const none = open.show ? `No ${open.show} entries${open.computer ? ' for this computer' : ''}.` : open.computer ? 'No entries for this computer.' : 'Nothing yet. Entries appear from the first sync after this log was added.'
 	return `<div class="review">
 		<a class="back" href="#/people"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M10 3L5 8l5 5"/></svg>All people</a>
-		${head(esc(name), `<span class="status">${p.slack_id ? `<code>${esc(p.slack_id)}</code>` : 'No Slack ID'}</span>${banned ? '<span class="badge banned">Banned</span>' : ''}${LOOKUP}`)}
+		${head(esc(name), `<span class="status">${p.slack_id ? `<code>${esc(p.slack_id)}</code>` : 'No Slack ID'}</span>${banned ? '<span class="badge banned">Banned</span>' : ''}${lookup()}`)}
 		${ban ? banBanner(ban) : ''}
+		${k.bar}
 		<div class="stats">
-			<div class="stat"><div class="label">Engaged, as synced</div><div class="value">${dur(engaged)}</div><div class="hint">${computers.length === 1 ? 'from 1 computer' : `from ${computers.length} computers`}</div></div>
+			<div class="stat"><div class="label">Engaged, as synced</div><div class="value">${dur(k.c.cropped ? k.engaged : engaged)}</div><div class="hint">${k.c.cropped ? 'on these days, from work blocks' : computers.length === 1 ? 'from 1 computer' : `from ${computers.length} computers`}</div></div>
 			<div class="stat"><div class="label">Not checkable</div><div class="value">${dur(b.unchecked_seconds)}</div><div class="hint">earlier history from first syncs</div></div>
 			<div class="stat"><div class="label">Flagged reports</div><div class="value${counts.flagged ? ' bad' : ''}">${counts.flagged}</div><div class="hint">${counts.flagged ? 'read these first' : 'nothing stood out'}</div></div>
 			<div class="stat"><div class="label">Refused reports</div><div class="value">${counts.refused}</div><div class="hint">of ${counts.entries} log entries</div></div>
 		</div>
-		${b.impossible_days.length ? `<div class="panel attention"><h2>Days that don't add up</h2><ul>${b.impossible_days.map((d) => `<li>${esc(d)}</li>`).join('')}</ul></div>` : ''}
+		${days.length ? `<div class="panel attention"><h2>Days that don't add up <small>${num(days.length)}</small></h2><ul>${days.slice(0, 5).map((d) => `<li>${esc(d)}</li>`).join('')}</ul>${days.length > 5 ? `<details><summary>${plural(days.length - 5, 'more day')}</summary><ul>${days.slice(5).map((d) => `<li>${esc(d)}</li>`).join('')}</ul></details>` : ''}</div>` : ''}
 		${projectsSection(b)}
 		<h2 class="section">Account and log</h2>
 		<div class="panels">
@@ -724,7 +922,7 @@ function fullView(b) {
 			</div>
 			<div class="panel">
 				<h2>Computers</h2>
-				<div class="table-scroll"><table class="data">
+				<div class="table-scroll"><table class="data stack">
 					<tr><th>Computer</th><th>Engaged</th><th>Version</th><th>Last sync</th><th></th></tr>
 					${computers.map((c) => `<tr${c.id === open.computer ? ' class="sel"' : ''}><td><code>${esc(c.id)}</code></td><td>${dur(c.engaged_seconds)}</td>
 						<td>${esc(c.teardrop_version || 'unknown')}</td><td title="${esc(exact(c.synced_at))}">${esc(ago(c.synced_at))}</td>
@@ -753,7 +951,8 @@ function fullView(b) {
 
 // person draws #/person/<who>, or with /p/<n> one of their projects alone.
 async function person(arg) {
-	const [whoArg, project] = arg.split('/p/')
+	const [path, query = ''] = arg.split('?')
+	const [whoArg, project] = path.split('/p/')
 	const who = whoArg.startsWith('id:') ? `id=${encodeURIComponent(whoArg.slice(3))}` : `slack=${encodeURIComponent(whoArg)}`
 	if (open.who !== who) open = { who, show: '', computer: '' }
 	open.base = '#/person/' + encodeURIComponent(whoArg).replace('%3A', ':')
@@ -761,10 +960,11 @@ async function person(arg) {
 	try {
 		body = await api(personPath())
 	} catch (e) {
-		return head('No one found', LOOKUP) + notice('No one found', e.message)
+		return head('No one found', lookup()) + notice('No one found', e.message)
 	}
 	const one = project != null && body.activity?.[Number(project)]
-	if (one) return projectPage(personName(body.person), open.base, one)
+	if (one) return projectPage(personName(body.person), open.base, one, `${open.base}/p/${project}`, query)
+	open.crop = readCrop(query, 'date')
 	return body.limited ? summaryView(body) : body.signed_in ? fullView(body) : unknownView(body)
 }
 
@@ -779,8 +979,8 @@ async function team() {
 	</div>`
 	const list = (level, none) => t.reviewers.filter((r) => r.level === level).map(row).join('') || `<div class="item"><div class="grow muted">${none}</div></div>`
 	const ACTIONS = { add: 'added', change: 'changed', remove: 'removed', ban: 'banned', unban: 'lifted the ban on', permanent: 'made permanent the ban on' }
-	return head('Reviewers', LOOKUP) + `<div class="panel">
-		<p class="muted">To add someone, change their level, or remove them, open their account: look up their Slack ID above, or choose them below. In Slack: open their profile, choose ⋮, then Copy member ID. They don't need to have signed in before.</p>
+	return head('Reviewers', lookup()) + `<div class="panel">
+		<p class="muted">To add someone, change their level, or remove them, open their account: look them up above, or choose them below. In Slack: open their profile, choose ⋮, then Copy member ID. They don't need to have signed in before.</p>
 		<h2>Superadmins ${badge(0)}</h2>
 		<p class="muted">They can ${CAN[0]}. They are the Slack IDs in the Worker's <code>ADMINS</code> variable, which is changed in the Cloudflare dashboard and not here.</p>
 		<div class="list">${t.superadmins.map((s) => `<div class="item"><div class="grow">${named(s.name, s.slack_id)}${s.name == null ? '<div class="sub">Has not signed in yet.</div>' : ''}</div></div>`).join('') || '<div class="item"><div class="grow muted">None. ADMINS is empty.</div></div>'}</div>
@@ -793,7 +993,7 @@ async function team() {
 	</div>
 	<div class="panel">
 		<h2>Changes</h2>
-		${t.log.length ? `<div class="table-scroll"><table class="data left">
+		${t.log.length ? `<div class="table-scroll"><table class="data left stack">
 			<tr><th>Who</th><th>Did what</th><th>When</th></tr>
 			${t.log.map((l) => `<tr><td>${named(l.by_name, l.by_slack_id)}</td><td>${ACTIONS[l.action] ?? esc(l.action)} ${named(l.name, l.slack_id)}${l.detail ? ` <span class="muted">${esc(l.detail)}</span>` : ''}</td><td title="${esc(exact(l.at))}">${esc(ago(l.at))}</td></tr>`).join('')}
 		</table></div>` : '<p class="muted">Nothing yet. Each reviewer added or removed, and each ban, is listed here.</p>'}
@@ -806,13 +1006,14 @@ async function banList() {
 	const { bans } = await api('/bans')
 	const now = bans.filter((b) => b.active)
 	const past = bans.filter((b) => !b.active)
-	return head('Bans', LOOKUP) + `<div class="panel">
-		<p class="muted">Every ban lasts until someone lifts it. While banned, nothing new is taken from the person: no syncs, uploads, cloud events, or submissions. They see that they are banned, but not the reason, which is for reviewers only. A banned reviewer can't review. To ban someone or lift a ban, open their account: look up their Slack ID above, or choose them below. You can ban only people below your own level.</p>
+	return head('Bans', lookup()) + `<div class="panel">
+		<p class="muted">Every ban lasts until someone lifts it. While banned, nothing new is taken from the person: no syncs, uploads, cloud events, or submissions. They see that they are banned, but not the reason, which is for reviewers only. A banned reviewer can't review. To ban someone or lift a ban, open their account: look them up above, or choose them below. You can ban only people below your own level.</p>
 	</div>
 	<div class="panel">
 		<h2>In force</h2>
-		<div class="list">${now.map((b) => banRow(b, true)).join('') || '<div class="item"><div class="grow muted">No one is banned.</div></div>'}</div>
-		${past.length ? `<h2>Over</h2><div class="list">${past.map((b) => banRow(b, true)).join('')}</div>` : ''}
+		<div class="list">${now.slice(0, 5).map((b) => banRow(b, true)).join('') || '<div class="item"><div class="grow muted">No one is banned.</div></div>'}</div>
+		${now.length > 5 ? `<details class="more"><summary>${plural(now.length - 5, 'more ban')} in force</summary><div class="list">${now.slice(5).map((b) => banRow(b, true)).join('')}</div></details>` : ''}
+		${past.length ? `<details class="more"><summary>Over <small>${num(past.length)}</small></summary><div class="list">${past.map((b) => banRow(b, true)).join('')}</div></details>` : ''}
 	</div>`
 }
 
@@ -829,21 +1030,39 @@ async function submissionList() {
 		<td>${x.imported ? 'imported' : esc(x.state)}</td></tr>`)
 	return head('Submissions') + `<div class="panel">
 		<p class="muted">A submission is made on the site from the records it already holds. Only time whose records reached the site within 5 minutes of when they happened is credited, less what earlier submissions of the project covered. A neoadmin can accept unwitnessed time by hand, with a note.</p>
-		<div class="table-scroll"><table class="data left">
+		<div class="table-scroll"><table class="data left stack">
 			<tr><th>Project</th><th>Person</th><th>Received</th><th>Witnessed</th><th>Unwitnessed</th><th>Credited</th><th>State</th></tr>
 			${rows.join('') || '<tr><td colspan="7" class="muted">No submissions yet.</td></tr>'}
 		</table></div>
 	</div>`
 }
 
-async function submissionPage(id) {
+async function submissionPage(arg) {
+	const [id, query = ''] = arg.split('?')
 	const d = await api('/submissions/' + encodeURIComponent(id))
 	const s = d.submission
-	const recs = d.records
-	const t0 = recs[0]?.t ?? s.received_at, t1 = Math.max(recs.at(-1)?.t ?? t0, t0 + 1)
+	const all = d.records
+	const spans = [...d.witnessed, ...d.unwitnessed]
+	// A crop, to the minute, narrows the timeline and the records to its stretch.
+	const c = readCrop(query, 'datetime-local')
+	const moments = [...all.map((r) => r.t), ...spans.flat()]
+	const lowest = moments.length ? Math.min(...moments) : s.received_at, highest = moments.length ? Math.max(...moments) : s.received_at
+	const clip = (list) => list.map(([a, b]) => [Math.max(a, c.lo), Math.min(b, c.hi)]).filter(([a, b]) => b > a)
+	const witnessed = clip(d.witnessed), unwitnessed = clip(d.unwitnessed)
+	const recs = all.filter((r) => r.t >= c.lo && r.t < c.hi)
+	// Uncropped, the bar spans the counted time, so a lone record hours away,
+	// such as an old commit, doesn't squeeze the rest into a sliver. It is noted instead.
+	const t0 = c.cropped ? Math.max(c.lo, lowest) : spans.length ? Math.min(...spans.map(([a]) => a)) : recs[0]?.t ?? s.received_at
+	const t1 = Math.max(c.cropped ? Math.min(c.hi, highest) : spans.length ? Math.max(...spans.map(([, b]) => b)) : recs.at(-1)?.t ?? t0, t0 + 1)
+	const outside = c.cropped ? 0 : recs.filter((r) => r.t < t0 || r.t > t1).length
+	const secs = (list) => list.reduce((n, [a, b]) => n + (b - a) / 1000, 0)
+	const note = c.cropped
+		? `${plural(recs.length, 'record')} of ${num(all.length)}: ${dur(secs(witnessed))} witnessed, ${dur(secs(unwitnessed))} unwitnessed`
+		: 'The whole submission. Drag across the timeline to crop it.'
+	const crop = moments.length ? cropBar(`#/submission/${encodeURIComponent(id)}`, c, localMinute(lowest), localMinute(highest), note, '', 'Whole submission') : ''
 	const x = (t) => (((t - t0) / (t1 - t0)) * 100).toFixed(3)
 	const bars = (list, cls) => list.map(([a, b]) => `<span class="sub-span ${cls}" style="left:${x(a)}%;width:${Math.max(0.2, x(b) - x(a))}%"></span>`).join('')
-	const marks = recs.map((r) => `<span class="sub-mark${r.human ? ' human' : ''}${r.late_ms > 300000 ? ' late' : ''}" style="left:${x(r.t)}%" title="${esc(exact(r.t))} ${esc(r.tool)} ${esc(r.event)}"></span>`).join('')
+	const marks = recs.filter((r) => r.t >= t0 && r.t <= t1).map((r) => `<span class="sub-mark${r.human ? ' human' : ''}${r.late_ms > 300000 ? ' late' : ''}" style="left:${x(r.t)}%" title="${esc(exact(r.t))} ${esc(r.tool)} ${esc(r.event)}"></span>`).join('')
 	const late = (ms) => (ms <= 300000 ? `${Math.max(0, Math.round(ms / 1000))}s` : `<b>${dur(Math.round(ms / 1000))}</b>`)
 	const repoURL = me.level < 2 && /^github\.com\//.test(s.project_key ?? '') ? 'https://' + s.project_key : ''
 	const event = (r) => (r.sha ? `commit ${repoURL ? `<a href="${esc(repoURL)}/commit/${esc(r.sha)}" rel="nofollow noopener">` : ''}<code>${esc(r.sha.slice(0, 7))}</code>${repoURL ? '</a>' : ''}` : esc(r.event))
@@ -866,21 +1085,22 @@ async function submissionPage(id) {
 	${flags ? `<div class="panel"><h2>Look at first</h2><ul>${flags}</ul></div>` : ''}
 	<div class="panel">
 		<h2>Timeline</h2>
-		<div class="sub-line">${bars(d.unwitnessed, 'unwitnessed')}${bars(d.witnessed, 'witnessed')}${marks}</div>
-		<p class="muted fine">${esc(exact(t0))} to ${esc(exact(t1))}. Green is witnessed time, amber unwitnessed. Tall marks are prompts; red marks reached the site more than 5 minutes late.</p>
+		${crop}
+		<div class="sub-line" data-t0="${t0}" data-t1="${t1}" title="Drag across to crop to that stretch">${bars(unwitnessed, 'unwitnessed')}${bars(witnessed, 'witnessed')}${marks}</div>
+		<p class="muted fine">${esc(exact(t0))} to ${esc(exact(t1))}. Green is witnessed time, amber unwitnessed. Tall marks are prompts; red marks reached the site more than 5 minutes late.${outside ? ` ${plural(outside, 'record')} outside this stretch ${outside === 1 ? 'is' : 'are'} listed below but not drawn.` : ''}</p>
 	</div>
 	${me.level < 2 && s.unwitnessed_seconds > 0 ? `<div class="panel" data-area>
 		<h2>Accept unwitnessed time</h2>
-		<form class="row-form" data-form="accept" data-id="${esc(s.id)}">
-			<input name="seconds" type="number" min="0" max="${s.unwitnessed_seconds}" value="${s.accepted_seconds || s.unwitnessed_seconds}" aria-label="Seconds to accept" required>
-			<input name="note" placeholder="Why, such as matching commits" required>
+		<form class="rv-form" data-form="accept" data-id="${esc(s.id)}">
+			<label>Seconds to accept, at most ${num(s.unwitnessed_seconds)} (${dur(s.unwitnessed_seconds)})<input name="seconds" type="number" min="0" max="${s.unwitnessed_seconds}" value="${s.accepted_seconds || s.unwitnessed_seconds}" required></label>
+			<label class="grow">Why<input name="note" placeholder="Such as matching commits" required></label>
 			<button class="btn">Accept</button>
 		</form>
 		<p class="msg" hidden></p>
 	</div>` : ''}
 	<div class="panel">
-		<h2>Every record</h2>
-		<div class="table-scroll"><table class="data left">
+		<h2>Every record${c.cropped ? ` <small>${plural(recs.length, 'record')} in the crop, of ${num(all.length)}</small>` : ''}</h2>
+		<div class="table-scroll tall"><table class="data left stack">
 			<tr><th>When</th><th>Arrived after</th><th>Tool</th><th>Event</th><th>Computer</th><th>Prompt</th><th>Tokens in / out</th><th>Lines</th></tr>
 			${rows.join('')}
 		</table></div>
@@ -960,6 +1180,7 @@ async function route() {
 	document.body.dataset.page = page
 	clearCharts()
 	view.innerHTML = html
+	labelCells(view)
 	afterDraw?.()
 	if (findWanted && page === 'home') {
 		findWanted = false
@@ -986,10 +1207,14 @@ view.addEventListener('submit', (e) => {
 	e.preventDefault()
 	const fields = Object.fromEntries(new FormData(form))
 	const kind = form.dataset.form
-	if (kind === 'lookup') location.hash = '#/person/' + encodeURIComponent(asSlackID(fields.slack))
-	// Home's box opens the person marked in its list, or for a reviewer the Slack ID typed.
+	if (kind === 'crop') return cropTo(form, fields.from, fields.to)
+	// A search box opens the person marked in its list, or the first one left
+	// in People's table. A reviewer, or anyone before the list has loaded,
+	// opens the Slack ID typed.
 	if (kind === 'find') {
-		const to = me.level === 2 ? '#/person/' + encodeURIComponent(asSlackID(fields.q)) : form.querySelector('[aria-selected="true"]')?.getAttribute('href')
+		const id = asSlackID(fields.q)
+		const picked = me.level < 2 && (form.querySelector('[aria-selected="true"]') ?? view.querySelector('table.people tr[data-id] a'))
+		const to = picked ? picked.getAttribute('href') : me.level === 2 || SLACK_ID.test(id) ? '#/person/' + encodeURIComponent(id) : ''
 		if (to) location.hash = to
 	}
 	if (kind === 'add') act(form, () => send('POST', '/team', fields))
@@ -1023,6 +1248,29 @@ view.addEventListener('click', async (e) => {
 		} catch {}
 		return
 	}
+	// A project's crop: move it, size it, take the chart's view, or drop it.
+	if ('crop' in d) {
+		const form = btn.form, f = form.dataset
+		const from = form.elements.from.value || f.first, to = form.elements.to.value || f.last
+		if (f.kind !== 'date') {
+			const a = new Date(from).getTime(), b = new Date(to).getTime(), len = b - a + 60_000
+			if (d.crop === 'all') cropTo(form, '', '')
+			else cropTo(form, localMinute(a + (d.crop === 'earlier' ? -len : len)), localMinute(b + (d.crop === 'earlier' ? -len : len)))
+			return
+		}
+		const len = Math.round((dayAt(to) - dayAt(from)) / DAY_MS) + 1
+		const shift = (k) => cropTo(form, localDay(dayAt(from, k)), localDay(dayAt(to, k)))
+		if (d.crop === 'earlier') shift(-len)
+		else if (d.crop === 'later') shift(len)
+		else if (d.crop === 'all') cropTo(form, '', '')
+		else if (d.crop === 'view') {
+			if (!drawn?.s.times.length) return
+			const { times } = drawn.s, r = drawn.chart.timeScale().getVisibleLogicalRange()
+			const at = (i) => new Date(times[Math.min(times.length - 1, Math.max(0, i))] * 1000).toISOString().slice(0, 10)
+			cropTo(form, at(Math.ceil(r.from)), at(Math.floor(r.to)))
+		} else cropTo(form, localDay(dayAt(to, 1 - Number(d.crop))), to)
+		return
+	}
 	// A person's log: which entries, which computer, and older ones.
 	if ('show' in d) {
 		open.show = d.show
@@ -1045,16 +1293,76 @@ view.addEventListener('click', async (e) => {
 	}
 })
 
-// Home's search box: typing lists people, the arrow keys move through them, and Escape puts the list away.
+// cropTo shows the open project over the days from and to, either of which
+// may be empty, in place: the page keeps its scroll, and Back skips it.
+let keepScroll = false
+function cropTo(form, from, to) {
+	const q = new URLSearchParams()
+	if (from) q.set('from', from)
+	if (to) q.set('to', to)
+	keepScroll = true
+	location.replace(form.dataset.here + (q.size ? '?' + q : ''))
+}
+view.addEventListener('pointerdown', (e) => {
+	const line = e.target.closest('.sub-line')
+	const form = document.querySelector('[data-form="crop"]')
+	if (!line || !form || e.button) return
+	const box = line.getBoundingClientRect()
+	const at = (x) => Math.min(1, Math.max(0, (x - box.left) / box.width))
+	const start = at(e.clientX)
+	const sel = document.createElement('span')
+	sel.className = 'sub-sel'
+	line.append(sel)
+	line.setPointerCapture(e.pointerId)
+	const show = (x) => {
+		const a = Math.min(start, at(x)), b = Math.max(start, at(x))
+		sel.style.left = `${a * 100}%`
+		sel.style.width = `${(b - a) * 100}%`
+		return [a, b]
+	}
+	show(e.clientX)
+	const move = (m) => show(m.clientX)
+	line.addEventListener('pointermove', move)
+	line.addEventListener('pointerup', (u) => {
+		line.removeEventListener('pointermove', move)
+		const [a, b] = show(u.clientX)
+		sel.remove()
+		// A click, not a drag, crops nothing.
+		if ((b - a) * box.width < 4) return
+		const t0 = Number(line.dataset.t0), t1 = Number(line.dataset.t1)
+		cropTo(form, localMinute(t0 + a * (t1 - t0)), localMinute(t0 + b * (t1 - t0)))
+	}, { once: true })
+})
+view.addEventListener('change', (e) => {
+	const form = e.target.closest('[data-form="crop"]')
+	if (form) cropTo(form, form.elements.from.value, form.elements.to.value)
+	// On a phone, the series the chart's one lower pane shows.
+	if ('pane' in e.target.dataset) {
+		lone = e.target.value
+		redraw()
+	}
+	// People's table: only those who have synced, and its order.
+	const narrowing = e.target.dataset.people
+	if (narrowing) {
+		listing[narrowing] = e.target.type === 'checkbox' ? e.target.checked : e.target.value
+		drawPeople()
+	}
+})
+
+// A search box: typing lists people, the arrow keys move through them, and Escape puts the list away.
 view.addEventListener('input', (e) => {
-	if (e.target.id === 'find' && me.level < 2) showFound(e.target)
+	const form = e.target.closest?.('[data-form="find"]')
+	if (form) find(form)
 })
 view.addEventListener('keydown', (e) => {
-	if (e.target.id !== 'find') return
-	const options = [...document.querySelectorAll('#found a')]
+	const form = e.target.closest?.('[data-form="find"]')
+	const box = form?.querySelector('.rv-found')
+	if (!box) return
+	const options = [...box.querySelectorAll('a')]
 	if (e.key === 'Escape') {
 		e.target.value = ''
-		$('found').hidden = true
+		box.hidden = true
+		find(form)
 	}
 	if ((e.key !== 'ArrowDown' && e.key !== 'ArrowUp') || !options.length) return
 	e.preventDefault()
@@ -1110,7 +1418,7 @@ async function start() {
 	for (const el of document.querySelectorAll('.rv-nav [data-min]')) el.hidden = me.level > Number(el.dataset.min)
 	for (const el of document.querySelectorAll('[data-keys]')) el.textContent = KEYS
 	// A new address is a new page, so it opens at its top.
-	addEventListener('hashchange', () => route().then(() => scrollTo(0, 0)))
+	addEventListener('hashchange', () => route().then(() => (keepScroll ? (keepScroll = false) : scrollTo(0, 0))))
 	route()
 }
 start()

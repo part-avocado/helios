@@ -22,6 +22,14 @@ main p a { text-decoration: underline; text-underline-offset: 3px; }
 .install .note { padding: 10px 16px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
 .under { margin-top: 16px; font-size: 15px; color: var(--muted); }
 .term { margin: 0; padding: 20px 22px; border: 1px solid var(--line); border-radius: 12px; background: var(--term-bg); color: var(--term-text); font: 12.5px/1.75 var(--mono); overflow-x: auto; white-space: pre; }
+/* On a narrow screen the report scrolls sideways. An edge it runs past is
+   shaded, and the shade lifts once that end is scrolled into view. */
+.term { --more: color-mix(in srgb, var(--term-text) 26%, transparent); background:
+	linear-gradient(to right, var(--term-bg) 40%, transparent) left / 40px 100% no-repeat local,
+	linear-gradient(to left, var(--term-bg) 40%, transparent) right / 40px 100% no-repeat local,
+	linear-gradient(to right, var(--more), transparent) left / 16px 100% no-repeat scroll,
+	linear-gradient(to left, var(--more), transparent) right / 16px 100% no-repeat scroll,
+	var(--term-bg); }
 .term .d { color: var(--term-dim); }
 .term .h { color: var(--term-head); }
 .term .g { color: var(--term-good); }
