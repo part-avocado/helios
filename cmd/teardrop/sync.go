@@ -160,10 +160,14 @@ func runSync(args []string) {
 		return os.WriteFile(filepath.Join(dataDir(), "last-sync"), nil, 0o600)
 	}
 	if *background {
-		check(syncQueued(dataDir(), once))
+		err := syncQueued(dataDir(), once)
+		keepError("sync", err)
+		check(err)
 		return
 	}
-	check(once())
+	err = once()
+	keepError("sync", err)
+	check(err)
 	if *quiet {
 		return
 	}
@@ -173,8 +177,8 @@ func runSync(args []string) {
 		fmt.Printf("The site refused %s dated more than 5 minutes ahead of its clock.\n", plural(future, "record"))
 	}
 	// A site from before whoami answers 404; then there is nothing to compare.
-	if skew, err := siteClockOffset(&http.Client{Timeout: 10 * time.Second}, srv, k); err == nil {
-		if w := clockWarning(skew); w != "" {
+	if who, _, err := whoami(&http.Client{Timeout: 10 * time.Second}, srv, k); err == nil {
+		if w := clockWarning(who.Skew); w != "" {
 			fmt.Println(w)
 		}
 	}

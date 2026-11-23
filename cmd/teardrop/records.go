@@ -142,20 +142,30 @@ func sendRecords(client *http.Client, server, key string, lines []byte, header h
 	return stored, future, err
 }
 
-// siteClockOffset asks the site for its time and returns how far this computer's
-// clock is ahead of it; behind is negative.
-func siteClockOffset(client *http.Client, server, key string) (time.Duration, error) {
-	var who struct {
-		Time time.Time `json:"time"`
-	}
+// account is who a sync key belongs to, as the site's whoami answers.
+type account struct {
+	Name   string    `json:"name"`
+	Handle string    `json:"handle"`
+	Time   time.Time `json:"time"` // the site's clock
+	// Skew is how far this computer's clock is ahead of the site's; behind is negative.
+	Skew time.Duration `json:"-"`
+}
+
+// whoami asks the site whose key this is, and its time. It returns the HTTP
+// status too: 401 for a key the site doesn't know, 403 for a ban, and 404
+// from a site older than whoami.
+func whoami(client *http.Client, server, key string) (account, int, error) {
+	var who account
 	start := time.Now()
-	if _, err := relayRequest(client, "GET", server+"/api/v1/whoami", key, nil, &who); err != nil {
-		return 0, err
+	status, err := relayRequest(client, "GET", server+"/api/v1/whoami", key, nil, &who)
+	if err != nil {
+		return who, status, err
 	}
 	if who.Time.IsZero() {
-		return 0, fmt.Errorf("the site did not say its time")
+		return who, status, fmt.Errorf("the site did not say its time")
 	}
-	return start.Add(time.Since(start) / 2).Sub(who.Time), nil
+	who.Skew = start.Add(time.Since(start) / 2).Sub(who.Time)
+	return who, status, nil
 }
 
 // clockWarning says what a clock skew does to the person's time, or is ""

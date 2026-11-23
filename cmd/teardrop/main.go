@@ -10,6 +10,8 @@
 //	teardrop export   write a signed report to upload on the website
 //	teardrop sync     send your records to your account on the website
 //	teardrop submit <project>   submit a project's hours, from the records the site holds
+//	teardrop status   show whether this computer is set up and sending
+//	teardrop doctor   check the setup and say how to fix what is wrong
 //	teardrop update   replace this teardrop with the latest release
 //	teardrop hook claude-code   record one Claude Code hook event (run by Claude Code)
 //	teardrop relay    send events recorded in Amp's cloud to your teardrop site, and count them there (run by the Amp cloud plugin)
@@ -46,6 +48,8 @@ const usage = `Usage: teardrop [flags]        show your AI coding timeline (-l k
        teardrop export          write a signed report to upload on the website, under Settings
        teardrop sync            upload your signed counts (time, prompts, tokens, lines; no text) to your account on the website
        teardrop submit <project>  submit a project's hours for review; the site uses the records it already has, nothing is uploaded
+       teardrop status          show whether this computer is set up and sending
+       teardrop doctor          check everything that decides whether your time counts, and say how to fix it
        teardrop update          download the latest teardrop and replace this one with it
 
 `
@@ -82,6 +86,12 @@ func main() {
 			return
 		case "submit":
 			runSubmit(os.Args[2:])
+			return
+		case "doctor":
+			runDoctor(os.Args[2:])
+			return
+		case "status":
+			runStatus(os.Args[2:])
 			return
 		case "export-records":
 			runExportRecords(os.Args[2:])
@@ -142,9 +152,12 @@ func main() {
 	}
 	if len(rep.Blocks) == 0 {
 		printEmpty(os.Stdout, *since, len(raws) > 0)
-		return
+	} else {
+		printReport(os.Stdout, rep, len(sessions))
 	}
-	printReport(os.Stdout, rep, len(sessions))
+	if e, ok := readLastError(); ok {
+		fmt.Printf("\nThe last background %s failed %s. Run `teardrop doctor` to see why.\n", e.Command, ago(e.Time))
+	}
 }
 
 func printEmpty(out io.Writer, since string, anyLogs bool) {

@@ -9,6 +9,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
@@ -50,6 +51,10 @@ func TestE2E(t *testing.T) {
 		mu.Unlock()
 		if r.Header.Get("Authorization") != "Bearer tdk_e2e" {
 			http.Error(w, "bad key", http.StatusUnauthorized)
+			return
+		}
+		if r.URL.Path == "/api/v1/whoami" {
+			fmt.Fprintf(w, `{"name":"Ada","handle":"ada","time":%q}`, time.Now().Format(time.RFC3339Nano))
 			return
 		}
 		if r.URL.Path != "/api/v1/events" {
@@ -151,7 +156,22 @@ func TestE2E(t *testing.T) {
 		t.Errorf("sync printed %q", out)
 	}
 
+	// doctor passes on this computer, and fails once the hooks are gone.
+	doctor := func() (string, int) {
+		cmd := exec.Command(exe, "doctor")
+		// No PATH, so an Amp CLI on the machine running the test is not found.
+		cmd.Env, cmd.Dir = append(env, "PATH="), project
+		out, _ := cmd.CombinedOutput()
+		return string(out), cmd.ProcessState.ExitCode()
+	}
+	if out, code := doctor(); code != 0 || !strings.Contains(out, "Claude Code hooks: installed") {
+		t.Errorf("doctor exited %d after setup:\n%s", code, out)
+	}
+
 	run("", "setup", "-yes", "-remove-hooks", "claude")
+	if out, code := doctor(); code != 1 || !strings.Contains(out, "Claude Code hooks: not installed") {
+		t.Errorf("doctor exited %d after the hooks were removed:\n%s", code, out)
+	}
 	settings, _ = os.ReadFile(filepath.Join(claude, "settings.json"))
 	if strings.Contains(string(settings), "hook claude-code") {
 		t.Errorf("setup -remove-hooks left teardrop's hooks:\n%s", settings)

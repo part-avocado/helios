@@ -223,6 +223,8 @@
 		<tr><td><code>teardrop</code></td><td>Print your timeline and project totals.</td></tr>
 		<tr><td><code>teardrop setup</code></td><td>Check tools, keep history, install hooks and the Amp plugin.</td></tr>
 		<tr><td><code>teardrop setup amp</code></td><td>The same for one tool: <code>claude</code>, <code>codex</code>, or <code>amp</code>.</td></tr>
+		<tr><td><code>teardrop status</code></td><td>Show the account this computer syncs to, whether each tool's hooks are installed, what is waiting to send, and when it last synced.</td></tr>
+		<tr><td><code>teardrop doctor</code></td><td>Check everything that decides whether your time counts (this binary, the site and key, the clock, each tool's hooks, records waiting to send, the last background error, and updates) and say how to fix each problem. Exits 1 when something needs fixing. It never prints your key.</td></tr>
 		<tr><td><code>teardrop update</code></td><td>Download the latest teardrop, check it against the release's checksums, replace this one with it, and run setup again. <code>-check</code> only says whether a newer version is out; <code>teardrop update v0.5.0</code> installs that version, even if it is older.</td></tr>
 		<tr><td><code>teardrop dashboard</code></td><td>Open the live dashboard on localhost.</td></tr>
 		<tr><td><code>teardrop calibrate</code></td><td>Show how the time model's caps treat your logs (<code>-since 30d</code>). Uploads nothing.</td></tr>
@@ -344,6 +346,7 @@ npm run dev</code></pre>
 	<p>To see exactly what leaves your computer, run <code>teardrop sync -dry-run</code>, which prints the records the next sync would send and sends nothing, or pipe a hook payload into <code>teardrop hook -check &lt;tool&gt;</code>.</p>
 
 	<h2 id="troubleshooting">Troubleshooting</h2>
+	<p>Start with <code>teardrop doctor</code>. It checks the usual causes below and prints what to run for each one it finds.</p>
 	<h3>“No Claude Code or Codex sessions found”</h3>
 	<p>Run <code>teardrop setup</code> to see where teardrop looked. If your logs live elsewhere, such as inside WSL on Windows, pass <code>-claude-dir</code> or <code>-codex-dir</code>. Try <code>-since 30d</code> if your last session was more than a week ago.</p>
 	<h3>“teardrop: command not found”</h3>

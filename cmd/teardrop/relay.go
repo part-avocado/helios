@@ -131,6 +131,7 @@ func runRelay(args []string) {
 		}
 		return true, countCloud(client, server, key, time.Now())
 	}()
+	keepError("relay", err)
 	if *verbose {
 		check(err)
 		fmt.Println("Sent.")
