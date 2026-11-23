@@ -112,7 +112,7 @@ func TestE2E(t *testing.T) {
 		"XDG_CONFIG_HOME="+filepath.Join(home, ".config"),
 		"TEARDROP_DATA_DIR="+filepath.Join(root, "data"),
 		"CLAUDE_CONFIG_DIR="+claude, "CODEX_HOME="+filepath.Join(home, ".codex"),
-		"TEARDROP_SERVER=", "TEARDROP_KEY=",
+		"TEARDROP_SERVER=", "TEARDROP_KEY=", "ZDOTDIR=",
 	)
 	run := func(stdin string, args ...string) string {
 		t.Helper()
@@ -247,5 +247,26 @@ func TestE2E(t *testing.T) {
 		if bytes.Contains(b, []byte("marmalade")) {
 			t.Errorf("a request to the site held the prompt text: %.200s", b)
 		}
+	}
+
+	// uninstall takes out the hooks and the installer's PATH line, leaving
+	// the rest of the profile byte for byte, then the data and the binary.
+	run("", "setup", "-yes", "claude")
+	zshrc := filepath.Join(home, ".zshrc")
+	mine := "alias g=git\n"
+	os.WriteFile(zshrc, []byte(mine+installerMark+`export PATH="`+filepath.Dir(exe)+`:$PATH"`+"\n"), 0o644)
+	out := run("", "uninstall", "-yes")
+	if b, _ := os.ReadFile(zshrc); string(b) != mine {
+		t.Errorf("uninstall left .zshrc as %q", b)
+	}
+	if settings, _ = os.ReadFile(filepath.Join(claude, "settings.json")); strings.Contains(string(settings), "hook claude-code") {
+		t.Errorf("uninstall left teardrop's hooks:\n%s", settings)
+	}
+	if _, err := os.Stat(filepath.Join(root, "data")); !os.IsNotExist(err) {
+		t.Errorf("uninstall -yes kept the data folder:\n%s", out)
+	}
+	// Windows can't delete a running program, so there it says to.
+	if _, err := os.Stat(exe); (err == nil) != (runtime.GOOS == "windows") {
+		t.Errorf("after uninstall, the binary exists: %v\n%s", err == nil, out)
 	}
 }

@@ -104,6 +104,24 @@ jobs:
             echo "install.sh accepted a wrong checksum"; exit 1
           fi
           test ! -e "$RUNNER_TEMP/bad/teardrop"
+      - name: uninstall undoes install.sh and setup
+        if: runner.os != 'Windows'
+        env:
+          TEARDROP_NO_MODIFY_PATH: ""
+        run: |
+          export HOME="$RUNNER_TEMP/home" SHELL=/bin/bash
+          mkdir -p "$HOME/.claude"
+          printf 'alias g=git\n' > "$HOME/.bashrc"
+          printf 'alias g=git\n' > "$HOME/.bash_profile"
+          TEARDROP_BASE_URL=http://127.0.0.1:8765/dist TEARDROP_INSTALL_DIR="$RUNNER_TEMP/un" sh install.sh
+          cat "$HOME/.bashrc" "$HOME/.bash_profile" | grep -F "$RUNNER_TEMP/un"
+          "$RUNNER_TEMP/un/teardrop" setup -yes claude
+          grep -F "hook claude-code" "$HOME/.claude/settings.json"
+          "$RUNNER_TEMP/un/teardrop" uninstall -yes
+          printf 'alias g=git\n' | cmp - "$HOME/.bashrc"
+          printf 'alias g=git\n' | cmp - "$HOME/.bash_profile"
+          if grep -F "hook claude-code" "$HOME/.claude/settings.json"; then exit 1; fi
+          test ! -e "$RUNNER_TEMP/un/teardrop"
       - name: install.ps1 installs the release
         if: runner.os == 'Windows'
         shell: pwsh
@@ -121,6 +139,21 @@ jobs:
           $env:TEARDROP_INSTALL_DIR = "$env:RUNNER_TEMP\bad"
           Invoke-Expression (Get-Content -Raw ./install.ps1)
           if (Test-Path "$env:RUNNER_TEMP\bad\teardrop.exe") { throw 'install.ps1 installed a download with a wrong checksum' }
+      - name: uninstall takes the install folder out of the user Path
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:TEARDROP_BASE_URL = 'http://127.0.0.1:8765/dist'
+          $env:TEARDROP_NO_MODIFY_PATH = ''
+          $dir = "$env:RUNNER_TEMP\un"
+          $env:TEARDROP_INSTALL_DIR = $dir
+          Invoke-Expression (Get-Content -Raw ./install.ps1)
+          $inPath = { @([Environment]::GetEnvironmentVariable('Path', 'User') -split ';') -contains $dir }
+          if (-not (& $inPath)) { throw 'install.ps1 did not add the folder to the user Path' }
+          $out = & "$dir\teardrop.exe" uninstall -yes -keep-data | Out-String
+          Write-Host $out
+          if (& $inPath) { throw 'uninstall left the folder in the user Path' }
+          if ($out -notmatch 'once this window closes') { throw 'uninstall did not say to delete the running binary' }
       - name: Windows PowerShell 5.1 runs install.ps1 too
         if: runner.os == 'Windows'
         shell: powershell

@@ -167,15 +167,7 @@ func diagnose(claudeDir, codexDir string, client *http.Client, releases string) 
 
 	out = append(out, hookFindings(claudeDir, codexDir, exe)...)
 
-	waiting := 0
-	for _, pattern := range []string{"local-*.jsonl", "relay-*.jsonl"} {
-		files, _ := filepath.Glob(filepath.Join(dataDir(), pattern))
-		for _, f := range files {
-			b, _ := os.ReadFile(f)
-			waiting += strings.Count(string(b), "\n")
-		}
-	}
-	if waiting > 0 {
+	if waiting := waitingRecords(); waiting > 0 {
 		add(finding{"Waiting", levelNote, plural(waiting, "record") + " not sent yet", "Run `teardrop relay -verbose` to send them now and see any error."})
 	} else {
 		add(finding{"Waiting", levelOK, "nothing", ""})
@@ -197,6 +189,19 @@ func diagnose(claudeDir, codexDir string, client *http.Client, releases string) 
 		add(finding{"Last error", levelFix, fmt.Sprintf("%s failed %s: %s", e.Command, ago(e.Time), e.Message), "Run `" + again + "` to see whether it still fails."})
 	}
 	return out
+}
+
+// waitingRecords counts the records in the outboxes that have not been sent.
+func waitingRecords() int {
+	n := 0
+	for _, pattern := range []string{"local-*.jsonl", "relay-*.jsonl"} {
+		files, _ := filepath.Glob(filepath.Join(dataDir(), pattern))
+		for _, f := range files {
+			b, _ := os.ReadFile(f)
+			n += strings.Count(string(b), "\n")
+		}
+	}
+	return n
 }
 
 // hookFindings checks the hooks of each tool installed here.

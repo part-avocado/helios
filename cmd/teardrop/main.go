@@ -53,6 +53,7 @@ const usage = `Usage: teardrop [flags]        show your AI coding timeline (-l k
        teardrop status          show whether this computer is set up and sending
        teardrop doctor          check everything that decides whether your time counts, and say how to fix it
        teardrop update          download the latest teardrop and replace this one with it
+       teardrop uninstall       remove teardrop's hooks, plugin, and PATH line, then this binary
 
 `
 
@@ -91,6 +92,9 @@ func main() {
 			return
 		case "login":
 			runLogin(os.Args[2:])
+			return
+		case "uninstall":
+			runUninstall(os.Args[2:])
 			return
 		case "doctor":
 			runDoctor(os.Args[2:])

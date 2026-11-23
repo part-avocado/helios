@@ -240,6 +240,7 @@
 		<tr><td><code>teardrop sync</code></td><td>Send your records to your account (<code>-server URL -key KEY</code> once; both are remembered). <code>-dry-run</code> prints the records it would send, and sends nothing.</td></tr>
 		<tr><td><code>teardrop submit &lt;project&gt;</code></td><td>Submit a project's hours, made by the site from the records it holds. Nothing is uploaded.</td></tr>
 		<tr><td><code>teardrop export-records</code></td><td>Print the submission records of a retired review server (<code>-data</code>), for a superadmin to import.</td></tr>
+		<tr><td><code>teardrop uninstall</code></td><td>Remove teardrop's hooks, Amp plugin, and PATH line, ask about the journal folder, and delete the binary (<code>-yes</code>, <code>-keep-data</code>). See <a href="#uninstall">Uninstall</a>.</td></tr>
 		<tr><td><code>teardrop -version</code></td><td>Print the installed version.</td></tr>
 	</table>
 	<table>
@@ -368,7 +369,9 @@ npm run dev</code></pre>
 	<p>Compare ENGAGED with how long you think you worked, and please <a href="https://github.com/part-avocado/teardrop/issues">open an issue</a> with the numbers.</p>
 
 	<h2 id="uninstall">Uninstall</h2>
-	<p>Run <code>teardrop setup -remove-hooks</code> first. It removes the Claude Code hooks and the Amp plugin and leaves your other settings as they were. Then delete the <code>teardrop</code> binary and, if you want, the journal folder.</p>
+	<pre><code>teardrop uninstall</code></pre>
+	<p>It asks once, then removes teardrop's hooks from Claude Code, Codex, Cursor, and Copilot, its Amp plugin, and the line the installer added to your shell profile (on Windows, the folder it added to your Path), leaving your other settings and lines as they were. It asks whether to keep the journal folder, which holds this computer's account key and any records not sent yet, and deletes the binary last. Windows can't delete a running program, so there it tells you to delete <code>teardrop.exe</code> once the window closes. <code>-yes</code> answers every question, deleting the journal folder unless you add <code>-keep-data</code>.</p>
+	<p>Your account on the site keeps what it has; remove the computer under Settings, Computers. Claude Code's longer history setting and teardrop's <code>.teardrop-backup</code> copies of settings files stay. To remove only the hooks and keep teardrop, run <code>teardrop setup -remove-hooks</code>.</p>
 </article>
 <a class="to-top" href="#" hidden><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 10l5-5 5 5"/></svg>Top</a>
 </div>

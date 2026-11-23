@@ -47,7 +47,7 @@ func parseSetupArgs(fs *flag.FlagSet, args []string) (map[string]bool, error) {
 func runSetup(args []string) {
 	fs := flag.NewFlagSet("setup", flag.ExitOnError)
 	yes := fs.Bool("yes", false, "apply recommended changes without asking")
-	removeHooks := fs.Bool("remove-hooks", false, "remove teardrop's Claude Code hooks and Amp plugin (run this before uninstalling)")
+	removeHooks := fs.Bool("remove-hooks", false, "remove teardrop's hooks and Amp plugin, keeping teardrop installed (teardrop uninstall removes everything)")
 	claudeDir := fs.String("claude-dir", "", "Claude Code config directories, comma-separated")
 	codexDir := fs.String("codex-dir", "", "Codex home directories, comma-separated")
 	fs.Usage = func() {

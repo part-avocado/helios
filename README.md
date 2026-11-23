@@ -130,8 +130,10 @@ so their overlap counts once. Cloud days are split at midnight UTC.
 The Mac app's threads can instead run on your Mac: turn on the runner in the
 app's App Settings, Runner, and pick "This Mac" when you start a thread.
 
-Run `teardrop setup -remove-hooks` before uninstalling to remove both, or
-`teardrop setup -remove-hooks amp` to remove only the plugin.
+`teardrop uninstall` removes both, every other tool's hooks, and the PATH
+line the installer added, then deletes the binary. It asks before deleting
+the data folder (`-yes` deletes it, `-keep-data` keeps it).
+`teardrop setup -remove-hooks amp` removes only the plugin.
 
 ## Lines of code
 
