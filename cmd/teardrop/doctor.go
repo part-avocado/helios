@@ -128,7 +128,13 @@ func diagnose(claudeDir, codexDir string, client *http.Client, releases string) 
 		if latest, err := latestVersion(client, releases); err != nil {
 			add(finding{"Update", levelNote, err.Error(), ""})
 		} else if newer(latest, version) {
-			add(finding{"Update", levelNote, latest + " is out", "Run `teardrop update`."})
+			fix := "Run `teardrop update`."
+			if autoUpdateOn() {
+				fix = "Auto-update is on: the next background sync installs it, or run `teardrop update` now."
+			}
+			add(finding{"Update", levelNote, latest + " is out", fix})
+		} else if autoUpdateOn() {
+			add(finding{"Update", levelOK, "this is the latest release; auto-update is on", ""})
 		} else {
 			add(finding{"Update", levelOK, "this is the latest release", ""})
 		}

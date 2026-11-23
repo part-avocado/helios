@@ -25,7 +25,11 @@ release, checks its checksum, replaces the installed teardrop, and runs setup
 again. `teardrop update -check` only says whether a newer version is out, and
 `teardrop update v0.5.0` installs that version, even if it is older. Once a
 day a background sync checks for a newer release, and `teardrop` prints one
-line when there is one; nothing updates by itself. No admin
+line when there is one; nothing updates by itself unless you run
+`teardrop update -auto on`. Then that check installs each new release, once
+it matches the release's checksums and runs as that version, and keeps the
+one it replaced as `teardrop.old`; the checksums come from the same release
+as the binary, so this trusts GitHub and the release workflow. No admin
 rights are needed. It installs to `~/.local/bin`, or
 `%LOCALAPPDATA%\Programs\teardrop` on Windows.
 

@@ -34,8 +34,10 @@ var releaseVersion = regexp.MustCompile(`^v(\d+)\.(\d+)\.(\d+)$`)
 func runUpdate(args []string) {
 	fs := flag.NewFlagSet("update", flag.ExitOnError)
 	checkOnly := fs.Bool("check", false, "only say whether a newer version is out")
+	auto := fs.String("auto", "", "on: install each new release by itself, in the daily background check; off: only say one is out")
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage: teardrop update [-check] [version]")
+		fmt.Fprintln(os.Stderr, "       teardrop update -auto on|off")
 		fmt.Fprintln(os.Stderr, "       Downloads the latest teardrop, checks it, replaces this one with it,")
 		fmt.Fprintln(os.Stderr, "       and runs `teardrop setup` with the new version. Name a version, such")
 		fmt.Fprintln(os.Stderr, "       as v0.5.0, to install that one instead, even if it is older.")
@@ -46,6 +48,19 @@ func runUpdate(args []string) {
 	if len(picked) > 1 || (len(picked) == 1 && *checkOnly) {
 		fs.Usage()
 		os.Exit(2)
+	}
+	if *auto != "" {
+		if len(picked) > 0 || *checkOnly {
+			fs.Usage()
+			os.Exit(2)
+		}
+		check(setAutoUpdate(*auto))
+		if autoUpdateOn() {
+			fmt.Println("teardrop now installs each new release by itself, once a day, after checking its checksum and that it runs. The one it replaces is kept beside it, ending in .old. `teardrop update -auto off` stops this.")
+		} else {
+			fmt.Println("teardrop now only says when a new release is out. Run `teardrop update` to install one.")
+		}
+		return
 	}
 	pick := strings.Join(picked, "")
 	exe, err := teardropPath()
@@ -88,17 +103,14 @@ func update(client *http.Client, releases, exe, current, pick string, checkOnly 
 	} else if latest == current {
 		return fmt.Sprintf("teardrop %s is already installed.", current), false, nil
 	}
-	asset := fmt.Sprintf("teardrop_%s_%s", runtime.GOOS, runtime.GOARCH)
-	if runtime.GOOS == "windows" {
-		asset += ".exe"
-	}
-	binary, err := downloadRelease(client, releases+"/download/"+latest, asset)
+	binary, err := downloadRelease(client, releases+"/download/"+latest, assetName())
 	if errors.Is(err, errNoRelease) {
 		return "", false, fmt.Errorf("there is no teardrop release %s. They are listed at %s", latest, releases)
 	}
 	if err != nil {
 		return "", false, err
 	}
+	os.Remove(filepath.Join(dataDir(), "update-installed"))
 	if err := replaceExecutable(exe, binary); err != nil {
 		return "", false, fmt.Errorf("could not replace %s: %w. If teardrop was installed with admin rights, update it the same way", exe, err)
 	}
@@ -106,6 +118,15 @@ func update(client *http.Client, releases, exe, current, pick string, checkOnly 
 		return fmt.Sprintf("Installed teardrop %s in place of %s (%s).", latest, current, exe), true, nil
 	}
 	return fmt.Sprintf("Updated teardrop from %s to %s (%s).", current, latest, exe), true, nil
+}
+
+// assetName is this platform's teardrop in a release.
+func assetName() string {
+	asset := fmt.Sprintf("teardrop_%s_%s", runtime.GOOS, runtime.GOARCH)
+	if runtime.GOOS == "windows" {
+		asset += ".exe"
+	}
+	return asset
 }
 
 // errNoRelease means the release asked for has no downloads.
@@ -255,8 +276,10 @@ func replaceExecutable(target string, binary []byte) error {
 
 // checkForUpdate looks up the latest release at most once a day and keeps
 // the answer in the data folder, for updateNotice. Background syncs call it,
-// so it never slows a command a person runs.
-func checkForUpdate(client *http.Client, releases string) {
+// so it never slows a command a person runs. With auto-update on, it also
+// installs that release over the teardrop at exe; a failure is kept for
+// `teardrop doctor`, and the notice stays.
+func checkForUpdate(client *http.Client, releases, exe string) {
 	notice := filepath.Join(dataDir(), "update-available")
 	if !releaseVersion.MatchString(version) || !due(filepath.Join(dataDir(), "update-checked"), 24*time.Hour) {
 		return
@@ -266,14 +289,99 @@ func checkForUpdate(client *http.Client, releases string) {
 	case err != nil:
 	case newer(latest, version):
 		os.WriteFile(notice, []byte(latest+"\n"), 0o600)
+		if exe != "" && autoUpdateOn() {
+			if err := autoUpdate(client, releases, exe, latest); err != nil {
+				keepError("update", fmt.Errorf("could not update to %s by itself: %w", latest, err))
+			} else {
+				os.Remove(notice)
+			}
+		}
 	default:
 		os.Remove(notice)
 	}
 }
 
+// autoUpdateFile, in the data folder, turns auto-update on by being there.
+const autoUpdateFile = "auto-update"
+
+func autoUpdateOn() bool {
+	_, err := os.Stat(filepath.Join(dataDir(), autoUpdateFile))
+	return err == nil
+}
+
+// setAutoUpdate turns auto-update on or off.
+func setAutoUpdate(to string) error {
+	path := filepath.Join(dataDir(), autoUpdateFile)
+	switch to {
+	case "on":
+		os.MkdirAll(dataDir(), 0o700)
+		return os.WriteFile(path, nil, 0o600)
+	case "off":
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	return fmt.Errorf("-auto takes on or off, not %q", to)
+}
+
+// autoUpdate installs release latest over exe, unattended. The download
+// must match the release's checksums, and must run and say it is latest
+// before it replaces anything. The teardrop it replaces is kept as
+// exe.old, to go back to by hand.
+func autoUpdate(client *http.Client, releases, exe, latest string) error {
+	binary, err := downloadRelease(client, releases+"/download/"+latest, assetName())
+	if err != nil {
+		return err
+	}
+	try := exe + ".try"
+	if runtime.GOOS == "windows" {
+		try = strings.TrimSuffix(exe, ".exe") + ".try.exe"
+	}
+	if err := os.WriteFile(try, binary, 0o755); err != nil {
+		return err
+	}
+	defer os.Remove(try)
+	os.Chmod(try, 0o755)
+	cmd := exec.Command(try, "-version")
+	done := make(chan struct{})
+	var out []byte
+	go func() { out, err = cmd.Output(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		cmd.Process.Kill()
+		<-done
+		err = errors.New("it did not finish in 30 seconds")
+	}
+	if err != nil || !strings.Contains(string(out), latest) {
+		return fmt.Errorf("the downloaded teardrop did not run as %s (%v, said %q); nothing was changed", latest, err, strings.TrimSpace(string(out)))
+	}
+	previous, err := os.ReadFile(exe)
+	if err != nil {
+		return err
+	}
+	if err := replaceExecutable(exe, binary); err != nil {
+		return err
+	}
+	// Windows keeps the running one as .old already, until it can be deleted.
+	if runtime.GOOS != "windows" {
+		os.WriteFile(exe+".old", previous, 0o755)
+	}
+	os.WriteFile(filepath.Join(dataDir(), "update-installed"), []byte(version+" "+latest+"\n"), 0o600)
+	return nil
+}
+
 // updateNotice is one line saying a newer release is out, or "" when this
 // teardrop is that release or newer, such as right after `teardrop update`.
+// For three days after auto-update installed one, it says so instead.
 func updateNotice() string {
+	if b, err := os.ReadFile(filepath.Join(dataDir(), "update-installed")); err == nil {
+		info, _ := os.Stat(filepath.Join(dataDir(), "update-installed"))
+		if f := strings.Fields(string(b)); len(f) == 2 && time.Since(info.ModTime()) < 72*time.Hour {
+			return fmt.Sprintf("teardrop updated itself from %s to %s. Run `teardrop setup` to bring hooks and plugins up to date. The one before is kept beside it, ending in .old.", f[0], f[1])
+		}
+	}
 	b, _ := os.ReadFile(filepath.Join(dataDir(), "update-available"))
 	latest := strings.TrimSpace(string(b))
 	if !releaseVersion.MatchString(version) || !newer(latest, version) {

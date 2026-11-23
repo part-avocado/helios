@@ -128,12 +128,12 @@ func TestUpdateNotice(t *testing.T) {
 	defer func(v string) { version = v }(version)
 
 	version = "v0.9.0"
-	checkForUpdate(srv.Client(), srv.URL)
+	checkForUpdate(srv.Client(), srv.URL, "")
 	// v0.10.0 is newer, though it sorts before v0.9.0 as text.
 	if got := updateNotice(); !strings.Contains(got, "v0.10.0 is out") {
 		t.Errorf("notice after a newer release came out: %q", got)
 	}
-	checkForUpdate(srv.Client(), srv.URL)
+	checkForUpdate(srv.Client(), srv.URL, "")
 	if asked != 1 {
 		t.Errorf("asked GitHub %d times in a day, want 1", asked)
 	}
@@ -149,7 +149,7 @@ func TestUpdateNotice(t *testing.T) {
 	os.Chtimes(stamp, old, old)
 	version = "v0.9.0"
 	latest = "v0.9.0"
-	checkForUpdate(srv.Client(), srv.URL)
+	checkForUpdate(srv.Client(), srv.URL, "")
 	if asked != 2 || updateNotice() != "" {
 		t.Errorf("asked %d times, notice %q; want 2 and none", asked, updateNotice())
 	}
@@ -157,8 +157,80 @@ func TestUpdateNotice(t *testing.T) {
 	// A build that isn't a release, such as `go build`, neither asks nor nags.
 	version = "dev"
 	os.Chtimes(stamp, old, old)
-	checkForUpdate(srv.Client(), srv.URL)
+	checkForUpdate(srv.Client(), srv.URL, "")
 	if asked != 2 {
 		t.Error("a dev build asked for the latest release")
+	}
+}
+
+// With auto-update on, the daily check installs a newer release, but only
+// one that runs and says it is that release; the old one is kept as .old.
+func TestAutoUpdate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the stand-in releases are shell scripts")
+	}
+	defer func(v string) { version = v }(version)
+	version = "v0.9.0"
+	for _, c := range []struct {
+		name, script string
+		on, installs bool
+	}{
+		{"off only notes it", "#!/bin/sh\necho teardrop v0.10.0\n", false, false},
+		{"on installs one that runs", "#!/bin/sh\necho teardrop v0.10.0\n", true, true},
+		{"on refuses one that fails to run", "#!/bin/sh\nexit 1\n", true, false},
+		{"on refuses one that says another version", "#!/bin/sh\necho teardrop v0.9.0\n", true, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Setenv("TEARDROP_DATA_DIR", t.TempDir())
+			asset := assetName()
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/latest":
+					http.Redirect(w, r, "/tag/v0.10.0", http.StatusFound)
+				case "/download/v0.10.0/" + asset:
+					fmt.Fprint(w, c.script)
+				case "/download/v0.10.0/checksums.txt":
+					fmt.Fprintf(w, "%x  %s\n", sha256.Sum256([]byte(c.script)), asset)
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer srv.Close()
+			exe := filepath.Join(t.TempDir(), "teardrop")
+			os.WriteFile(exe, []byte("old teardrop"), 0o755)
+			if c.on {
+				if err := setAutoUpdate("on"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			checkForUpdate(srv.Client(), srv.URL, exe)
+			got, _ := os.ReadFile(exe)
+			old, oldErr := os.ReadFile(exe + ".old")
+			if c.installs {
+				if string(got) != c.script || string(old) != "old teardrop" {
+					t.Errorf("installed %q, kept %q; want the release and the old one", got, old)
+				}
+				if n := updateNotice(); !strings.Contains(n, "updated itself from v0.9.0 to v0.10.0") {
+					t.Errorf("notice %q", n)
+				}
+				return
+			}
+			if string(got) != "old teardrop" || oldErr == nil {
+				t.Errorf("replaced the teardrop with %q", got)
+			}
+			if n := updateNotice(); !strings.Contains(n, "v0.10.0 is out") {
+				t.Errorf("notice %q, want the release still noted", n)
+			}
+			if e, ok := readLastError(); c.on != ok || (ok && !strings.Contains(e.Message, "did not run as v0.10.0")) {
+				t.Errorf("kept error %+v, %v", e, ok)
+			}
+			entries, _ := os.ReadDir(filepath.Dir(exe))
+			if len(entries) != 1 {
+				t.Errorf("left files beside it: %v", entries)
+			}
+		})
+	}
+	if setAutoUpdate("maybe") == nil {
+		t.Error("-auto maybe was taken")
 	}
 }

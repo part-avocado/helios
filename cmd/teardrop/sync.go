@@ -164,7 +164,8 @@ func runSync(args []string) {
 	if *background {
 		err := syncQueued(dataDir(), once)
 		keepError("sync", err)
-		checkForUpdate(&http.Client{Timeout: 10 * time.Second}, releasesURL)
+		exe, _ := teardropPath()
+		checkForUpdate(&http.Client{Timeout: 5 * time.Minute}, releasesURL, exe)
 		check(err)
 		return
 	}
