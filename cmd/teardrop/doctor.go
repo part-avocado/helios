@@ -237,6 +237,13 @@ func hookFindings(claudeDir, codexDir, exe string) []finding {
 		}
 		out = append(out, f)
 	}
+	if b, err := os.ReadFile(openCodePluginPath()); err == nil || openCodeInstalled() {
+		f := hookFinding("OpenCode plugin", ampPluginExes(b), exe, "opencode")
+		if f.Level == levelOK && exe != "" && string(b) != string(renderOpenCodePlugin(exe)) {
+			f = finding{"OpenCode plugin", levelNote, "from an older teardrop", "Run `teardrop setup opencode`."}
+		}
+		out = append(out, f)
+	}
 	return out
 }
 
@@ -330,7 +337,7 @@ func notifyExes(path string) []string {
 	return []string{filepath.ToSlash(args[0])}
 }
 
-// ampPluginExes returns the program teardrop's Amp plugin runs.
+// ampPluginExes returns the program teardrop's Amp or OpenCode plugin runs.
 func ampPluginExes(plugin []byte) []string {
 	_, after, ok := strings.Cut(string(plugin), "const teardrop = ")
 	if !ok {

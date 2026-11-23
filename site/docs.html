@@ -63,6 +63,7 @@
 	<a href="#amp">Amp</a>
 	<a href="#amp-cloud">Amp cloud threads</a>
 	<a href="#copilot-cursor">Copilot and Cursor</a>
+	<a href="#opencode">OpenCode</a>
 	<a href="#own-harness">Add your own harness</a>
 	<a href="#lines">Lines of code</a>
 	<div class="group">Reference</div>
@@ -205,6 +206,9 @@
 	<h2 id="copilot-cursor">Copilot and Cursor</h2>
 	<p><code>teardrop setup</code> writes <code>~/.copilot/hooks/teardrop.json</code> for GitHub Copilot CLI and VS Code's Copilot agent, and adds teardrop's hooks to <code>~/.cursor/hooks.json</code> for Cursor, keeping any hooks of your own. Restart Cursor to load them. Neither keeps transcripts teardrop can read, so their time comes from the hooks alone, and only reaches your site when one is set up with <code>teardrop sync</code>.</p>
 
+	<h2 id="opencode">OpenCode</h2>
+	<p><code>teardrop setup</code> (or <code>teardrop setup opencode</code>) writes a plugin to <code>~/.config/opencode/plugins/teardrop.ts</code>, or the <code>plugins</code> folder of <code>$OPENCODE_CONFIG_DIR</code> when that is set. OpenCode 1 and 2 both load it. It runs <code>teardrop hook opencode</code> when you send a prompt and when a turn ends, finished, failed, or stopped, recording the time and folder, never the prompt text. Prompts in a subagent's session come from the agent, so they aren't counted as yours. OpenCode keeps its history in a database teardrop doesn't read, so time before the plugin was added doesn't count.</p>
+
 	<h2 id="own-harness">Add your own harness</h2>
 	<p>Any tool can report to teardrop. Run <code>teardrop hook &lt;tool&gt;</code>, where the tool name is lowercase letters, digits, and dashes, with one JSON object on stdin:</p>
 	<pre><code>{"session_id": "abc123", "cwd": "/home/me/project", "hook_event_name": "prompt", "prompt": "add a login page"}</code></pre>
@@ -228,7 +232,7 @@
 		<tr><th>Command</th><th>What it does</th></tr>
 		<tr><td><code>teardrop</code></td><td>Print your timeline and project totals.</td></tr>
 		<tr><td><code>teardrop setup</code></td><td>Check tools, keep history, install hooks and the Amp plugin.</td></tr>
-		<tr><td><code>teardrop setup amp</code></td><td>The same for one tool: <code>claude</code>, <code>codex</code>, or <code>amp</code>.</td></tr>
+		<tr><td><code>teardrop setup amp</code></td><td>The same for one tool: <code>claude</code>, <code>codex</code>, <code>amp</code>, or <code>opencode</code>.</td></tr>
 		<tr><td><code>teardrop status</code></td><td>Show the account this computer syncs to, whether each tool's hooks are installed, what is waiting to send, and when it last synced.</td></tr>
 		<tr><td><code>teardrop doctor</code></td><td>Check everything that decides whether your time counts (this binary, the site and key, the clock, each tool's hooks, records waiting to send, the last background error, and updates) and say how to fix each problem. Exits 1 when something needs fixing. It never prints your key.</td></tr>
 		<tr><td><code>teardrop update</code></td><td>Download the latest teardrop, check it against the release's checksums, replace this one with it, and run setup again. <code>-check</code> only says whether a newer version is out; <code>teardrop update v0.5.0</code> installs that version, even if it is older.</td></tr>
@@ -371,7 +375,7 @@ npm run dev</code></pre>
 
 	<h2 id="uninstall">Uninstall</h2>
 	<pre><code>teardrop uninstall</code></pre>
-	<p>It asks once, then removes teardrop's hooks from Claude Code, Codex, Cursor, and Copilot, its Amp plugin, and the line the installer added to your shell profile (on Windows, the folder it added to your Path), leaving your other settings and lines as they were. It asks whether to keep the journal folder, which holds this computer's account key and any records not sent yet, and deletes the binary last. Windows can't delete a running program, so there it tells you to delete <code>teardrop.exe</code> once the window closes. <code>-yes</code> answers every question, deleting the journal folder unless you add <code>-keep-data</code>.</p>
+	<p>It asks once, then removes teardrop's hooks from Claude Code, Codex, Cursor, and Copilot, its Amp and OpenCode plugins, and the line the installer added to your shell profile (on Windows, the folder it added to your Path), leaving your other settings and lines as they were. It asks whether to keep the journal folder, which holds this computer's account key and any records not sent yet, and deletes the binary last. Windows can't delete a running program, so there it tells you to delete <code>teardrop.exe</code> once the window closes. <code>-yes</code> answers every question, deleting the journal folder unless you add <code>-keep-data</code>.</p>
 	<p>Your account on the site keeps what it has; remove the computer under Settings, Computers. Claude Code's longer history setting and teardrop's <code>.teardrop-backup</code> copies of settings files stay. To remove only the hooks and keep teardrop, run <code>teardrop setup -remove-hooks</code>.</p>
 </article>
 <a class="to-top" href="#" hidden><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 10l5-5 5 5"/></svg>Top</a>

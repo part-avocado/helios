@@ -256,6 +256,14 @@ func TestE2E(t *testing.T) {
 	// uninstall takes out the hooks and the installer's PATH line, leaving
 	// the rest of the profile byte for byte, then the data and the binary.
 	run("", "setup", "-yes", "claude")
+	// OpenCode's plugin runs this binary, and goes with the rest.
+	openCode := filepath.Join(home, ".config", "opencode")
+	os.MkdirAll(openCode, 0o700)
+	run("", "setup", "-yes", "opencode")
+	lit, _ := json.Marshal(exe)
+	if plugin, _ := os.ReadFile(filepath.Join(openCode, "plugins", "teardrop.ts")); !bytes.Contains(plugin, []byte("const teardrop = "+string(lit))) {
+		t.Errorf("setup opencode did not write a plugin running %s", exe)
+	}
 	zshrc := filepath.Join(home, ".zshrc")
 	mine := "alias g=git\n"
 	os.WriteFile(zshrc, []byte(mine+installerMark+`export PATH="`+filepath.Dir(exe)+`:$PATH"`+"\n"), 0o644)
@@ -265,6 +273,9 @@ func TestE2E(t *testing.T) {
 	}
 	if settings, _ = os.ReadFile(filepath.Join(claude, "settings.json")); strings.Contains(string(settings), "hook claude-code") {
 		t.Errorf("uninstall left teardrop's hooks:\n%s", settings)
+	}
+	if _, err := os.Stat(filepath.Join(openCode, "plugins", "teardrop.ts")); !os.IsNotExist(err) {
+		t.Error("uninstall left the OpenCode plugin")
 	}
 	if _, err := os.Stat(filepath.Join(root, "data")); !os.IsNotExist(err) {
 		t.Errorf("uninstall -yes kept the data folder:\n%s", out)

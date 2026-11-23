@@ -46,6 +46,8 @@ var harnesses = []harness{
 		"agent-turn-complete": "turn_end", // from `notify` in config.toml, which needs no trust step
 	})},
 	{Tool: "amp", Name: "Amp", Names: []string{"amp", "ampcode"}, Kinds: map[string]string{"agent.start": "prompt", "agent.end": "turn_end"}},
+	// teardrop's OpenCode plugin names the contract's kinds itself.
+	{Tool: "opencode", Name: "OpenCode", Names: []string{"opencode"}, Kinds: map[string]string{"prompt": "prompt", "turn_end": "turn_end"}},
 	{Tool: "copilot", Name: "GitHub Copilot", Names: []string{"copilot", "github-copilot"}, Kinds: merged(claudeEvents, map[string]string{
 		"userPromptSubmitted": "prompt", "agentStop": "turn_end", "sessionStart": "session_start", "sessionEnd": "session_end",
 	})},

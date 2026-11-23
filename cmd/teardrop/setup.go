@@ -34,7 +34,7 @@ func parseSetupArgs(fs *flag.FlagSet, args []string) (map[string]bool, error) {
 		}
 		tool, ok := setupNames[strings.ToLower(fs.Arg(0))]
 		if !ok {
-			return nil, fmt.Errorf("unknown tool %q; use claude, codex, amp, copilot, or cursor", fs.Arg(0))
+			return nil, fmt.Errorf("unknown tool %q; use claude, codex, amp, opencode, copilot, or cursor", fs.Arg(0))
 		}
 		only[tool] = true
 		args = fs.Args()[1:]
@@ -47,7 +47,7 @@ func parseSetupArgs(fs *flag.FlagSet, args []string) (map[string]bool, error) {
 func runSetup(args []string) {
 	fs := flag.NewFlagSet("setup", flag.ExitOnError)
 	yes := fs.Bool("yes", false, "apply recommended changes without asking")
-	removeHooks := fs.Bool("remove-hooks", false, "remove teardrop's hooks and Amp plugin, keeping teardrop installed (teardrop uninstall removes everything)")
+	removeHooks := fs.Bool("remove-hooks", false, "remove teardrop's hooks and its Amp and OpenCode plugins, keeping teardrop installed (teardrop uninstall removes everything)")
 	claudeDir := fs.String("claude-dir", "", "Claude Code config directories, comma-separated")
 	codexDir := fs.String("codex-dir", "", "Codex home directories, comma-separated")
 	fs.Usage = func() {
@@ -90,6 +90,9 @@ func runSetup(args []string) {
 	if want("Amp") {
 		fmt.Fprintf(w, "  Amp\t%s\t%s\n", ampDir(), ampStatus(journal))
 	}
+	if want("OpenCode") {
+		fmt.Fprintf(w, "  OpenCode\t%s\t%s\n", openCodeDir(), openCodeStatus(journal))
+	}
 	w.Flush()
 	if len(warnings) > 0 {
 		fmt.Printf("\n  %s could not be read and will be skipped (run `teardrop -verbose` to list them).\n", plural(len(warnings), "log file"))
@@ -123,22 +126,29 @@ func runSetup(args []string) {
 		plugin := checkAmpPlugin(*yes, *removeHooks)
 		found["Amp"] = plugin || ampInstalled() || only["Amp"]
 	}
+	if want("OpenCode") {
+		found["OpenCode"] = checkOpenCodePlugin(*yes, *removeHooks) || openCodeInstalled()
+	}
 	if _, err := exec.LookPath("git"); err != nil {
 		fmt.Println("\n  Note: git is not installed, so projects are grouped by folder instead of by repository.")
 	}
 
 	fmt.Println()
 	anyFound := false
-	for _, tool := range []string{"Claude Code", "Codex", "Amp"} {
+	for _, tool := range []string{"Claude Code", "Codex", "Amp", "OpenCode"} {
 		anyFound = anyFound || found[tool]
-		if only[tool] && !found[tool] {
+		switch {
+		case !only[tool] || found[tool]:
+		case tool == "OpenCode":
+			fmt.Println("OpenCode was not found on this machine. If its config is in a custom place, set OPENCODE_CONFIG_DIR.")
+		default:
 			fmt.Printf("%s was not found on this machine. If its logs are in a custom place, pass -%s-dir.\n", tool, strings.ToLower(strings.Fields(tool)[0]))
 		}
 	}
 	switch {
 	case !anyFound && len(only) == 0:
 		fmt.Println("No supported tools found. teardrop reads Claude Code and Codex logs, and")
-		fmt.Println("records Amp through a plugin. If yours keep logs in a custom place, pass")
+		fmt.Println("records Amp and OpenCode through plugins. If yours keep logs in a custom place, pass")
 		fmt.Println("-claude-dir or -codex-dir.")
 	case !anyFound:
 	case *removeHooks && len(only) == 0:

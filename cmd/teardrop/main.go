@@ -43,7 +43,7 @@ var version = "dev"
 // left out: tools and superadmins run them, and the docs cover them.
 const usage = `Usage: teardrop [flags]        show your AI coding timeline (-l keeps it updating live)
        teardrop setup           check which tools are found, install hooks, fix settings that lose history
-       teardrop setup amp       set up one tool only: claude, codex, or amp
+       teardrop setup amp       set up one tool only: claude, codex, amp, or opencode
        teardrop dashboard       open a live dashboard of your stats in the browser
        teardrop calibrate       show how the time model's caps treat your logs; uploads nothing
        teardrop export          write a signed report to upload on the website, under Settings

@@ -88,6 +88,7 @@ Prompts that don't reflect real work aren't counted; they're listed as
 | Amp cloud threads (the Amp app, ampcode.com) | your teardrop site, sent by the teardrop cloud plugin (below) |
 | GitHub Copilot CLI and VS Code agent | the journal, written by hooks in `~/.copilot/hooks/teardrop.json` |
 | Cursor | the journal, written by hooks in `~/.cursor/hooks.json` |
+| OpenCode 1 and 2 | the journal, written by the teardrop plugin in `~/.config/opencode/plugins/teardrop.ts` (`$OPENCODE_CONFIG_DIR`, `$XDG_CONFIG_HOME`); its past sessions, kept in SQLite, aren't read |
 | Any other harness | the journal, written by `teardrop hook <tool>` (see "Add your own harness" in the docs) |
 
 Override them with `-claude-dir` and `-codex-dir`.

@@ -36,6 +36,9 @@ func TestHookRecord(t *testing.T) {
 		{name: "VS Code Copilot", tool: "copilot", payload: `{"sessionId":"s1","hookEventName":"Stop","cwd":"/w"}`, kind: "turn_end", session: "s1", cwd: "/w"},
 		{name: "Cursor prompt", tool: "cursor", payload: `{"conversation_id":"c1","generation_id":"g1","hook_event_name":"beforeSubmitPrompt","workspace_roots":["/w"],"prompt":"refactor this"}`, kind: "prompt", session: "c1", cwd: "/w", human: true},
 		{name: "Cursor edit", tool: "cursor", payload: `{"conversation_id":"c1","hook_event_name":"afterFileEdit","file_path":"/w/a.go","edits":[{"old_string":"a\nb","new_string":"a\nc\nd"}]}`, kind: "edit", session: "c1", added: 2, removed: 1},
+		// What teardrop's OpenCode plugin sent from a real OpenCode 2.4.1 turn.
+		{name: "OpenCode prompt", tool: "opencode", event: "prompt", payload: `{"session_id":"ses_df60","cwd":"/w","prompt":"add a login page with tests"}`, kind: "prompt", session: "ses_df60", cwd: "/w", human: true},
+		{name: "OpenCode turn end", tool: "opencode", event: "turn_end", payload: `{"session_id":"ses_df60","cwd":"/w","prompt":""}`, kind: "turn_end", session: "ses_df60", cwd: "/w"},
 		{name: "any other harness", tool: "my-agent", event: "turn_end", payload: `{"session_id":"x","tokens_in":900,"tokens_out":40}`, kind: "turn_end", session: "x", in: 900},
 	} {
 		var in hookInput
@@ -58,6 +61,10 @@ func TestHookRecord(t *testing.T) {
 	}
 	if h := harnessFor("cursor"); h.Reply["prompt"] != `{"continue":true}` || harnessFor("claude-code").Reply["prompt"] != "" {
 		t.Error("Cursor needs its reply to beforeSubmitPrompt, and Claude Code must get none")
+	}
+	// A turn's end starts a sync, so its time reaches the site in time to be witnessed.
+	if !turnEnds["opencode"]["turn_end"] {
+		t.Error("an OpenCode turn end does not start a sync")
 	}
 }
 
