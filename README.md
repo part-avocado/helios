@@ -294,7 +294,11 @@ about ten times the heaviest honest use; records held back past 5 minutes
 arrive late and aren't credited, so lower them with care. A record claiming
 more than 200 million tokens or a million lines is cut to that and flagged
 for review. `node scripts/cost-model.ts` prints what an account at every
-limit costs. `npm test` runs the Worker's tests in the Workers runtime.
+limit costs. `node scripts/loadtest.ts`, with `npx wrangler dev` running,
+sends records from 200 accounts at a heavy honest pace and one first sync of
+a year, prints latency percentiles, and exits 1 if any upload was refused. It
+makes its own accounts in the local database and talks only to localhost
+unless given `--remote` and `--keys`; never point it at production. `npm test` runs the Worker's tests in the Workers runtime.
 
 #### Public API
 
