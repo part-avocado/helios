@@ -26,6 +26,10 @@ func TestHookRecord(t *testing.T) {
 		in                         int64
 	}{
 		{name: "Claude Code prompt", tool: "claude-code", payload: `{"session_id":"abc","cwd":"/w","hook_event_name":"UserPromptSubmit","prompt":"add a login page with tests"}`, kind: "prompt", session: "abc", cwd: "/w", human: true},
+		// Text Claude Code writes in the user's turn itself is the agent at work, not a prompt.
+		{name: "Claude Code task notice", tool: "claude-code", payload: `{"session_id":"abc","cwd":"/w","hook_event_name":"UserPromptSubmit","prompt":"<task-notification>\n<task-id>b1</task-id><status>completed</status>\n</task-notification>"}`, kind: "prompt", session: "abc", cwd: "/w"},
+		{name: "Claude Code teammate message", tool: "claude-code", payload: `{"session_id":"abc","cwd":"/w","hook_event_name":"UserPromptSubmit","prompt":"  <teammate-message from=\"lead\">run the tests</teammate-message>"}`, kind: "prompt", session: "abc", cwd: "/w"},
+		{name: "a person quoting a tag", tool: "claude-code", payload: `{"session_id":"abc","cwd":"/w","hook_event_name":"UserPromptSubmit","prompt":"why does the <task-notification> tag show up in my log?"}`, kind: "prompt", session: "abc", cwd: "/w", human: true},
 		{name: "Codex hook", tool: "codex", payload: `{"session_id":"019a","cwd":"/w","hook_event_name":"Stop"}`, kind: "turn_end", session: "019a", cwd: "/w"},
 		{name: "Codex notify", tool: "codex", payload: `{"type":"agent-turn-complete","thread-id":"019a","turn-id":"1","cwd":"/w","input-messages":["hi"]}`, kind: "turn_end", session: "019a", cwd: "/w"},
 		{name: "Copilot CLI names no session or event", tool: "copilot", event: "userPromptSubmitted", payload: `{"timestamp":1704614400000,"cwd":"/w","prompt":"fix the flaky test"}`, kind: "prompt", session: "cwd:/w", cwd: "/w", human: true},

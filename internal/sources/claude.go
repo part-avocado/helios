@@ -156,11 +156,18 @@ func typedText(content json.RawMessage) (string, bool) {
 }
 
 func isInjected(s string) bool {
+	return strings.TrimSpace(s) == "" || Injected(s)
+}
+
+// Injected reports whether s starts as text Claude Code writes in the user's
+// turn on its own, such as a background task's notice or a message from
+// another session, rather than text a person typed.
+func Injected(s string) bool {
 	s = strings.TrimSpace(s)
 	for _, p := range injected {
 		if strings.HasPrefix(s, p) {
 			return true
 		}
 	}
-	return s == ""
+	return false
 }

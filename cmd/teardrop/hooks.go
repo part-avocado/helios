@@ -77,7 +77,9 @@ func hookRecord(tool, event string, in hookInput, now time.Time) (ev sources.Jou
 	if session == "" {
 		return ev, "", false
 	}
-	ev = sources.JournalEvent{Time: now.UTC(), Tool: tool, Event: event, Session: session, Cwd: cwd, Human: kind == "prompt"}
+	// Claude Code may hand its prompt hook text it wrote itself, such as a
+	// background task's notice: that is the agent at work, not a prompt.
+	ev = sources.JournalEvent{Time: now.UTC(), Tool: tool, Event: event, Session: session, Cwd: cwd, Human: kind == "prompt" && !sources.Injected(in.Prompt)}
 	if ev.Human {
 		s := textscore.Analyze(in.Prompt)
 		ev.Judged, ev.Real, ev.Sim, ev.Low = s.Judged, s.Real, uint64(s.Sim), s.Low
