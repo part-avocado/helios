@@ -168,6 +168,22 @@ func TestE2E(t *testing.T) {
 	if out := loginOut.String(); !strings.Contains(out, "Connected to Ada's account") || !strings.Contains(out, "Sent") || strings.Contains(out, "tdk_e2e") {
 		t.Fatalf("teardrop login printed:\n%s", out)
 	}
+	// A login to another site that fails leaves this computer connected to
+	// the site it was: its server and key stay.
+	data := filepath.Join(root, "data")
+	server, _ := os.ReadFile(filepath.Join(data, "server"))
+	key, _ := os.ReadFile(filepath.Join(data, "key"))
+	typo := exec.Command(exe, "login", "-server", "http://127.0.0.1:1", "-no-open")
+	typo.Env, typo.Dir = env, project
+	if out, err := typo.CombinedOutput(); err == nil || !strings.Contains(string(out), "could not reach") {
+		t.Fatalf("a login to a site that isn't there: %v\n%s", err, out)
+	}
+	if after, _ := os.ReadFile(filepath.Join(data, "server")); string(after) != string(server) {
+		t.Fatalf("a failed login changed the server from %q to %q", server, after)
+	}
+	if after, _ := os.ReadFile(filepath.Join(data, "key")); len(key) == 0 || string(after) != string(key) {
+		t.Fatal("a failed login lost the sync key")
+	}
 
 	// Claude Code runs the hook with its stdout read through a pipe. The
 	// hook returns at once, and its background relay and sync reach the

@@ -31,16 +31,24 @@ const (
 	syncLockStale = 10 * time.Minute
 )
 
+// checkServer returns -server's URL without a trailing slash, or why it isn't one.
+func checkServer(set string) (string, error) {
+	u, err := url.Parse(set)
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+		return "", fmt.Errorf("-server %q: use a URL such as https://teardrop.example.org", set)
+	}
+	return strings.TrimRight(set, "/"), nil
+}
+
 // serverURL returns the central server: -server (remembered for later
 // runs), else $TEARDROP_SERVER, else the remembered one.
 func serverURL(set string) (string, error) {
 	path := filepath.Join(dataDir(), "server")
 	if set != "" {
-		u, err := url.Parse(set)
-		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
-			return "", fmt.Errorf("-server %q: use a URL such as https://teardrop.example.org", set)
+		s, err := checkServer(set)
+		if err != nil {
+			return "", err
 		}
-		s := strings.TrimRight(set, "/")
 		if err := os.MkdirAll(dataDir(), 0o700); err != nil {
 			return "", err
 		}

@@ -28,9 +28,14 @@ func runLogin(args []string) {
 		fs.PrintDefaults()
 	}
 	fs.Parse(args)
-	srv, err := serverURL(*server)
-	if err != nil && *server == "" {
-		check(errors.New("name your teardrop site: teardrop login -server https://your-site"))
+	// A new -server is saved only once the login works: saving it forgets
+	// the key of the site this computer is connected to now.
+	var srv string
+	var err error
+	if *server != "" {
+		srv, err = checkServer(*server)
+	} else if srv, err = serverURL(""); err != nil {
+		err = errors.New("name your teardrop site: teardrop login -server https://your-site")
 	}
 	check(err)
 	id, err := thisComputer()
@@ -41,6 +46,10 @@ func runLogin(args []string) {
 	}
 	key, name, err := login(&http.Client{Timeout: 15 * time.Second}, srv, id, os.Stdout, open)
 	check(err)
+	if *server != "" {
+		_, err = serverURL(*server)
+		check(err)
+	}
 	_, err = syncKey(key, srv)
 	check(err)
 	fmt.Printf("Connected to %s's account on %s.\n\n", name, srv)
