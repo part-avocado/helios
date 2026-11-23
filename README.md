@@ -326,4 +326,8 @@ and prompt text never leave your machine.
 
 teardrop is licensed under the GNU Affero General Public License v3.0. See
 [LICENSE](LICENSE). The bundled English word list is from SCOWL; see
-[internal/textscore/WORDS-LICENSE](internal/textscore/WORDS-LICENSE).
+[internal/textscore/WORDS-LICENSE](internal/textscore/WORDS-LICENSE). The
+letter-pair table the mash check uses (`internal/textscore/letterpairs.bin`)
+holds statistics computed from Hermit Dave's
+[FrequencyWords](https://github.com/hermitdave/FrequencyWords) lists, which
+are CC BY-SA 4.0; `scripts/letter-pairs.py` rebuilds it.

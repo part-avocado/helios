@@ -1,0 +1,274 @@
+# Real prompts, one per line: language, a tab, the prompt. Written for these
+# tests as people write to coding agents, typos and missing accents included.
+# tl and sw are not among the languages the letter-pair table is built from,
+# so they show whether the mash check holds for languages it never saw.
+es	puedes arreglar el boton de login que no funciona en el movil
+es	quiero que la pagina cargue mas rapido, revisa las imagenes
+es	no entiendo por que falla el test, explicame el error
+es	cambia el color del fondo a azul oscuro y el texto a blanco
+es	agrega una validacion para que el correo no este vacio
+es	el servidor se cae cuando subo un archivo grande
+es	haz que el menu se cierre al hacer clic fuera
+es	todavia no funciona, sigue saliendo el mismo mensaje
+es	por favor escribe pruebas para la funcion de pagos
+es	mueve esta seccion arriba del formulario de contacto
+es	quita los comentarios viejos y ordena las importaciones
+es	el juego se traba cuando el jugador salta dos veces seguidas
+es	necesito guardar los puntos del usuario en la base de datos
+es	ahora muestra una lista de tareas con fecha y prioridad
+es	revisa si hay alguna fuga de memoria en el bucle principal
+es	el modo oscuro se ve raro en la barra lateral
+es	pon un spinner mientras se cargan los datos
+es	por que tarda tanto en compilar el proyecto
+es	haz que las tarjetas tengan bordes redondeados y sombra
+es	sigue sin guardar los cambios cuando recargo la pagina
+fr	peux tu corriger le bouton qui ne marche pas sur mobile
+fr	je veux que la page charge plus vite, regarde les images
+fr	pourquoi le test echoue encore, explique moi l'erreur
+fr	change la couleur du fond en bleu fonce et le texte en blanc
+fr	ajoute une verification pour que le champ email ne soit pas vide
+fr	le serveur plante quand je televerse un gros fichier
+fr	fais en sorte que le menu se ferme quand on clique ailleurs
+fr	toujours pas, le meme message d'erreur revient
+fr	ecris des tests pour la fonction de paiement s'il te plait
+fr	deplace cette section au dessus du formulaire de contact
+fr	enleve les vieux commentaires et range les imports
+fr	le jeu se bloque quand le joueur saute deux fois de suite
+fr	il faut sauvegarder le score du joueur dans la base de donnees
+fr	affiche maintenant une liste de taches avec une date et une priorite
+fr	verifie s'il y a une fuite de memoire dans la boucle principale
+fr	le mode sombre est bizarre dans la barre laterale
+fr	mets un indicateur de chargement pendant que les donnees arrivent
+fr	pourquoi la compilation prend autant de temps
+fr	donne aux cartes des coins arrondis et une ombre legere
+fr	les changements ne sont toujours pas sauvegardes quand je recharge
+de	kannst du den login button reparieren, der geht auf dem handy nicht
+de	die seite soll schneller laden, schau dir mal die bilder an
+de	warum schlagt der test immer noch fehl, erklar mir den fehler
+de	mach den hintergrund dunkelblau und den text weiss
+de	fuge eine prufung hinzu damit das email feld nicht leer ist
+de	der server sturzt ab wenn ich eine grosse datei hochlade
+de	das menu soll zugehen wenn man daneben klickt
+de	geht immer noch nicht, es kommt dieselbe meldung
+de	bitte schreib tests fur die bezahlfunktion
+de	verschieb diesen abschnitt uber das kontaktformular
+de	entfern die alten kommentare und sortier die imports
+de	das spiel hangt wenn der spieler zweimal hintereinander springt
+de	ich muss den punktestand des spielers in der datenbank speichern
+de	zeig jetzt eine liste mit aufgaben, datum und prioritat
+de	schau ob es in der hauptschleife ein speicherleck gibt
+de	der dunkle modus sieht in der seitenleiste komisch aus
+de	zeig einen ladekreis solange die daten geladen werden
+de	warum dauert das kompilieren so lange
+de	die karten sollen abgerundete ecken und einen schatten bekommen
+de	die anderungen werden beim neuladen immer noch nicht gespeichert
+pt	voce pode arrumar o botao de login que nao funciona no celular
+pt	quero que a pagina carregue mais rapido, ve as imagens
+pt	nao entendo por que o teste falha, me explica o erro
+pt	muda a cor do fundo para azul escuro e o texto para branco
+pt	adiciona uma validacao para o email nao ficar vazio
+pt	o servidor cai quando eu envio um arquivo grande
+pt	faz o menu fechar quando clicar fora dele
+pt	ainda nao funciona, continua aparecendo a mesma mensagem
+pt	por favor escreve testes para a funcao de pagamento
+pt	move essa secao para cima do formulario de contato
+pt	tira os comentarios antigos e organiza os imports
+pt	o jogo trava quando o jogador pula duas vezes seguidas
+pt	preciso salvar a pontuacao do jogador no banco de dados
+pt	agora mostra uma lista de tarefas com data e prioridade
+pt	ve se tem algum vazamento de memoria no loop principal
+pt	o modo escuro esta estranho na barra lateral
+pt	coloca um carregando enquanto os dados chegam
+pt	por que demora tanto para compilar o projeto
+pt	deixa os cartoes com cantos arredondados e uma sombra
+pt	as mudancas ainda nao salvam quando eu recarrego a pagina
+it	puoi sistemare il pulsante di login che non va sul telefono
+it	voglio che la pagina si carichi piu velocemente, guarda le immagini
+it	perche il test fallisce ancora, spiegami l'errore
+it	cambia lo sfondo in blu scuro e il testo in bianco
+it	aggiungi un controllo per cui il campo email non sia vuoto
+it	il server si blocca quando carico un file grande
+it	fai in modo che il menu si chiuda quando clicco fuori
+it	ancora niente, esce sempre lo stesso messaggio
+it	per favore scrivi dei test per la funzione di pagamento
+it	sposta questa sezione sopra il modulo di contatto
+it	togli i vecchi commenti e riordina gli import
+it	il gioco si pianta quando il giocatore salta due volte di fila
+it	devo salvare il punteggio del giocatore nel database
+it	adesso mostra una lista di attivita con data e priorita
+it	controlla se c'e una perdita di memoria nel ciclo principale
+it	la modalita scura si vede strana nella barra laterale
+it	metti una rotellina mentre i dati si caricano
+it	perche ci mette cosi tanto a compilare
+it	dai alle schede gli angoli arrotondati e un'ombra leggera
+it	le modifiche non vengono salvate quando ricarico la pagina
+nl	kun je de inlogknop maken, die werkt niet op mijn telefoon
+nl	de pagina moet sneller laden, kijk eens naar de afbeeldingen
+nl	waarom faalt de test nog steeds, leg de fout uit
+nl	maak de achtergrond donkerblauw en de tekst wit
+nl	voeg een controle toe zodat het emailveld niet leeg is
+nl	de server crasht als ik een groot bestand upload
+nl	zorg dat het menu sluit als je ernaast klikt
+nl	werkt nog steeds niet, ik krijg dezelfde melding
+nl	schrijf alsjeblieft tests voor de betaalfunctie
+nl	zet dit stuk boven het contactformulier
+nl	haal de oude opmerkingen weg en sorteer de imports
+nl	het spel loopt vast als de speler twee keer achter elkaar springt
+nl	ik moet de score van de speler in de database opslaan
+nl	laat nu een lijst met taken zien met datum en prioriteit
+nl	kijk of er een geheugenlek in de hoofdlus zit
+nl	de donkere modus ziet er raar uit in de zijbalk
+nl	toon een laadicoontje terwijl de gegevens binnenkomen
+nl	waarom duurt het compileren zo lang
+nl	geef de kaarten afgeronde hoeken en een lichte schaduw
+nl	de wijzigingen worden nog steeds niet opgeslagen na het herladen
+id	tolong perbaiki tombol login yang tidak jalan di hp
+id	aku mau halamannya lebih cepat dibuka, cek gambarnya
+id	kenapa testnya masih gagal, jelaskan errornya
+id	ganti warna latar belakang jadi biru tua dan teksnya putih
+id	tambahkan validasi supaya kolom email tidak kosong
+id	servernya mati kalau aku upload file yang besar
+id	buat menunya tertutup kalau klik di luar
+id	masih belum bisa, pesannya tetap sama
+id	tolong tulis test untuk fungsi pembayaran
+id	pindahkan bagian ini ke atas formulir kontak
+id	hapus komentar lama dan rapikan importnya
+id	gamenya macet kalau pemain lompat dua kali berturut turut
+id	aku perlu menyimpan skor pemain di database
+id	sekarang tampilkan daftar tugas dengan tanggal dan prioritas
+id	periksa apakah ada kebocoran memori di perulangan utama
+id	mode gelapnya aneh di bilah samping
+id	kasih tanda loading selagi datanya dimuat
+id	kenapa kompilasinya lama sekali
+id	bikin kartunya punya sudut membulat dan bayangan tipis
+id	perubahannya masih belum tersimpan waktu halaman dimuat ulang
+tr	mobilde calismayan giris butonunu duzeltebilir misin
+tr	sayfanin daha hizli yuklenmesini istiyorum, resimlere bak
+tr	test neden hala basarisiz oluyor, hatayi acikla
+tr	arka plani koyu mavi ve yaziyi beyaz yap
+tr	email alani bos kalmasin diye bir kontrol ekle
+tr	buyuk bir dosya yukleyince sunucu cokuyor
+tr	disariya tiklayinca menu kapansin
+tr	hala olmadi, ayni mesaj cikiyor
+tr	lutfen odeme fonksiyonu icin testler yaz
+tr	bu bolumu iletisim formunun ustune tasi
+tr	eski yorumlari sil ve importlari duzenle
+tr	oyuncu iki kere ust uste ziplayinca oyun donuyor
+tr	oyuncunun puanini veritabaninda saklamam lazim
+tr	simdi tarih ve oncelik ile bir gorev listesi goster
+tr	ana dongude bellek sizintisi var mi kontrol et
+tr	karanlik mod yan menude garip gorunuyor
+tr	veriler yuklenirken bir yukleniyor isareti koy
+tr	derleme neden bu kadar uzun suruyor
+tr	kartlarin koseleri yuvarlak olsun ve hafif bir golge ekle
+tr	sayfayi yenileyince degisiklikler hala kaydedilmiyor
+pl	mozesz naprawic przycisk logowania ktory nie dziala na telefonie
+pl	chce zeby strona ladowala sie szybciej, zobacz obrazki
+pl	czemu test dalej nie przechodzi, wytlumacz mi blad
+pl	zmien tlo na ciemnoniebieskie a tekst na bialy
+pl	dodaj sprawdzanie zeby pole email nie bylo puste
+pl	serwer pada jak wrzucam duzy plik
+pl	zrob tak zeby menu sie zamykalo po kliknieciu obok
+pl	dalej nie dziala, wyskakuje ten sam komunikat
+pl	napisz prosze testy do funkcji platnosci
+pl	przenies ta sekcje nad formularz kontaktowy
+pl	usun stare komentarze i posortuj importy
+pl	gra sie zawiesza kiedy gracz skacze dwa razy pod rzad
+pl	musze zapisac wynik gracza w bazie danych
+pl	teraz pokaz liste zadan z data i priorytetem
+pl	sprawdz czy w glownej petli nie ma wycieku pamieci
+pl	tryb ciemny wyglada dziwnie na pasku bocznym
+pl	pokaz kolko ladowania kiedy dane sie wczytuja
+pl	czemu kompilacja trwa tak dlugo
+pl	niech karty maja zaokraglone rogi i lekki cien
+pl	zmiany dalej sie nie zapisuja po odswiezeniu strony
+sv	kan du fixa inloggningsknappen, den funkar inte pa mobilen
+sv	jag vill att sidan laddar snabbare, kolla pa bilderna
+sv	varfor misslyckas testet fortfarande, forklara felet
+sv	gor bakgrunden morkbla och texten vit
+sv	lagg till en kontroll sa att epostfaltet inte ar tomt
+sv	servern kraschar nar jag laddar upp en stor fil
+sv	se till att menyn stangs nar man klickar utanfor
+sv	funkar fortfarande inte, samma meddelande kommer
+sv	skriv tester for betalfunktionen tack
+sv	flytta den har delen ovanfor kontaktformularet
+sv	ta bort gamla kommentarer och sortera importerna
+sv	spelet fryser nar spelaren hoppar tva ganger i rad
+sv	jag behover spara spelarens poang i databasen
+sv	visa nu en lista med uppgifter med datum och prioritet
+sv	kolla om det finns en minneslacka i huvudloopen
+sv	morkt lage ser konstigt ut i sidofaltet
+sv	visa en laddningssymbol medan datan hamtas
+sv	varfor tar kompileringen sa lang tid
+sv	ge korten rundade horn och en svag skugga
+sv	andringarna sparas fortfarande inte nar jag laddar om
+ro	poti sa repari butonul de login care nu merge pe telefon
+ro	vreau ca pagina sa se incarce mai repede, uita te la imagini
+ro	de ce pica testul in continuare, explica mi eroarea
+ro	schimba fundalul in albastru inchis si textul in alb
+ro	adauga o verificare ca sa nu fie gol campul de email
+ro	serverul cade cand incarc un fisier mare
+ro	fa meniul sa se inchida cand dau click in afara
+ro	tot nu merge, apare acelasi mesaj
+ro	te rog scrie teste pentru functia de plata
+ro	muta sectiunea asta deasupra formularului de contact
+ro	sterge comentariile vechi si aranjeaza importurile
+ro	jocul se blocheaza cand jucatorul sare de doua ori la rand
+ro	trebuie sa salvez scorul jucatorului in baza de date
+ro	acum arata o lista de sarcini cu data si prioritate
+ro	verifica daca exista o scurgere de memorie in bucla principala
+ro	modul intunecat arata ciudat in bara laterala
+ro	pune un indicator de incarcare cat timp vin datele
+ro	de ce dureaza atat de mult compilarea
+ro	fa cardurile cu colturi rotunjite si o umbra usoara
+ro	modificarile tot nu se salveaza cand reincarc pagina
+cs	muzes opravit tlacitko prihlaseni, na mobilu nefunguje
+cs	chci aby se stranka nacitala rychleji, podivej se na obrazky
+cs	proc test porad pada, vysvetli mi tu chybu
+cs	zmen pozadi na tmave modrou a text na bilou
+cs	pridej kontrolu aby pole email nebylo prazdne
+cs	server spadne kdyz nahraju velky soubor
+cs	udelej at se menu zavre kdyz kliknu vedle
+cs	porad to nejde, vyskakuje stejna hlaska
+cs	napis prosim testy pro platebni funkci
+cs	presun tuhle sekci nad kontaktni formular
+cs	smaz stare komentare a serad importy
+cs	hra se zasekne kdyz hrac skoci dvakrat po sobe
+cs	potrebuju ulozit skore hrace do databaze
+cs	ted ukaz seznam ukolu s datem a prioritou
+cs	zkontroluj jestli v hlavni smycce neuteka pamet
+cs	tmavy rezim vypada divne v bocnim panelu
+cs	ukaz kolecko nacitani nez se nactou data
+cs	proc kompilace trva tak dlouho
+cs	dej kartam zaoblene rohy a jemny stin
+cs	zmeny se porad neukladaji kdyz obnovim stranku
+tl	pwede mo bang ayusin yung login button kasi hindi gumagana sa phone
+tl	gusto ko mas mabilis mag load yung page, tingnan mo yung mga images
+tl	bakit nagfefail pa rin yung test, ipaliwanag mo yung error
+tl	gawin mong dark blue yung background tapos puti yung text
+tl	lagyan mo ng check para hindi blangko yung email field
+tl	nagcacrash yung server pag nag upload ako ng malaking file
+tl	gawin mong magsara yung menu pag nag click sa labas
+tl	hindi pa rin gumagana, ganun pa rin yung lumalabas na message
+tl	pakisulat naman ng tests para sa payment function
+tl	ilipat mo itong section sa taas ng contact form
+tl	burahin mo yung mga lumang comments at ayusin yung imports
+tl	nag fefreeze yung laro pag tumalon ng dalawang beses yung player
+tl	kailangan kong i save yung score ng player sa database
+tl	ngayon ipakita mo yung listahan ng tasks na may petsa at priority
+tl	tingnan mo kung may memory leak sa main loop
+sw	tafadhali rekebisha kitufe cha kuingia hakifanyi kazi kwenye simu
+sw	nataka ukurasa ufunguke haraka zaidi, angalia picha
+sw	kwa nini jaribio bado linashindwa, nieleze kosa
+sw	badilisha rangi ya nyuma iwe bluu iliyokolea na maandishi meupe
+sw	ongeza ukaguzi ili sehemu ya barua pepe isiwe tupu
+sw	seva inaanguka ninapopakia faili kubwa
+sw	fanya menyu ifunge ninapobofya nje yake
+sw	bado haifanyi kazi, ujumbe ule ule unatokea
+sw	tafadhali andika majaribio kwa ajili ya malipo
+sw	hamisha sehemu hii juu ya fomu ya mawasiliano
+sw	ondoa maoni ya zamani na upange imports
+sw	mchezo unakwama mchezaji anaporuka mara mbili mfululizo
+sw	nahitaji kuhifadhi alama za mchezaji kwenye hifadhidata
+sw	sasa onyesha orodha ya kazi pamoja na tarehe
+sw	angalia kama kuna uvujaji wa kumbukumbu kwenye kitanzi kikuu

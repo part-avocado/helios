@@ -3,12 +3,13 @@ package textscore
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
 func TestNoise(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "net.go"), []byte("type RollbackNetcode struct{ tickRate int }"), 0o644)
+	os.WriteFile(filepath.Join(dir, "net.go"), []byte("type RollbackNetcode struct{ tickRate, rttMs int }"), 0o644)
 	vocab := RepoVocab(dir)
 
 	for _, c := range []struct {
@@ -27,13 +28,64 @@ func TestNoise(t *testing.T) {
 		{"please fix fkjx qwzrt", 0.5, 0.5},
 		// Other scripts are not judged, so they are not penalized.
 		{"请把这个按钮移到左边", 0, 0},
+		// Other languages are writing too, with or without their accents.
+		{"puedes arreglar el boton de login que no funciona en el movil", 0, 0},
+		// tlo (tło without its accent) has no vowel, so it counts as mashed, but one word of eight is not a mashed prompt.
+		{"zmien tlo na ciemnoniebieskie a tekst na bialy", 0, 0.5},
+		// Mashing a row, or a few keys over and over.
+		{"asdfgh jkl", 1, 1},
+		{"kakakaka jjjjjjj", 1, 1},
 	} {
 		if got := Analyze(c.text).Noise(vocab); got < c.min || got > c.max {
 			t.Errorf("Noise(%q) = %.2f, want %.2f..%.2f", c.text, got, c.min, c.max)
 		}
 	}
-	// Without the repo, the project word "tickrate" is unknown.
-	if got := Analyze("use tickrate").Noise(nil); got != 0.5 {
+	// A project word that looks mashed, such as rtt from rttMs, is real
+	// only with the repo's vocabulary.
+	if got := Analyze("use rtt").Noise(nil); got != 0.5 {
 		t.Errorf("without vocab: %.2f, want 0.50", got)
+	}
+	if got := Analyze("use rtt").Noise(vocab); got != 0 {
+		t.Errorf("with vocab: %.2f, want 0", got)
+	}
+}
+
+// Real prompts in 14 languages are writing, and nearly all keyboard mash is
+// noise. tl and sw are not among the languages letterpairs.bin is built
+// from, so they show the check holds for languages it never saw.
+func TestNoiseCorpus(t *testing.T) {
+	lines := func(name string) []string {
+		b, err := os.ReadFile(filepath.Join("testdata", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, l := range strings.Split(string(b), "\n") {
+			if l != "" && !strings.HasPrefix(l, "#") {
+				out = append(out, l)
+			}
+		}
+		return out
+	}
+	langs := map[string]bool{}
+	for _, l := range lines("real.txt") {
+		lang, text, _ := strings.Cut(l, "\t")
+		langs[lang] = true
+		if n := Analyze(text).Noise(nil); n > 0.5 {
+			t.Errorf("%s prompt scored as noise (%.2f): %s", lang, n, text)
+		}
+	}
+	if len(langs) != 14 {
+		t.Errorf("real.txt has %d languages, want 14", len(langs))
+	}
+	mash, passed := lines("mash.txt"), 0
+	for _, text := range mash {
+		if Analyze(text).Noise(nil) <= 0.5 {
+			passed++
+			t.Logf("mash passed: %s", text)
+		}
+	}
+	if caught := 1 - float64(passed)/float64(len(mash)); caught < 0.93 {
+		t.Errorf("caught %.0f%% of %d mash prompts, want at least 93%%", caught*100, len(mash))
 	}
 }

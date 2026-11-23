@@ -2,8 +2,10 @@
 // than keyboard mashing, without keeping the text.
 //
 // A word counts as real when it is an English dictionary word, looks like
-// code (identifiers, paths, numbers, acronyms), or appears in the project's
-// own files. Words in non-Latin scripts are not judged.
+// code (identifiers, paths, numbers, acronyms), appears in the project's own
+// files, or reads like a word of some language rather than keyboard mashing
+// (mash.go), so prompts in Spanish or Polish count as writing too. Words with
+// letters outside ASCII, including other scripts, are not judged.
 package textscore
 
 import (
@@ -38,7 +40,7 @@ var dict = sync.OnceValue(func() map[string]struct{} {
 // Score summarizes one prompt.
 type Score struct {
 	Judged  int      // words the checks could judge
-	Real    int      // judged words that are dictionary words or code
+	Real    int      // judged words that are dictionary words, code, or not mashed
 	Unknown []string // the other judged words, lowercased, to check against a project's vocabulary
 
 	Sim Fingerprint // SimHash of the prompt's words, for finding repeats; 0 when it has no words
@@ -93,7 +95,7 @@ func realWord(w string) bool {
 		}
 		return true
 	}
-	return codeLike(w) || inDict(w)
+	return codeLike(w) || inDict(w) || !mashed(w)
 }
 
 func inDict(w string) bool {
