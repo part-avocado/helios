@@ -35,4 +35,5 @@ test('flags: what live fakery leaves behind', async () => {
 	assert.deepEqual(flags(script, [{ day: '2026-11-20', witnessed_seconds: 17 * 3600 }]).map((f) => f.kind), ['long-day', 'steady-gaps', 'no-turn-ends'])
 	const tokenless = [rec(t0, true), rec(t0 + 1, false), rec(t0 + 2, false), rec(t0 + 3, false)]
 	assert.deepEqual(flags(tokenless, []).map((f) => f.kind), ['no-tokens'])
+	assert.deepEqual(flags([{ ...ordinary[0]!, clamped: true }], []).map((f) => f.kind), ['clamped'])
 })

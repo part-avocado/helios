@@ -69,3 +69,14 @@ for (const m of [1, 12, 36, 84]) {
 }
 const c = month(12)
 console.log(`\nA month: ${(c.requests / 1e6).toFixed(1)}M requests, ${(c.r2Writes / 1e6).toFixed(2)}M R2 writes, ${(c.d1Rows / 1e6).toFixed(1)}M D1 rows written. The limit is $500.`)
+
+// One account at every limit in wrangler.jsonc, every day: what the limits
+// let a script cost. Each upload is a Worker request and a hub request.
+const caps = { uploadsPerDay: 86_400, recentPerDay: 30_000, oldPerDay: 1_000_000 }
+const worst = {
+	requests: caps.uploadsPerDay * 30,
+	records: (caps.recentPerDay + caps.oldPerDay) * 30,
+}
+const worstGB = (worst.records * inputs.bytesPerRecord) / 1e9
+const worstCost = (worst.requests / 1e6) * (price.perMillionRequests + price.doPerMillion + price.cpuMsPerRequest * price.perMillionCpuMs) + worstGB * price.r2PerGB
+console.log(`One account at every upload limit for a month: ${(worst.requests / 1e6).toFixed(1)}M requests and ${(worst.records / 1e6).toFixed(0)}M records (${worstGB.toFixed(1)} GB more in R2 each month), about ${$(worstCost)} a month.`)

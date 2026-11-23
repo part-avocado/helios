@@ -3,6 +3,7 @@
 // (hub.ts) and the site works out the hours from them, crediting only time it
 // saw arrive. Reading back: day totals from D1's prompt_days.
 import type { User } from './auth.ts'
+import { Refusal } from './http.ts'
 
 /** The computer a batch comes from, as the client names it in a header; '' for one that doesn't. */
 const computerOf = (request: Request) => /^td-[0-9a-f]{12}$|^cloud$/.exec(request.headers.get('X-Teardrop-Computer') ?? '')?.[0] ?? 'cloud'
@@ -15,7 +16,9 @@ const computerOf = (request: Request) => /^td-[0-9a-f]{12}$|^cloud$/.exec(reques
 export async function relayRecords(env: Env, user: User, request: Request, body: string): Promise<{ stored: number; future: number }> {
 	const offset = Math.max(-840, Math.min(840, Number(request.headers.get('X-Teardrop-UTC-Offset')) || 0))
 	const hub = env.HUB.get(env.HUB.idFromName(String(user.id)))
-	const { stored, future } = await hub.add(user.id, computerOf(request), offset, body.split('\n'))
+	const { stored, future, limited } = await hub.add(user.id, computerOf(request), offset, body.split('\n'))
+	// The client keeps the batch on a 429 and sends it again later.
+	if (limited) throw new Refusal(429, limited.message, { 'Retry-After': String(limited.retryAfter) })
 	return { stored, future }
 }
 

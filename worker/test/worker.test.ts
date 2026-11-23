@@ -178,6 +178,63 @@ test('MIN_VERSION sends older and unversioned clients to teardrop update', async
 	}
 })
 
+test('an account past its upload limits is told to wait, and its records are kept for later', async () => {
+	const site = createTestHarness({
+		workers: [
+			{
+				configPath: new URL('../wrangler.jsonc', import.meta.url),
+				vars: { DEV_LOGIN: 'UDEV', UPLOAD_BURST: '5', RECENT_RECORDS_PER_DAY: '5', OLD_RECORDS_PER_DAY: '4' },
+				secrets: { SESSION_SECRET: 'x', HCA_CLIENT_ID: 'a', HCA_CLIENT_SECRET: 'b', ADMINS: '' },
+			},
+		],
+	})
+	try {
+		await site.listen()
+		const env = await site.getWorker<{
+			DB: { prepare(sql: string): { run(): Promise<unknown>; bind(...v: unknown[]): { first<T>(): Promise<T | null> } } }
+			HUB: { idFromName(name: string): unknown; get(id: unknown): unknown }
+			REPORTS: { get(key: string): Promise<{ body: ReadableStream } | null> }
+		}>().getEnv()
+		const migrations = new URL('../migrations/', import.meta.url)
+		for (const file of readdirSync(migrations).sort()) {
+			for (const statement of unstable_splitSqlQuery(readFileSync(new URL(file, migrations), 'utf8'))) await env.DB.prepare(statement).run()
+		}
+		const { api_key: key } = (await (await site.fetch('/api/me')).json()) as { api_key: string }
+		const now = Date.now()
+		const line = (t: number, i: number, extra: object = {}) => JSON.stringify({ t: new Date(t).toISOString(), tool: 'cursor', event: 'turn_end', session: `s${i}`, project: 'github.com/kid/site', ...extra })
+		const post = (lines: string[]) => site.fetch('/api/v1/events', { method: 'POST', headers: { Authorization: `Bearer ${key}` }, body: lines.join('\n') })
+		const refused = async (res: Awaited<ReturnType<typeof post>>, text: RegExp, most: number) => {
+			assert.equal(res.status, 429)
+			assert.match(await res.text(), text)
+			const wait = Number(res.headers.get('Retry-After'))
+			assert.ok(wait >= 1 && wait <= most, `Retry-After ${wait}`)
+		}
+
+		// Recent records: five a day. One claims more tokens and lines than a record can, and is cut down.
+		const recent = [0, 1, 2, 3, 4].map((i) => line(now - 60_000 + i, i, i === 0 ? { in: 5e8, added: 2e6 } : {}))
+		assert.deepEqual(await (await post(recent)).json(), { stored: 0, records: 5 })
+		await refused(await post([line(now - 1000, 9)]), /5 records from the last two days today/, 86400)
+		// Older records have their own count: four of these five are kept before it is reached.
+		const day = 86400_000
+		await refused(await post([0, 1, 2, 3, 4].map((i) => line(now - 3 * day + i, 10 + i))), /4 older records today/, 86400)
+		// Uploads: five at once, then one a second. This is the fourth; the sixth is refused.
+		assert.equal((await post([])).status, 200)
+		assert.equal((await post([])).status, 200)
+		await refused(await post([]), /too many uploads at once/, 2)
+
+		const id = (await env.DB.prepare('SELECT id FROM users WHERE slack_id = ?').bind('UDEV').first<{ id: number }>())!.id
+		let text = ''
+		for (const d of await (env.HUB.get(env.HUB.idFromName(String(id))) as unknown as { flush(): Promise<string[]> }).flush()) {
+			const obj = await env.REPORTS.get(`${id}/prompts/${d.slice(0, 4)}/${d.slice(5)}.ndjson.gz`)
+			text += await new Response(obj!.body.pipeThrough(new DecompressionStream('gzip'))).text()
+		}
+		assert.equal(text.trim().split('\n').length, 9, 'the records sent before a limit are kept')
+		assert.match(text, /"in":200000000,.*"added":1000000,.*"clamped":true/)
+	} finally {
+		await site.close()
+	}
+})
+
 test('DEV_LOGIN signs visitors in on localhost only', async () => {
 	const local = (await (await server.fetch('/api/me')).json()) as { slack_id: string }
 	assert.equal(local.slack_id, 'UDEV')

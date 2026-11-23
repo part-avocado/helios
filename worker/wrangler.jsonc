@@ -67,6 +67,14 @@
 		// ones, and ones too old to say their version, are told to run
 		// `teardrop update`. Empty answers every version.
 		"MIN_VERSION": "",
+		// What one account may send (src/hub.ts): uploads in a burst, which
+		// come back one a second; records a day dated in the last 48 hours;
+		// and older records a day, which a first sync of a year sends. About
+		// ten times the heaviest honest use: a record held back arrives late,
+		// and late time isn't credited.
+		"UPLOAD_BURST": "1000",
+		"RECENT_RECORDS_PER_DAY": "30000",
+		"OLD_RECORDS_PER_DAY": "1000000",
 		// Local testing only: signs every visitor in as this Slack user ID. Set
 		// it in .dev.vars. It is ignored on any address but localhost.
 		"DEV_LOGIN": ""

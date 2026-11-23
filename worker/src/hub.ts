@@ -40,6 +40,11 @@ interface Line {
 }
 
 const count = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.min(Math.round(v), 1e12) : 0)
+/** The most tokens and lines one record may claim. More is cut to this, and the record is marked. */
+export const MAX_TOKENS = 200_000_000
+export const MAX_LINES = 1_000_000
+/** A setting from wrangler.jsonc, as a positive number, else fallback. */
+const setting = (v: string | undefined, fallback: number) => (Number(v) > 0 ? Number(v) : fallback)
 const text = (v: unknown, max: number) => (typeof v === 'string' ? v.slice(0, max) : '')
 
 /** dayOf returns the calendar day a time falls on, at a UTC offset in minutes. */
@@ -55,6 +60,10 @@ export interface Live {
 }
 
 export class UserHub extends DurableObject<Env> {
+	/** Uploads left in this account's burst, and when it was last topped up. Kept in memory only. */
+	private uploads = NaN
+	private uploadsAt = 0
+
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env)
 		this.schema()
@@ -78,13 +87,39 @@ export class UserHub extends DurableObject<Env> {
 	 * offset minutes ahead of UTC. It returns how many were new, and how many
 	 * it refused for a time ahead of this clock, which a computer whose clock
 	 * runs fast sends. Lines that are not a record are left out.
+	 *
+	 * Past the account's limits it stops and returns limited: what it to say,
+	 * and in how many seconds to try again. What it kept before then stays;
+	 * the client sends the batch again, and the site drops the repeats.
 	 */
-	async add(userID: number, computer: string, offset: number, lines: string[]): Promise<{ stored: number; future: number; records: Rec[] }> {
+	async add(
+		userID: number,
+		computer: string,
+		offset: number,
+		lines: string[],
+	): Promise<{ stored: number; future: number; records: Rec[]; limited?: { message: string; retryAfter: number } }> {
 		const sql = this.ctx.storage.sql
 		sql.exec(`INSERT OR REPLACE INTO meta (k, v) VALUES ('user', ?)`, String(userID))
 		const now = Date.now()
 		const kept: Rec[] = []
 		let future = 0
+
+		const burst = setting(this.env.UPLOAD_BURST, 1000)
+		if (Number.isNaN(this.uploads)) this.uploads = burst
+		this.uploads = Math.min(burst, this.uploads + (now - this.uploadsAt) / 1000)
+		this.uploadsAt = now
+		if (this.uploads < 1) {
+			return { stored: 0, future: 0, records: [], limited: { message: 'This account is sending too many uploads at once. teardrop sends the rest in a moment.', retryAfter: Math.ceil(1 - this.uploads) } }
+		}
+		this.uploads--
+		// Records a UTC day, recent and old, counted as they are written.
+		const today = new Date(now).toISOString().slice(0, 10)
+		const caps = { recent: setting(this.env.RECENT_RECORDS_PER_DAY, 30_000), old: setting(this.env.OLD_RECORDS_PER_DAY, 1_000_000) }
+		const used = { recent: 0, old: 0 }
+		for (const kind of ['recent', 'old'] as const) used[kind] = Number(sql.exec('SELECT v FROM meta WHERE k = ?', `${kind}:${today}`).toArray()[0]?.v ?? 0)
+		sql.exec(`DELETE FROM meta WHERE (k LIKE 'recent:%' OR k LIKE 'old:%') AND k NOT IN (?, ?)`, `recent:${today}`, `old:${today}`)
+		let limited: { message: string; retryAfter: number } | undefined
+
 		for (const line of lines) {
 			if (!line.trim() || line.length > MAX_LINE) continue
 			let ev: Line
@@ -102,15 +137,27 @@ export class UserHub extends DurableObject<Env> {
 			}
 			// The fingerprint is a 64-bit number: read from the text, so it is never rounded.
 			const sim = /"sim":\s*"?(\d{1,20})/.exec(line)?.[1]
+			const [tin, tout, added, removed] = [count(ev.in), count(ev.out), count(ev.added), count(ev.removed)]
+			const clamped = tin > MAX_TOKENS || tout > MAX_TOKENS || added > MAX_LINES || removed > MAX_LINES
 			const rec: Rec = {
 				t, arrived: now, tool, session, event, human: ev.human === true && event !== 'usage',
 				project: text(ev.project, 500) || text(ev.git, 500) || text(ev.cwd, 500),
 				...(ev.human === true ? { judged: count(ev.judged), real: count(ev.real), low: ev.low === true, ...(sim && sim !== '0' ? { sim } : {}) } : {}),
-				...(count(ev.in) || count(ev.out) ? { in: count(ev.in), out: count(ev.out) } : {}),
-				...(count(ev.added) || count(ev.removed) ? { added: count(ev.added), removed: count(ev.removed) } : {}),
+				...(tin || tout ? { in: Math.min(tin, MAX_TOKENS), out: Math.min(tout, MAX_TOKENS) } : {}),
+				...(added || removed ? { added: Math.min(added, MAX_LINES), removed: Math.min(removed, MAX_LINES) } : {}),
+				...(clamped ? { clamped: true } : {}),
 				...(event === 'commit' && typeof ev.sha === 'string' && /^[0-9a-f]{40}$/.test(ev.sha) ? { sha: ev.sha } : {}),
 			}
 			if (event === 'commit' && !rec.sha) continue
+			const kind = now - t <= SEAL ? 'recent' : 'old'
+			if (used[kind] >= caps[kind]) {
+				const midnight = Date.parse(today) + DAY
+				limited = {
+					message: `This account sent ${caps[kind].toLocaleString('en-US')} ${kind === 'recent' ? 'records from the last two days' : 'older records'} today, the most a day takes. The rest wait on your computer until midnight UTC.`,
+					retryAfter: Math.ceil((midnight - now) / 1000),
+				}
+				break
+			}
 			const day = dayOf(t, offset)
 			if (now - (Date.parse(day) + DAY - offset * 60_000) > SEAL) await this.load(userID, day)
 			// A turn's usage, from its transcript, is sent again as the turn grows, and the latest counts.
@@ -119,12 +166,16 @@ export class UserHub extends DurableObject<Env> {
 			if (done.rowsWritten) {
 				sql.exec('INSERT OR IGNORE INTO dirty (day) VALUES (?)', day)
 				kept.push(rec)
+				used[kind]++
 			}
+		}
+		for (const kind of ['recent', 'old'] as const) {
+			if (used[kind]) sql.exec('INSERT OR REPLACE INTO meta (k, v) VALUES (?, ?)', `${kind}:${today}`, String(used[kind]))
 		}
 		if (kept.length && (await this.ctx.storage.getAlarm()) == null) await this.ctx.storage.setAlarm(now + FLUSH)
 		// Open dashboards hear of it at once; a send never waits on the socket.
 		if (kept.length) this.broadcast()
-		return { stored: kept.length, future, records: kept }
+		return { stored: kept.length, future, records: kept, ...(limited ? { limited } : {}) }
 	}
 
 	/** load reads a sealed day's records back from R2 into the working copy, once. */

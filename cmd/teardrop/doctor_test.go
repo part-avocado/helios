@@ -68,6 +68,10 @@ func TestDoctor(t *testing.T) {
 		with(func(s *state) {
 			s.queued, s.name, s.level, s.detail = 3, "Waiting", levelNote, "3 records not sent yet"
 		}),
+		// Past this, queueRelay keeps no new records, so time is lost until it is sent.
+		with(func(s *state) {
+			s.queued, s.name, s.level, s.detail, s.failsDoc = maxOutboxBytes/3+1, "Outbox", levelFix, "full, so new records are not being kept", true
+		}),
 		with(func(s *state) {
 			s.lastErr, s.name, s.level, s.detail, s.failsDoc = true, "Last error", levelFix, "sync failed", true
 		}),

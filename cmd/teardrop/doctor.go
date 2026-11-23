@@ -169,6 +169,11 @@ func diagnose(claudeDir, codexDir string, client *http.Client, releases string) 
 
 	out = append(out, hookFindings(claudeDir, codexDir, exe)...)
 
+	for _, outbox := range []string{localOutbox, relayOutbox} {
+		if info, err := os.Stat(filepath.Join(dataDir(), outbox)); err == nil && info.Size() > maxOutboxBytes {
+			add(finding{"Outbox", levelFix, "full, so new records are not being kept", "Run `teardrop relay -verbose` to send what is waiting and see why it couldn't."})
+		}
+	}
 	if waiting := waitingRecords(); waiting > 0 {
 		add(finding{"Waiting", levelNote, plural(waiting, "record") + " not sent yet", "Run `teardrop relay -verbose` to send them now and see any error."})
 	} else {

@@ -32,10 +32,13 @@ func TestSendOutbox(t *testing.T) {
 	}
 	down := errors.New("server said 503")
 
-	// What a site that is down didn't take goes out again on the next run.
+	// What a site that is down, or that says to wait, didn't take goes out again on the next run.
 	queue(2)
 	if err := sendOutbox(dir, relayOutbox, answer(503, down)); err == nil {
 		t.Fatal("a failed upload was reported as sent")
+	}
+	if err := sendOutbox(dir, relayOutbox, answer(429, errors.New("server said 429"))); err == nil {
+		t.Fatal("an upload the site said to send later was reported as sent")
 	}
 	queue(1)
 	sent = nil

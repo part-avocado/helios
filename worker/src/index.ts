@@ -25,7 +25,7 @@ export default {
 			// A WebSocket's answer goes back as the hub made it.
 			return res.status === 101 ? res : guard(res)
 		} catch (e) {
-			if (e instanceof Refusal) return guard(new Response(e.message + '\n', { status: e.status, headers: { 'Cache-Control': 'no-store' } }))
+			if (e instanceof Refusal) return guard(new Response(e.message + '\n', { status: e.status, headers: { 'Cache-Control': 'no-store', ...e.headers } }))
 			console.error(JSON.stringify({ message: 'request failed', path: new URL(request.url).pathname, error: String(e), stack: (e as Error)?.stack }))
 			return guard(new Response('Something went wrong on the server. Try again in a moment.\n', { status: 500 }))
 		}

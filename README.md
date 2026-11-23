@@ -283,7 +283,18 @@ against GitHub. Set the `MIN_VERSION` variable, such as `v0.6.0`, to have the
 CLI API answer older teardrops (and ones too old to say their version) with
 426 and "run `teardrop update`"; their records wait on their computers until
 then, and arrive late, so keep it as low as the fix you need. Empty, the
-default, answers every version. `npm test` runs the Worker's tests in the Workers runtime.
+default, answers every version.
+
+Each account may send 1,000 uploads in a burst, which come back one a second
+(`UPLOAD_BURST`), 30,000 records a day dated in the last two days
+(`RECENT_RECORDS_PER_DAY`), and 1,000,000 older ones, which a first sync of a
+year sends (`OLD_RECORDS_PER_DAY`). Past a limit the site answers 429 with
+`Retry-After`, and teardrop keeps the records to send later. The limits are
+about ten times the heaviest honest use; records held back past 5 minutes
+arrive late and aren't credited, so lower them with care. A record claiming
+more than 200 million tokens or a million lines is cut to that and flagged
+for review. `node scripts/cost-model.ts` prints what an account at every
+limit costs. `npm test` runs the Worker's tests in the Workers runtime.
 
 #### Public API
 

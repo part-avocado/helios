@@ -41,6 +41,8 @@ export interface Rec {
 	sha?: string
 	/** The event's name; a `usage` record carries a turn's tokens and lines from its transcript and earns no time. */
 	event?: string
+	/** It claimed more tokens or lines than one record can hold, and was cut to the most (hub.ts). */
+	clamped?: boolean
 }
 
 export interface Stretch {
@@ -194,7 +196,7 @@ const LONG_DAY = 16 * 3600
 
 /** Reasons a reviewer should look at a submission first. */
 export interface Flag {
-	kind: 'long-day' | 'steady-gaps' | 'no-turn-ends' | 'no-tokens'
+	kind: 'long-day' | 'steady-gaps' | 'no-turn-ends' | 'no-tokens' | 'clamped'
 	text: string
 }
 
@@ -215,6 +217,9 @@ export function flags(all: (Rec & { event: string })[], dayTotals: { day: string
 	// Amp's plugins report tokens with every turn end.
 	const silent = recs.filter((r) => !r.human && r.tool === 'amp' && r.event === 'agent.end' && !r.in && !r.out)
 	if (silent.length >= 3) out.push({ kind: 'no-tokens', text: `${silent.length} Amp turns ended with no tokens, which Amp always reports.` })
+	// Counted from all of them: commit and usage records carry lines and tokens too.
+	const clamped = all.filter((r) => r.clamped).length
+	if (clamped) out.push({ kind: 'clamped', text: `${clamped} record${clamped === 1 ? '' : 's'} claimed more than 200 million tokens or a million lines, and ${clamped === 1 ? 'was' : 'were'} cut to that.` })
 	return out
 }
 
