@@ -479,6 +479,15 @@ function spanOf(projects) {
 	return moments.length ? [localDay(Math.min(...moments)), localDay(Math.max(...moments))] : null
 }
 
+// hostCheck says what GitHub made of a claimed commit. Its date is the
+// author date, which the SHA pins, so one that differs from the claimed time
+// was changed after the commit was made.
+const hostCheck = (c) =>
+	c.found === false ? 'Not found'
+	: c.found !== true ? 'Not checked'
+	: c.moved ? `<span title="Claimed ${esc(exact(c.t))}">Found, but GitHub dates it ${esc(exact(c.author_t))}</span>`
+	: 'Found'
+
 // projectPage is one project, alone: its numbers, the chart, its checks, and
 // its commits. A crop narrows all of them to the blocks that touch its days
 // and the commits made in them.
@@ -496,7 +505,7 @@ function projectPage(name, back, whole, here, query) {
 	const bl = p.blocks
 	const sum = (i) => bl.reduce((s, b) => s + b[i], 0)
 	const commits = [...(p.commits ?? [])].sort((a, b) => b.t - a.t)
-	const found = commits.filter((c) => c.found === true).length, missing = commits.filter((c) => c.found === false).length
+	const found = commits.filter((c) => c.found === true).length, missing = commits.filter((c) => c.found === false).length, shifted = commits.filter((c) => c.moved).length
 	const repo = /^github\.com\//.test(p.key ?? '') ? 'https://' + p.key : ''
 	const { total } = series(p)
 	afterDraw = () => drawProject(p)
@@ -509,7 +518,7 @@ function projectPage(name, back, whole, here, query) {
 			['Blocks', num(bl.length)],
 			['Prompts', num(sum(B.prompts))],
 			['Lines', `+${compact(sum(B.added))} -${compact(sum(B.removed))}<small>${compact(sum(B.kept))} kept</small>`],
-			['Commits', `${num(commits.length)}<small>${commits.length ? `${num(found)} found on the host${missing ? `, ${num(missing)} not` : ''}` : 'none reported'}</small>`],
+			['Commits', `${num(commits.length)}<small>${!commits.length ? 'none reported' : p.commit_checks === false ? 'not checked on this site' : `${num(found)} found on the host${missing ? `, ${num(missing)} not` : ''}${shifted ? `, ${num(shifted)} dated differently` : ''}`}</small>`],
 			['Active', bl.length ? `${esc(longDate(bl[0][B.start]))}<small>to ${esc(longDate(bl.at(-1)[B.end]))}</small>` : '-'],
 		].map(([k, x]) => `<div><span>${k}</span><b>${x}</b></div>`).join('')}</div>
 		<div class="panel pchart-panel">
@@ -523,9 +532,11 @@ function projectPage(name, back, whole, here, query) {
 			<figure><figcaption>When they work <small>weekday and hour in your time zone, orange before 6:00</small></figcaption>${punchCard(bl)}</figure>
 			<figure><figcaption>Every block: length and share engaged <small>red: over 4 hours, engaged over 90%</small></figcaption>${blockScatter(bl)}</figure>
 		</div>
-		${commits.length ? `<div class="panel"><h2>Commits <small>newest first, the last ${commits.length} the site kept</small></h2><div class="table-scroll tall"><table class="data left stack">
-			<tr><th>When</th><th>Lines</th><th>On the host</th>${commits[0].sha ? '<th>Commit</th>' : ''}</tr>
-			${commits.map((c) => `<tr><td>${esc(when(c.t))}</td><td>+${num(c.added)} −${num(c.removed)}</td><td class="${c.found === false ? 'bad' : ''}">${c.found === true ? 'Found' : c.found === false ? 'Not found' : 'Not checked'}</td>${c.sha ? `<td>${repo ? `<a href="${esc(repo)}/commit/${esc(c.sha)}" rel="nofollow noopener" target="_blank"><code>${esc(c.sha.slice(0, 7))}</code></a>` : `<code>${esc(c.sha.slice(0, 7))}</code>`}</td>` : ''}</tr>`).join('')}
+		${commits.length ? `<div class="panel"><h2>Commits <small>newest first, the last ${commits.length} the site kept</small></h2>
+			${p.commit_checks === false ? '<p class="muted">This site doesn\'t check commits against GitHub: its Worker has no <code>GITHUB_TOKEN</code> secret, so new commits stay Not checked until one is set.</p>' : ''}
+			<div class="table-scroll tall"><table class="data left stack">
+			<tr><th>When, as claimed</th><th>Lines</th><th>On the host</th>${commits[0].sha ? '<th>GitHub account</th><th>Commit</th>' : ''}</tr>
+			${commits.map((c) => `<tr><td>${esc(when(c.t))}</td><td>+${num(c.added)} −${num(c.removed)}</td><td class="${c.found === false || c.moved ? 'bad' : ''}">${hostCheck(c)}</td>${c.sha ? `<td>${c.login ? `<a href="https://github.com/${esc(c.login)}" rel="nofollow noopener" target="_blank">@${esc(c.login)}</a>` : c.found ? '<span class="muted">none linked</span>' : ''}</td><td>${repo ? `<a href="${esc(repo)}/commit/${esc(c.sha)}" rel="nofollow noopener" target="_blank"><code>${esc(c.sha.slice(0, 7))}</code></a>` : `<code>${esc(c.sha.slice(0, 7))}</code>`}</td>` : ''}</tr>`).join('')}
 		</table></div></div>` : ''}
 		<p class="muted fine">Drawn from the work blocks in each computer's latest report and the commits their computers reported. The numbers come from the person's own computers.</p>
 	</div>`
@@ -591,7 +602,7 @@ function drawProject(p, range = null) {
 		bars.setData(s.days.filter(([, d]) => d[id]).map(([t, d]) => ({ time: t, value: d[id] / per })))
 	})
 	// Each commit is a dot on the committed line, red when the host doesn't have it.
-	if (drawn.line.committed) LW.createSeriesMarkers(drawn.line.committed, (p.commits ?? []).map((c) => ({ time: s.slot(localSec(c.t)), position: 'inBar', shape: 'circle', size: 0.3, color: c.found === false ? v('bad') : color('important') })).sort((a, b) => a.time - b.time))
+	if (drawn.line.committed) LW.createSeriesMarkers(drawn.line.committed, (p.commits ?? []).map((c) => ({ time: s.slot(localSec(c.t)), position: 'inBar', shape: 'circle', size: 0.3, color: c.found === false || c.moved ? v('bad') : color('important') })).sort((a, b) => a.time - b.time))
 	// The top pane gets TOP of the height and each day pane PANE, however wide the page is.
 	const panes = chart.panes()
 	panes[0]?.setStretchFactor(TOP)

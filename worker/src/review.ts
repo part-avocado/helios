@@ -6,7 +6,7 @@ import { archivedRows, archiveTotals, type Detail, dur, type Entry, findings, pa
 import { computers, personDays, personProjects, projectBlocks } from './reports.ts'
 import { type User } from './auth.ts'
 import { access, bans, slackID } from './staff.ts'
-import { projectCommits } from './git.ts'
+import { moved, projectCommits } from './git.ts'
 
 /** How many people the admin list shows. */
 const PEOPLE_LIMIT = 1000
@@ -59,14 +59,20 @@ type Row = Entry & { id: number }
 
 /**
  * withCommits adds to each project's work blocks the commits its computers
- * reported, for the graphs: time, lines, and whether the git host has it.
- * The sha goes only to those who may read everything.
+ * reported, for the graphs: time, lines, whether the git host has it, and
+ * whether it dates it differently. The sha and GitHub account go only to
+ * those who may read everything.
  */
 async function withCommits(env: Env, userID: number, full: boolean) {
 	const [projects, git] = await Promise.all([projectBlocks(env, userID), projectCommits(env, userID)])
 	return projects.map((p) => ({
 		...p,
-		commits: (git.get(p.key)?.commits ?? []).map((c) => ({ t: c.t, added: c.added, removed: c.removed, found: c.found ?? null, ...(full ? { sha: c.sha } : {}) })),
+		// Whether the site checks commits at all: without GITHUB_TOKEN, none is ever checked.
+		commit_checks: !!env.GITHUB_TOKEN,
+		commits: (git.get(p.key)?.commits ?? []).map((c) => ({
+			t: c.t, added: c.added, removed: c.removed, found: c.found ?? null, author_t: c.author_t ?? null, moved: moved(c),
+			...(full ? { sha: c.sha, login: c.login ?? null } : {}),
+		})),
 	}))
 }
 
@@ -195,6 +201,6 @@ export async function summary(env: Env, params: URLSearchParams) {
 		// A project's own name only. Its key can be a folder on their computer.
 		projects: projects.map(({ name, engaged_seconds }) => ({ name, engaged_seconds })),
 		// Each project's work blocks, for the graphs, by name only too.
-		activity: activity.map(({ name, engaged_seconds, blocks, commits }) => ({ name, engaged_seconds, blocks, commits })),
+		activity: activity.map(({ name, engaged_seconds, blocks, commits, commit_checks }) => ({ name, engaged_seconds, blocks, commits, commit_checks })),
 	}
 }

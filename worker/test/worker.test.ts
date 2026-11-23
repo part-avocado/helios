@@ -15,6 +15,8 @@ const SITE = 'http://teardrop.example'
 const DAY = 86400_000
 
 // A sign-in code "code-ada" belongs to the person "ada", whose Slack ID is "UADA".
+/** The author date GitHub gives each commit it has, by SHA. */
+const githubDates: Record<string, string> = {}
 const fake = createServer(async (req, res) => {
 	let body = ''
 	for await (const chunk of req) body += chunk
@@ -28,9 +30,10 @@ const fake = createServer(async (req, res) => {
 		const sub = req.headers.authorization!.replace('Bearer token-', '')
 		return reply({ sub, slack_id: 'U' + sub.toUpperCase(), name: `<b>${sub}</b>` })
 	}
-	// A stand-in for GitHub's API: kid/site is public with one commit of the two claimed, kid/secret is private.
+	// A stand-in for GitHub's API: kid/site is public and has the commits in githubDates, kid/secret is private.
 	if (req.url === '/repos/kid/site') return reply({ private: false })
-	if (req.url === '/repos/kid/site/commits/' + 'a'.repeat(40)) return reply({ sha: 'a'.repeat(40) })
+	const sha = req.url?.split('/repos/kid/site/commits/')[1] ?? ''
+	if (githubDates[sha]) return reply({ sha, commit: { author: { date: githubDates[sha] } }, author: sha[0] === 'a' ? { login: 'kid' } : null })
 	if (req.url?.startsWith('/repos/kid/site/commits/')) return res.writeHead(422).end()
 	res.writeHead(404).end()
 })
@@ -1383,11 +1386,16 @@ test('commits travel as records, earn no time, and are checked against GitHub', 
 	const { api_key: key } = await me(cookie)
 	const now = Date.now()
 	const rec = (project: string, sha: string, t: number) => JSON.stringify({ t: new Date(t).toISOString(), tool: 'git', event: 'commit', session: sha, git: project, sha, added: 12, removed: 3 })
-	const body = [rec('github.com/kid/site', 'a'.repeat(40), now - 60_000), rec('github.com/kid/site', 'b'.repeat(40), now - 30_000), rec('github.com/kid/secret', 'c'.repeat(40), now - 20_000), rec('github.com/kid/site', 'not-a-sha', now)]
-	assert.deepEqual(await (await call('/api/v1/events', { method: 'POST', key, body: body.join('\n') })).json(), { stored: 0, records: 3 })
+	// git keeps author times to the second.
+	const at = (ago: number) => Math.floor((now - ago) / 1000) * 1000
+	const body = [rec('github.com/kid/site', 'a'.repeat(40), at(60_000)), rec('github.com/kid/site', 'b'.repeat(40), at(30_000)), rec('github.com/kid/site', 'd'.repeat(40), at(10_000)), rec('github.com/kid/secret', 'c'.repeat(40), at(20_000)), rec('github.com/kid/site', 'not-a-sha', now)]
+	// GitHub has a, dated as claimed, and d, whose claimed time was moved a day later.
+	githubDates['a'.repeat(40)] = new Date(at(60_000)).toISOString().replace('.000Z', 'Z')
+	githubDates['d'.repeat(40)] = new Date(at(10_000) - 86400_000).toISOString().replace('.000Z', 'Z')
+	assert.deepEqual(await (await call('/api/v1/events', { method: 'POST', key, body: body.join('\n') })).json(), { stored: 0, records: 4 })
 	const env = await server.getWorker<{
 		HUB: { idFromName(name: string): unknown; get(id: unknown): unknown }
-		DB: { prepare(sql: string): { bind(...v: unknown[]): { first<T>(): Promise<T | null>; all(): Promise<{ results: unknown[] }> } } }
+		DB: { prepare(sql: string): { bind(...v: unknown[]): { first<T>(): Promise<T | null>; all(): Promise<{ results: unknown[] }>; run(): Promise<unknown> } } }
 	}>().getEnv()
 	const id = (await env.DB.prepare('SELECT id FROM users WHERE slack_id = ?').bind('UCOMMITTER').first<{ id: number }>())!.id
 	await (env.HUB.get(env.HUB.idFromName(String(id))) as unknown as { flush(): Promise<string[]> }).flush()
@@ -1402,8 +1410,24 @@ test('commits travel as records, earn no time, and are checked against GitHub', 
 	const found = (r: { recent: string }) => (JSON.parse(r.recent) as { sha: string; found?: boolean }[]).map((c) => [c.sha[0], c.found ?? null])
 	assert.deepEqual(rows.map((r) => [r.project_key, r.claimed, r.found, found(r)]), [
 		['github.com/kid/secret', 1, 0, [['c', null]]], // private: not checked, never "not found"
-		['github.com/kid/site', 2, 1, [['b', false], ['a', true]]],
+		['github.com/kid/site', 3, 2, [['d', true], ['b', false], ['a', true]]],
 	])
+	// A neoadmin's view of the project: each commit's GitHub date and account, and a moved one marked. A reviewer gets no account.
+	type Seen = { t: number; found: boolean | null; author_t: number | null; moved: boolean; login?: string | null }
+	const view = async (path: string) => {
+		const b = (await (await call(path, { cookie: await signIn('admin') })).json()) as { activity: { name: string; commit_checks: boolean; commits: Seen[] }[] }
+		return b.activity.find((p) => p.name === 'site')!
+	}
+	// The review page draws a project from its work blocks, so a computer reports one.
+	const report = computer()({ engaged_seconds: 600, blocks: [{ ...block(now - 60_000), project: { key: 'github.com/kid/site', name: 'site' } }], projects: [{ project: { key: 'github.com/kid/site', name: 'site' }, engaged_seconds: 600 }] })
+	assert.equal((await call('/api/v1/reports', { method: 'POST', key, body: report })).status, 200)
+	const site = await view(`/api/review/person?id=${id}`)
+	assert.equal(site.commit_checks, false, 'the test Worker has no GITHUB_TOKEN, and the page is told so')
+	assert.deepEqual(site.commits.map((c) => [c.found, c.moved, c.author_t && c.author_t - c.t, c.login]), [[true, true, -86400_000, null], [false, false, null, null], [true, false, 0, 'kid']])
+	// Commits found before dates were kept are asked about once more.
+	await env.DB.prepare(`UPDATE project_git SET checked_at = NULL, recent = (SELECT json_group_array(json_remove(value, '$.author_t', '$.login')) FROM json_each(recent)) WHERE user_id = ?`).bind(id).run()
+	await checkGit({ DB: env.DB, GITHUB_TOKEN: 't', GITHUB_API: github } as never)
+	assert.deepEqual((await view(`/api/review/person?id=${id}`)).commits.map((c) => c.moved), [true, false, false])
 })
 
 test('a superadmin imports what the old review server credited, and it is never credited again', async () => {

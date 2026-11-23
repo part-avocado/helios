@@ -284,7 +284,8 @@ curl -H "Authorization: Bearer tdr_..." "https://<your-site>/api/review/person?s
 
 The log stays when a person deletes their account; the reports kept in full go.
 Set a `GITHUB_TOKEN` secret to have the hourly cron check claimed commits
-against GitHub. Set the `MIN_VERSION` variable, such as `v0.6.0`, to have the
+against GitHub: whether each exists, its author date (a claimed time that
+differs is marked), and the GitHub account it is linked to. Set the `MIN_VERSION` variable, such as `v0.6.0`, to have the
 CLI API answer older teardrops (and ones too old to say their version) with
 426 and "run `teardrop update`"; their records wait on their computers until
 then, and arrive late, so keep it as low as the fix you need. Empty, the
