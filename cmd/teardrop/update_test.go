@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -232,5 +233,41 @@ func TestAutoUpdate(t *testing.T) {
 	}
 	if setAutoUpdate("maybe") == nil {
 		t.Error("-auto maybe was taken")
+	}
+}
+
+// A failed auto-update's error goes once it no longer stands: when this
+// teardrop is already the latest, or auto-update is off. Doctor says to run
+// `teardrop update` for it, not sync.
+func TestUpdateErrorClears(t *testing.T) {
+	defer func(v string) { version = v }(version)
+	for _, c := range []struct {
+		name, running string
+	}{
+		{"already the latest", "v0.10.0"},
+		{"auto-update off", "v0.9.0"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			version = c.running
+			t.Setenv("TEARDROP_DATA_DIR", t.TempDir())
+			keepError("update", errors.New("could not update to v0.10.0 by itself: download failed"))
+			for _, f := range diagnose("", "", http.DefaultClient, "http://127.0.0.1:1") {
+				if f.Name == "Last error" && !strings.Contains(f.Fix, "`teardrop update`") {
+					t.Errorf("doctor's fix for an update error: %q", f.Fix)
+				}
+			}
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/latest" {
+					http.Redirect(w, r, "/tag/v0.10.0", http.StatusFound)
+					return
+				}
+				http.NotFound(w, r)
+			}))
+			defer srv.Close()
+			checkForUpdate(srv.Client(), srv.URL, filepath.Join(t.TempDir(), "teardrop"))
+			if e, ok := readLastError(); ok {
+				t.Errorf("the update error stayed: %+v", e)
+			}
+		})
 	}
 }

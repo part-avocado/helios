@@ -191,7 +191,13 @@ func TestQueueCommitsNeedsARemote(t *testing.T) {
 	if n := queueCommits(raws, time.Now()); n != 0 {
 		t.Fatalf("queued %d commits of a repository with no remote", n)
 	}
-	git("remote", "add", "origin", "git@github.com:kid/app.git")
+	// A remote that is a folder on this computer has no host to check against either.
+	git("remote", "add", "origin", filepath.Join(home, "repos", "app.git"))
+	os.Remove(filepath.Join(dataDir(), "last-commits"))
+	if n := queueCommits(raws, time.Now()); n != 0 {
+		t.Fatalf("queued %d commits of a repository whose remote is a local folder", n)
+	}
+	git("remote", "set-url", "origin", "git@github.com:kid/app.git")
 	os.Remove(filepath.Join(dataDir(), "last-commits"))
 	if n := queueCommits(raws, time.Now()); n != 1 {
 		t.Errorf("queued %d commits once it has a remote, want 1", n)

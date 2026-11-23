@@ -207,8 +207,11 @@ func diagnose(claudeDir, codexDir string, client *http.Client, releases string) 
 	}
 	if e, ok := readLastError(); ok {
 		again := "teardrop sync"
-		if e.Command == "relay" {
+		switch e.Command {
+		case "relay":
 			again = "teardrop relay -verbose"
+		case "update":
+			again = "teardrop update"
 		}
 		add(finding{"Last error", levelFix, fmt.Sprintf("%s failed %s: %s", e.Command, ago(e.Time), e.Message), "Run `" + again + "` to see whether it still fails."})
 	}

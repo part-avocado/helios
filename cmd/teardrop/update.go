@@ -70,6 +70,9 @@ func runUpdate(args []string) {
 	}
 	msg, installed, err := update(&http.Client{Timeout: 5 * time.Minute}, releasesURL, exe, version, pick, *checkOnly)
 	check(err)
+	if installed {
+		keepError("update", nil)
+	}
 	fmt.Println(msg)
 	if !installed {
 		return
@@ -299,7 +302,9 @@ func checkForUpdate(client *http.Client, releases, exe string) {
 	case err != nil:
 	case newer(latest, version):
 		os.WriteFile(notice, []byte(latest+"\n"), 0o600)
-		if exe != "" && autoUpdateOn() {
+		if !autoUpdateOn() {
+			keepError("update", nil) // a failure from when it was on no longer stands
+		} else if exe != "" {
 			if err := autoUpdate(client, releases, exe, latest); err != nil {
 				keepError("update", fmt.Errorf("could not update to %s by itself: %w", latest, err))
 			} else {
@@ -308,6 +313,7 @@ func checkForUpdate(client *http.Client, releases, exe string) {
 			}
 		}
 	default:
+		keepError("update", nil) // this is the latest, so nothing is left to fail
 		os.Remove(notice)
 	}
 }
