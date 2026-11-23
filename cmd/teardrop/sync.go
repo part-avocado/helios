@@ -53,7 +53,7 @@ func serverURL(set string) (string, error) {
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return "", errors.New("no server set; sign in on your teardrop site and run the command under Settings, or run `teardrop sync -server https://...` once")
+		return "", errors.New("no server set; run `teardrop login -server https://your-site` once")
 	}
 	return strings.TrimSpace(string(b)), nil
 }

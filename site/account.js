@@ -86,11 +86,12 @@ async function api(path, init) {
 }
 
 // renderSetup fills el with the steps that connect a computer to this
-// account. key is the visitor's sync key.
+// account. key is the visitor's sync key, shown only for the Amp cloud
+// secret: a computer gets it by `teardrop login`, so no command holds it.
 function renderSetup(el, key) {
 	const sh = 'curl -fsSL https://raw.githubusercontent.com/part-avocado/teardrop/main/install.sh | sh'
 	const ps = 'irm https://raw.githubusercontent.com/part-avocado/teardrop/main/install.ps1 | iex'
-	const connect = `teardrop sync -server ${location.origin} -key ${key}`
+	const connect = `teardrop login -server ${location.origin}`
 	const cmd = (text, kind = '') => `<div class="cmd ${kind}"><code>${esc(text)}</code><button class="copy" type="button">Copy</button></div>`
 	// What to paste into an agent so it does the setup itself. The questions
 	// teardrop setup asks are answered up front, since an agent can't answer them.
@@ -99,10 +100,10 @@ function renderSetup(el, key) {
 		'',
 		`1. Install it: run \`${sh}\` (on Windows, in PowerShell: \`${ps}\`). Set TEARDROP_NO_SETUP=1 first so the installer does not stop to ask questions.`,
 		'2. Run `teardrop setup -yes`. It adds the Claude Code hooks and the Amp plugin for the tools I have.',
-		`3. Run \`${connect}\`.`,
+		`3. Run \`${connect}\` and let it keep running. It prints a code and a web address: show me both right away, so I can type the code there and allow this computer. It finishes on its own once I have.`,
 		'4. Run `teardrop` and show me its output.',
 		'',
-		'Do not repeat the sync key in your replies. If you are Amp, tell me to run "plugins: reload" in my open threads.',
+		'If you are Amp, tell me to run "plugins: reload" in my open threads.',
 	].join('\n')
 	// What to paste into Amp so its cloud threads count. The sync key is left
 	// out: Amp asks for a secret's value in a private dialog.
@@ -132,9 +133,9 @@ function renderSetup(el, key) {
 		</div></li>
 		<li><div>
 			<h3>Connect it to your account</h3>
-			<p>Open a new terminal and run this once. It uploads your hours, and teardrop syncs again each time a reply finishes in Claude Code or Amp, or you stop one.</p>
+			<p>Open a new terminal and run this once. It shows a code to type on this site, then uploads your hours, and teardrop syncs again each time a reply finishes in Claude Code or Amp, or you stop one.</p>
 			<div class="cmdbox">${cmd(connect)}</div>
-			<p class="fine">The command includes your sync key, which can only upload your stats. Keep it to yourself.</p>
+			<p class="fine">Only type a code that your own terminal shows. Anyone whose code you type can upload hours to your account.</p>
 		</div></li>
 		<li><div>
 			<h3>Check your tools</h3>
@@ -159,7 +160,7 @@ function renderSetup(el, key) {
 			<h3>Or let your agent do it</h3>
 			<p>Paste this into Amp or Claude Code and it runs the steps above for you. It answers setup's questions in advance, since an agent can't.</p>
 			<div class="prompt"><code>${esc(prompt)}</code><button class="copy" type="button">Copy</button></div>
-			<p class="fine">This prompt includes your sync key, so it ends up in that thread's history. Make a new key under Settings if you'd rather not leave it there.</p>
+			<p class="fine">The prompt holds no key: the agent shows you a code to type here instead.</p>
 		</div></li>
 	</ol>`
 	initTabs(el)

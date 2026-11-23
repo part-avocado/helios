@@ -44,13 +44,13 @@ async function load() {
 }
 
 $('new-key').addEventListener('click', async () => {
-	if (!confirm('Make a new sync key? Your computers stop syncing until you run the new connect command on each of them.')) return
+	if (!confirm('Make a new sync key? Your computers stop syncing until you run teardrop login on each of them again.')) return
 	try {
 		const key = (await change('/api/key', 'POST')).api_key
 		renderSetup($('setup-steps'), key)
 		// The new key in a popup, to copy to wherever the old one was.
 		$('new-key-value').textContent = key
-		$('new-key-connect').textContent = `teardrop sync -server ${location.origin} -key ${key}`
+		$('new-key-connect').textContent = `teardrop login -server ${location.origin}`
 		$('key-dialog').showModal()
 		say($('key-msg'), 'New key made. The steps above now use it.', true)
 	} catch (e) {

@@ -148,15 +148,17 @@ On the website, sign in with Hack Club and open the dashboard. With nothing
 synced yet it shows the two commands that connect a computer; the second is
 
 ```sh
-teardrop sync -server https://your-site -key tdk_...
+teardrop login -server https://your-site
 ```
 
-Or skip copying the key: `teardrop login -server https://your-site` prints a
-code like `BCDF-GHJK` and opens `/connect` on the site. Sign in there, type
-the code, and confirm the computer ID it shows; teardrop saves the key and
-syncs. A code lasts 10 minutes and works once, and it has to be typed, so a
+It prints a code like `BCDF-GHJK` and opens `/connect` on the site. Sign in
+there, type the code, and confirm the computer ID it shows; teardrop saves
+the sync key and syncs, so the key never sits in a command or an agent's
+thread. A code lasts 10 minutes and works once, and it has to be typed, so a
 link someone sends you can't connect their computer to your account.
-`-no-open` prints the address instead of opening a browser.
+`-no-open` prints the address instead of opening a browser. Where there is
+no browser, `teardrop sync -server https://your-site -key tdk_...` with the
+key from Settings still works.
 
 `sync` sends records: one per prompt and turn end, with its time, word
 counts, tokens, and lines, never its text. The first sync sends the past

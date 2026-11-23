@@ -262,7 +262,7 @@ async function route(request: Request, env: Env): Promise<Response> {
 async function needKey(request: Request, env: Env, url: URL): Promise<User> {
 	const user = await keyUser(request, env)
 	if (!user) {
-		throw new Refusal(401, `This server needs your sync key. Sign in at ${url.origin}/settings and run the command it shows under Setup.`)
+		throw new Refusal(401, `This server needs your sync key. Run \`teardrop login -server ${url.origin}\` to connect this computer.`)
 	}
 	if (user.ban) throw new Refusal(403, banMessage())
 	return user
