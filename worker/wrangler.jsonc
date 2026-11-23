@@ -75,6 +75,12 @@
 		"UPLOAD_BURST": "1000",
 		"RECENT_RECORDS_PER_DAY": "30000",
 		"OLD_RECORDS_PER_DAY": "1000000",
+		// Payable caps: the most witnessed hours a submission credits a person
+		// in one of their days, and in one week from Monday, counting what their
+		// earlier submissions credited. Time over a cap is never credited, even
+		// by submitting again. Empty is no cap. Hand-accepted time isn't capped.
+		"DAILY_CAP_HOURS": "",
+		"WEEKLY_CAP_HOURS": "",
 		// Local testing only: signs every visitor in as this Slack user ID. Set
 		// it in .dev.vars. It is ignored on any address but localhost.
 		"DEV_LOGIN": ""

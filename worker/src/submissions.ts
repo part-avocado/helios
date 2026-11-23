@@ -8,7 +8,7 @@
 import type { User } from './auth.ts'
 import { dayKey } from './hub.ts'
 import { Refusal } from './http.ts'
-import { credit, flags, type Rec, type Stretch } from './timeline.ts'
+import { capSpans, credit, flags, type Rec, type Stretch } from './timeline.ts'
 
 type Span = [number, number]
 
@@ -26,6 +26,8 @@ export interface SubmissionRow {
 	earlier_overlap_seconds: number
 	credited_seconds: number
 	accepted_seconds: number
+	/** Witnessed time left uncredited by the daily and weekly caps. */
+	capped_seconds: number
 	/** What it finally credits, once decided. */
 	final_seconds: number | null
 	prompts: number
@@ -47,7 +49,12 @@ interface Snapshot {
 	witnessed: Span[]
 	unwitnessed: Span[]
 	earlier: Span[]
+	/** What it credited, after the caps. Older snapshots credited witnessed less earlier. */
+	credited?: Span[]
 }
+
+/** A cap in hours from a setting, in ms; unset or not a positive number is no cap. */
+const capOf = (v: string | undefined) => (Number(v) > 0 ? Number(v) * 3600_000 : Infinity)
 
 function merge(list: Span[]): Span[] {
 	const out: Span[] = []
@@ -140,24 +147,40 @@ export async function submit(env: Env, user: User, body: Record<string, unknown>
 		if (obj) earlier.push(...((JSON.parse(await gunzip(obj)) as Snapshot).witnessed ?? []))
 	}
 	const covered = merge(earlier)
-	const credited = minus(witnessed, covered)
+	const uncapped = minus(witnessed, covered)
+	// Payable caps, per day and week of the person's own, across every submission they made that wasn't rejected.
+	const daily = capOf(env.DAILY_CAP_HOURS), weekly = capOf(env.WEEKLY_CAP_HOURS)
+	let credited = uncapped
+	if (daily < Infinity || weekly < Infinity) {
+		const { results: mine } = await env.DB.prepare(`SELECT snapshot_key FROM submissions WHERE user_id = ? AND state != 'rejected'`).bind(user.id).all<{ snapshot_key: string }>()
+		const used: Span[] = []
+		for (const row of mine) {
+			const obj = await env.REPORTS.get(row.snapshot_key)
+			if (!obj) continue
+			const old = JSON.parse(await gunzip(obj)) as Snapshot
+			used.push(...(old.credited ?? minus(merge(old.witnessed ?? []), merge(old.earlier ?? []))))
+		}
+		const offset = (recs.at(-1) as { offset?: number } | undefined)?.offset ?? 0
+		credited = merge(capSpans(uncapped, used, offset, daily, weekly))
+	}
 	const id = 'sub-' + [...crypto.getRandomValues(new Uint8Array(8))].map((b) => b.toString(16).padStart(2, '0')).join('')
-	const snapshot: Snapshot = { project: { key, name: nameOf(key) }, days, witnessed, unwitnessed, earlier: covered }
+	const snapshot: Snapshot = { project: { key, name: nameOf(key) }, days, witnessed, unwitnessed, earlier: covered, credited }
 	const snapshotKey = `${user.id}/submissions/${id}.json.gz`
 	await env.REPORTS.put(snapshotKey, await gzip(JSON.stringify(snapshot)))
 	const row: SubmissionRow = {
 		id, user_id: user.id, project_key: key, project_name: nameOf(key), received_at: Date.now(),
 		witnessed_seconds: seconds(witnessed), unwitnessed_seconds: seconds(unwitnessed),
-		earlier_overlap_seconds: seconds(witnessed) - seconds(credited), credited_seconds: seconds(credited), accepted_seconds: 0, final_seconds: null,
+		earlier_overlap_seconds: seconds(witnessed) - seconds(uncapped), credited_seconds: seconds(credited), accepted_seconds: 0,
+		capped_seconds: seconds(uncapped) - seconds(credited), final_seconds: null,
 		prompts: recs.filter((r) => r.human && !r.sha).length, tokens_in: recs.reduce((n, r) => n + (r.in ?? 0), 0), tokens_out: recs.reduce((n, r) => n + (r.out ?? 0), 0),
 		state: 'pending', decided_by: null, decided_at: null, note: null, submitter_note: note, snapshot_key: snapshotKey, imported: 0,
 	}
 	await env.DB.prepare(
 		`INSERT INTO submissions (id, user_id, project_key, project_name, received_at, witnessed_seconds, unwitnessed_seconds, earlier_overlap_seconds,
-			credited_seconds, accepted_seconds, prompts, tokens_in, tokens_out, state, snapshot_key, submitter_note)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 'pending', ?, ?)`,
+			credited_seconds, accepted_seconds, capped_seconds, prompts, tokens_in, tokens_out, state, snapshot_key, submitter_note)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 'pending', ?, ?)`,
 	)
-		.bind(id, user.id, key, row.project_name, row.received_at, row.witnessed_seconds, row.unwitnessed_seconds, row.earlier_overlap_seconds, row.credited_seconds, row.prompts, row.tokens_in, row.tokens_out, snapshotKey, note)
+		.bind(id, user.id, key, row.project_name, row.received_at, row.witnessed_seconds, row.unwitnessed_seconds, row.earlier_overlap_seconds, row.credited_seconds, row.capped_seconds, row.prompts, row.tokens_in, row.tokens_out, snapshotKey, note)
 		.run()
 	return row
 }
@@ -170,7 +193,7 @@ export async function submit(env: Env, user: User, body: Record<string, unknown>
 export async function ownSubmissions(env: Env, userID: number) {
 	const { results } = await env.DB.prepare(
 		`SELECT id, project_key, project_name, received_at, witnessed_seconds, unwitnessed_seconds, earlier_overlap_seconds, credited_seconds,
-			accepted_seconds, final_seconds, prompts, state, decided_at, note, submitter_note, imported
+			accepted_seconds, capped_seconds, final_seconds, prompts, state, decided_at, note, submitter_note, imported
 		 FROM submissions WHERE user_id = ? ORDER BY received_at DESC LIMIT 200`,
 	)
 		.bind(userID)

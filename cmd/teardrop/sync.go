@@ -378,6 +378,7 @@ func listSubmissions(client *http.Client, srv, key string, out io.Writer) error 
 			Credited      int64  `json:"credited_seconds"`
 			Unwitnessed   int64  `json:"unwitnessed_seconds"`
 			Accepted      int64  `json:"accepted_seconds"`
+			Capped        int64  `json:"capped_seconds"`
 			Final         *int64 `json:"final_seconds"`
 			State         string `json:"state"`
 			Decided       *int64 `json:"decided_at"`
@@ -408,6 +409,9 @@ func listSubmissions(client *http.Client, srv, key string, out io.Writer) error 
 	w.Flush()
 	var notes []string
 	for _, s := range r.Submissions {
+		if s.Capped > 0 {
+			notes = append(notes, fmt.Sprintf("%s, %s: %s over the site's daily or weekly cap, not credited.", s.Project, time.UnixMilli(s.Received).Format("Jan 2"), dur(time.Duration(s.Capped)*time.Second)))
+		}
 		if s.SubmitterNote != "" {
 			notes = append(notes, fmt.Sprintf("%s, %s, your note: %s", s.Project, time.UnixMilli(s.Received).Format("Jan 2"), s.SubmitterNote))
 		}

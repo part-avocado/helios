@@ -346,7 +346,7 @@ async function loadSubmissions() {
 			const notes = [s.submitter_note && `<div><span class="muted">Yours:</span> ${esc(s.submitter_note)}</div>`, s.note && `<div><span class="muted">Reviewer:</span> ${esc(s.note)}</div>`].filter(Boolean).join('')
 			const decided = { approved: 'Approved', adjusted: 'Adjusted', rejected: 'Rejected' }[s.state]
 			const state = s.imported ? 'Imported' : decided ? `${decided}${s.decided_at ? ' ' + fmtShort.format(s.decided_at) : ''}` : 'Waiting'
-			return `<tr><td>${when(s.received_at)}</td><td title="${esc(s.project_key)}">${esc(s.project_name)}</td><td>${dur(s.credited_seconds)}</td><td>${dur(s.unwitnessed_seconds)}</td><td>${dur(s.accepted_seconds)}</td><td>${s.final_seconds == null ? '' : `<b>${dur(s.final_seconds)}</b>`}</td><td>${state}</td><td>${notes}</td></tr>`
+			return `<tr><td>${when(s.received_at)}</td><td title="${esc(s.project_key)}">${esc(s.project_name)}</td><td>${dur(s.credited_seconds)}${s.capped_seconds ? `<div class="muted">${dur(s.capped_seconds)} over the cap</div>` : ''}</td><td>${dur(s.unwitnessed_seconds)}</td><td>${dur(s.accepted_seconds)}</td><td>${s.final_seconds == null ? '' : `<b>${dur(s.final_seconds)}</b>`}</td><td>${state}</td><td>${notes}</td></tr>`
 		}).join('')
 	labelCells()
 }

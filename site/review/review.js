@@ -1087,6 +1087,7 @@ async function submissionPage(arg) {
 			<div><span class="muted">Unwitnessed</span><b>${dur(s.unwitnessed_seconds)}</b></div>
 			<div><span class="muted">In earlier submissions</span><b>${dur(s.earlier_overlap_seconds)}</b></div>
 			<div><span class="muted">Credited</span><b>${dur(s.credited_seconds)}</b></div>
+			${s.capped_seconds ? `<div><span class="muted">Over the cap</span><b>${dur(s.capped_seconds)}</b></div>` : ''}
 			<div><span class="muted">Accepted by hand</span><b>${dur(s.accepted_seconds)}</b></div>
 			${s.final_seconds != null ? `<div><span class="muted">Final</span><b>${dur(s.final_seconds)}</b></div>` : ''}
 			<div><span class="muted">Prompts</span><b>${num(s.prompts)}</b></div>

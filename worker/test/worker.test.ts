@@ -181,6 +181,51 @@ test('MIN_VERSION sends older and unversioned clients to teardrop update', async
 	}
 })
 
+test('payable caps: projects on one day share the cap, and a rejected submission frees its share', async (t) => {
+	const now = Date.now()
+	if (new Date(now - 600_000).getUTCDate() !== new Date(now).getUTCDate()) return t.skip('these records would straddle midnight UTC')
+	const site = createTestHarness({
+		workers: [
+			{
+				configPath: new URL('../wrangler.jsonc', import.meta.url),
+				// Three minutes a day.
+				vars: { DEV_LOGIN: 'UDEV', DAILY_CAP_HOURS: '0.05' },
+				secrets: { SESSION_SECRET: 'x', HCA_CLIENT_ID: 'a', HCA_CLIENT_SECRET: 'b', ADMINS: '' },
+			},
+		],
+	})
+	try {
+		await site.listen()
+		const env = await site.getWorker<{ DB: { prepare(sql: string): { run(): Promise<unknown>; bind(...v: unknown[]): { run(): Promise<unknown> } } } }>().getEnv()
+		const migrations = new URL('../migrations/', import.meta.url)
+		for (const file of readdirSync(migrations).sort()) {
+			for (const statement of unstable_splitSqlQuery(readFileSync(new URL(file, migrations), 'utf8'))) await env.DB.prepare(statement).run()
+		}
+		const { api_key: key } = (await (await site.fetch('/api/me')).json()) as { api_key: string }
+		const auth = { Authorization: `Bearer ${key}` }
+		const line = (project: string, ago: number, event: string) => JSON.stringify({ t: new Date(now - ago).toISOString(), tool: 'claude-code', event, session: project, project, human: event === 'UserPromptSubmit', judged: 6, real: 6 })
+		// Witnessed: 240 seconds on a and on b, at the same time; 120 on c.
+		const work = (p: string) => [line(p, 290_000, 'UserPromptSubmit'), line(p, 170_000, 'Stop'), line(p, 50_000, 'UserPromptSubmit')]
+		const body = [...work('github.com/kid/a'), ...work('github.com/kid/b'), line('github.com/kid/c', 200_000, 'UserPromptSubmit'), line('github.com/kid/c', 80_000, 'UserPromptSubmit')]
+		assert.equal((await site.fetch('/api/v1/events', { method: 'POST', headers: auth, body: body.join('\n') })).status, 200)
+		const submit = async (project: string) => (await (await site.fetch('/api/v1/submissions', { method: 'POST', headers: auth, body: JSON.stringify({ project }) })).json()) as { id: string; witnessed_seconds: number; credited_seconds: number; capped_seconds: number }
+		const a = await submit('github.com/kid/a')
+		assert.deepEqual([a.witnessed_seconds, a.credited_seconds, a.capped_seconds], [240, 180, 60])
+		// b's time is its own project's, but the day's cap is spent.
+		const b = await submit('github.com/kid/b')
+		assert.deepEqual([b.witnessed_seconds, b.credited_seconds, b.capped_seconds], [240, 0, 240])
+		// With a rejected, only what b credited (nothing) counts against c.
+		await env.DB.prepare(`UPDATE submissions SET state = 'rejected', final_seconds = 0 WHERE id = ?`).bind(a.id).run()
+		const c = await submit('github.com/kid/c')
+		assert.deepEqual([c.credited_seconds, c.capped_seconds], [120, 0])
+		// The person sees what the cap held back.
+		const own = (await (await site.fetch('/api/v1/submissions', { headers: auth })).json()) as { submissions: { capped_seconds: number }[] }
+		assert.deepEqual(own.submissions.map((x) => x.capped_seconds), [0, 240, 60])
+	} finally {
+		await site.close()
+	}
+})
+
 test('an account past its upload limits is told to wait, and its records are kept for later', async () => {
 	const site = createTestHarness({
 		workers: [

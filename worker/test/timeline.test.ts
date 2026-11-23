@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { honest, SCRIPTS } from '../scripts/simulate.ts'
-import { credit, flags, type Rec, union } from '../src/timeline.ts'
+import { capSpans, credit, flags, type Rec, union } from '../src/timeline.ts'
 
 const cases = JSON.parse(readFileSync(new URL('../../internal/timeline/testdata/credit.json', import.meta.url), 'utf8')) as { name: string; events: [number, string][]; engaged: number }[]
 
@@ -79,4 +79,23 @@ test('flags: the new thresholds, on both sides', () => {
 	assert.ok(!kinds(every30(0)).includes('no-break'))
 	assert.ok(kinds(every30(60_000)).includes('no-break'))
 	assert.ok(!kinds(every30(60_000, 10)).includes('no-break'))
+})
+
+test('capSpans: caps count the person\'s own days, and weeks from Monday', () => {
+	const H = 3600_000
+	const at = (iso: string) => Date.parse(iso)
+	// UTC+2. Sunday Nov 22, 22:00 to Monday Nov 23, 02:00 local, with an hour already credited that Sunday.
+	const span: [number, number] = [at('2026-11-22T20:00:00Z'), at('2026-11-23T00:00:00Z')]
+	const used: [number, number][] = [[at('2026-11-22T08:00:00Z'), at('2026-11-22T09:00:00Z')]]
+	assert.deepEqual(capSpans([span], used, 120, 2 * H, Infinity), [
+		[at('2026-11-22T20:00:00Z'), at('2026-11-22T21:00:00Z')], // the hour left of Sunday
+		[at('2026-11-22T22:00:00Z'), at('2026-11-23T00:00:00Z')], // all of Monday's two
+	])
+	// Weekly: 2.5 hours used on Monday Nov 16 leave half an hour of that week for Sunday; Monday Nov 23 starts a new week.
+	const week: [number, number][] = [[at('2026-11-16T10:00:00Z'), at('2026-11-16T12:30:00Z')]]
+	const sunday: [number, number] = [at('2026-11-22T10:00:00Z'), at('2026-11-22T12:00:00Z')]
+	const monday: [number, number] = [at('2026-11-23T10:00:00Z'), at('2026-11-23T11:00:00Z')]
+	assert.deepEqual(capSpans([monday, sunday], week, 0, Infinity, 3 * H), [[sunday[0], sunday[0] + H / 2], monday])
+	// No caps keep everything.
+	assert.deepEqual(capSpans([sunday], week, 0, Infinity, Infinity), [sunday])
 })

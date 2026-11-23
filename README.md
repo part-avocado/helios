@@ -299,7 +299,10 @@ year sends (`OLD_RECORDS_PER_DAY`). Past a limit the site answers 429 with
 about ten times the heaviest honest use; records held back past 5 minutes
 arrive late and aren't credited, so lower them with care. A record claiming
 more than 200 million tokens or a million lines is cut to that and flagged
-for review. `node scripts/cost-model.ts` prints what an account at every
+for review. Set `DAILY_CAP_HOURS` and `WEEKLY_CAP_HOURS` to cap
+the witnessed hours submissions credit a person per day and per week (from
+Monday, in their time zone); time over a cap is never credited. Both are
+empty, meaning no cap, by default. `node scripts/cost-model.ts` prints what an account at every
 limit costs. `node scripts/loadtest.ts`, with `npx wrangler dev` running,
 sends records from 200 accounts at a heavy honest pace and one first sync of
 a year, prints latency percentiles, and exits 1 if any upload was refused. It
