@@ -124,7 +124,7 @@
 		<tr><td>ENGAGED</td><td>Time you were plausibly involved. This is the number that matters.</td></tr>
 		<tr><td>SPAN / SESSION TIME</td><td>Wall-clock time from first to last activity, for comparison.</td></tr>
 		<tr><td>PROMPTS</td><td>Prompts you sent that counted.</td></tr>
-		<tr><td>SKIPPED</td><td>Prompts that earned no time.</td></tr>
+		<tr><td>SKIPPED</td><td>Prompts that earned no time. Under the table, the report says how many each check below skipped.</td></tr>
 		<tr><td>TOKENS IN/OUT</td><td>Tokens the model read (cached ones included) and wrote.</td></tr>
 		<tr><td>TOOLS</td><td>Which AI tools you used in that block.</td></tr>
 	</table>
@@ -166,7 +166,13 @@
 	<div class="callout warning"><p class="callout-title"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"/></svg>Warning</p><p>Verification proves a file wasn't edited after <code>teardrop export</code> made it. Because the account key lives on your computer, a file alone can't prove the numbers are real. For hours that count, use <a href="#server"><code>teardrop submit</code></a>: the site credits only time whose records reached it as it happened.</p></div>
 
 	<h2 id="what-counts">What counts</h2>
-	<p>teardrop counts the time you spend working with your AI tools: writing prompts, reading replies, and steering the agent. An agent left running on its own doesn't earn time, and parallel sessions on one project count once. Prompts that don't reflect real work aren't counted; they're listed as <strong>SKIPPED</strong>.</p>
+	<p>teardrop counts the time you spend working with your AI tools: writing prompts, reading replies, and steering the agent. An agent left running on its own doesn't earn time, and parallel sessions on one project count once. Prompts that don't reflect real work aren't counted; they're listed as <strong>SKIPPED</strong>, with how many each of these checks skipped:</p>
+	<ul>
+		<li><strong>Keyboard mashing.</strong> A prompt where more than half the words look typed at random rather than written: no vowels, one key held down, a few keys over and over, or letters in an order no language uses. Words in any language count as writing, with or without their accents, and so do code and file names.</li>
+		<li><strong>Repeats.</strong> Asking for nearly the same thing a third time within your last 5 prompts. The first two asks count.</li>
+		<li><strong>Steering only.</strong> A third prompt in a row that only steers, such as "continue", "yes", "fix it", or "still broken". The first two count, and any prompt that asks for something new starts over.</li>
+	</ul>
+	<p>The report says how many prompts each check skipped, not which prompts.</p>
 	<p>The rules, applied to each session's prompts and agent output in time order: before a prompt, the last 5 minutes of the gap count (reading the reply, writing the prompt); while the agent works, the gap counts as long as it lies within 10 minutes of your last prompt. Work blocks closer than 15 minutes are shown as one. Time between prompts beyond those caps isn't counted, and commits earn no time. Your site stamps each day's totals with the version of these rules (currently 1), and keeps every record, so a day can be counted again if the rules change; what a past submission was credited never changes.</p>
 	<p><code>teardrop calibrate</code> shows how the caps treat your own logs: how long your gaps before prompts and before agent output are, how many run past the caps, and your engaged total under other caps. It reads only your computer's logs and uploads nothing. Two things differ between your site and the local count: time on two computers at once counts once on your site, and a Claude Code reply you interrupt runs no hook, so its end reaches your site late and up to 10 minutes of it is unwitnessed.</p>
 

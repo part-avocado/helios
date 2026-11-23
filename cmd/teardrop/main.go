@@ -289,17 +289,27 @@ func printReport(out io.Writer, rep timeline.Report, nSessions int) {
 	fmt.Fprintln(out)
 	w = tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "PROJECT\tENGAGED\tSESSION TIME\tPROMPTS\tSKIPPED\tTOKENS IN/OUT\tAGENT LINES +/-\tKEPT\tCOMMITTED")
-	skipped := 0
+	var noise, repeat, autopilot int
 	for _, p := range rep.Projects {
-		skipped += p.NoisePrompts + p.RepeatPrompts + p.AutopilotPrompts
+		noise, repeat, autopilot = noise+p.NoisePrompts, repeat+p.RepeatPrompts, autopilot+p.AutopilotPrompts
 		fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%d\t%s\t+%d/-%d\t%d\t%d\n", p.Project.Name, dur(time.Duration(p.Engaged)), dur(time.Duration(p.SessionTime)),
 			p.Prompts, p.NoisePrompts+p.RepeatPrompts+p.AutopilotPrompts, tokens(p.In, p.Out), p.Lines.Added, p.Lines.Removed, p.Lines.Kept, p.Committed)
 	}
 	w.Flush()
 	fmt.Fprintf(out, "\nTotal engaged: %s across %s and %s\n", dur(time.Duration(rep.Engaged)), plural(len(rep.Projects), "project"), plural(nSessions, "session"))
-	if skipped > 0 {
-		// Says that prompts were skipped, not which check skipped them.
-		fmt.Fprintf(out, "%s earned no time (SKIPPED). Prompts that don't reflect real work aren't counted.\n", plural(skipped, "prompt"))
+	if skipped := noise + repeat + autopilot; skipped > 0 {
+		// Which check skipped how many, so someone whose prompts are read as
+		// mashing finds out; not which prompts, so no one tunes them one by one.
+		fmt.Fprintf(out, "%s earned no time (SKIPPED):\n", plural(skipped, "prompt"))
+		if noise > 0 {
+			fmt.Fprintf(out, "  %d read as keyboard mashing rather than writing\n", noise)
+		}
+		if repeat > 0 {
+			fmt.Fprintf(out, "  %d asked again for something already asked twice in the last 5 prompts\n", repeat)
+		}
+		if autopilot > 0 {
+			fmt.Fprintf(out, "  %d only steered (\"continue\", \"yes\", \"fix it\") after two such prompts in a row\n", autopilot)
+		}
 	}
 }
 

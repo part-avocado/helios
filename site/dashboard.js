@@ -84,9 +84,16 @@ function render() {
 			total += v
 		}
 	}
-	const noise = (report.projects || [])
-		.filter((p) => !only || p.project?.key === only)
-		.reduce((n, p) => n + (p.noise_prompts || 0) + (p.repeat_prompts || 0) + (p.autopilot_prompts || 0), 0)
+	// What each check skipped, so someone whose prompts read as mashing finds out.
+	const skipped = [0, 0, 0]
+	for (const p of report.projects || []) {
+		if (only && p.project?.key !== only) continue
+		skipped[0] += p.noise_prompts || 0
+		skipped[1] += p.repeat_prompts || 0
+		skipped[2] += p.autopilot_prompts || 0
+	}
+	const noise = skipped[0] + skipped[1] + skipped[2]
+	const why = ['mashed', 'repeats', 'steering only'].map((name, i) => (skipped[i] ? `${skipped[i]} ${name}` : '')).filter(Boolean).join(', ')
 
 	// Streak: consecutive days with activity, ending today (or yesterday, if nothing yet today).
 	const allDays = new Set(scoped.map((b) => dayKey(b.s)))
@@ -110,7 +117,8 @@ function render() {
 	$('s-top').textContent = top?.name || '-'
 	$('s-top-hint').textContent = top ? dur(top.engaged) : ''
 	$('s-prompts').textContent = count(prompts)
-	$('s-prompts-hint').textContent = noise ? `${noise} skipped` : 'none skipped'
+	$('s-prompts-hint').textContent = noise ? `${noise} skipped: ${why}` : 'none skipped'
+	$('s-prompts-hint').title = noise ? 'Skipped prompts earn no time: ones that read as keyboard mashing, a third ask for the same thing within 5 prompts, or a third steering-only prompt in a row ("continue", "yes").' : ''
 	$('s-tokens').textContent = count(tin + tout)
 	$('s-tokens-hint').textContent = `${count(tin)} read, ${count(tout)} written`
 
