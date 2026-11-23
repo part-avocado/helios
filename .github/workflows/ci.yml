@@ -1,4 +1,5 @@
-# Runs the Go and Worker tests on every push and pull request.
+# Runs the Go and Worker tests on every push and pull request, and checks
+# that the installers install a release build on Linux, macOS, and Windows.
 name: CI
 
 on:
@@ -10,13 +11,22 @@ permissions:
 
 jobs:
   go:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - run: go vet ./... && go test ./...
+      # Builds teardrop and drives setup, hooks, relay, and sync against a fake site.
+      - run: go test -tags e2e -run E2E -v ./cmd/teardrop
 
   worker:
     runs-on: ubuntu-latest
@@ -33,3 +43,90 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm test
+
+  release-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: scripts/build-release.sh dist v0.0.0-ci
+      # The same files with every checksum wrong, which the installers must refuse.
+      - run: |
+          mkdir dist-bad
+          cp dist/teardrop_* dist-bad/
+          sed -E 's/^[0-9a-f]{64}/0000000000000000000000000000000000000000000000000000000000000000/' dist/checksums.txt > dist-bad/checksums.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: |
+            dist
+            dist-bad
+
+  install:
+    needs: release-build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      TEARDROP_NO_SETUP: "1"
+      TEARDROP_NO_MODIFY_PATH: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: served
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      # Start-Process keeps the server running after this step, on every system.
+      - name: Serve the release files
+        shell: pwsh
+        run: |
+          Start-Process python -ArgumentList '-m', 'http.server', '8765', '--bind', '127.0.0.1', '-d', "$PWD/served"
+          foreach ($i in 1..50) {
+            try { Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8765/dist/checksums.txt | Out-Null; exit 0 } catch { Start-Sleep -Milliseconds 200 }
+          }
+          exit 1
+      - name: install.sh installs the release
+        if: runner.os != 'Windows'
+        run: |
+          TEARDROP_BASE_URL=http://127.0.0.1:8765/dist TEARDROP_INSTALL_DIR="$RUNNER_TEMP/good" sh install.sh
+          "$RUNNER_TEMP/good/teardrop" -version | grep -F v0.0.0-ci
+      - name: install.sh refuses a wrong checksum
+        if: runner.os != 'Windows'
+        run: |
+          if TEARDROP_BASE_URL=http://127.0.0.1:8765/dist-bad TEARDROP_INSTALL_DIR="$RUNNER_TEMP/bad" sh install.sh; then
+            echo "install.sh accepted a wrong checksum"; exit 1
+          fi
+          test ! -e "$RUNNER_TEMP/bad/teardrop"
+      - name: install.ps1 installs the release
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:TEARDROP_BASE_URL = 'http://127.0.0.1:8765/dist'
+          $env:TEARDROP_INSTALL_DIR = "$env:RUNNER_TEMP\good"
+          Invoke-Expression (Get-Content -Raw ./install.ps1)
+          $v = & "$env:RUNNER_TEMP\good\teardrop.exe" -version
+          if ($v -notmatch 'v0\.0\.0-ci') { throw "installed version is '$v'" }
+      - name: install.ps1 refuses a wrong checksum
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:TEARDROP_BASE_URL = 'http://127.0.0.1:8765/dist-bad'
+          $env:TEARDROP_INSTALL_DIR = "$env:RUNNER_TEMP\bad"
+          Invoke-Expression (Get-Content -Raw ./install.ps1)
+          if (Test-Path "$env:RUNNER_TEMP\bad\teardrop.exe") { throw 'install.ps1 installed a download with a wrong checksum' }
+      - name: Windows PowerShell 5.1 runs install.ps1 too
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $env:TEARDROP_BASE_URL = 'http://127.0.0.1:8765/dist'
+          $env:TEARDROP_INSTALL_DIR = "$env:RUNNER_TEMP\ps51"
+          Invoke-Expression (Get-Content -Raw ./install.ps1)
+          $v = & "$env:RUNNER_TEMP\ps51\teardrop.exe" -version
+          if ($v -notmatch 'v0\.0\.0-ci') { throw "installed version is '$v'" }
