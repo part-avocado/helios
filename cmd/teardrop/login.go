@@ -94,6 +94,11 @@ func login(client *http.Client, srv, computer string, out io.Writer, open func(s
 		if err != nil {
 			continue // a dropped connection is no answer; ask again
 		}
+		// A site that is briefly down or busy is no answer either; one that refuses (4xx) is.
+		if res.StatusCode >= 500 || res.StatusCode == http.StatusTooManyRequests {
+			res.Body.Close()
+			continue
+		}
 		var poll struct {
 			Status string `json:"status"`
 			Key    string `json:"key"`

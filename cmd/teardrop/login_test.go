@@ -22,8 +22,11 @@ func TestLogin(t *testing.T) {
 		polls   []string // the site's answers to each poll, in order
 		key     string
 		wantErr string
+		polls3  bool // it takes three polls, not two
 	}{
 		{name: "allowed after a wait", polls: []string{`{"status":"pending"}`, `{"status":"done","key":"tdk_abc","name":"Ada"}`}, key: "tdk_abc"},
+		// A site that hiccups while the person types is asked again.
+		{name: "a 502 and a 429 on the way", polls: []string{"502 Bad gateway", "429 Slow down", `{"status":"done","key":"tdk_abc","name":"Ada"}`}, key: "tdk_abc", polls3: true},
 		{name: "cancelled", polls: []string{`{"status":"denied"}`}, wantErr: "cancelled on the site"},
 		{name: "refused", polls: []string{"410 That login has expired or was used already."}, wantErr: "That login has expired"},
 		{name: "a page elsewhere", url: "https://evil.example/connect", wantErr: "isn't its own"},
@@ -51,8 +54,9 @@ func TestLogin(t *testing.T) {
 					fmt.Fprintf(w, `{"code":"tdl_secret","user_code":"BCDF-GH23","url":%q,"expires_in":30,"interval":1}`, page)
 				case r.URL.Path == "/api/v1/login/tdl_secret":
 					a := c.polls[min(int(polled.Add(1))-1, len(c.polls)-1)]
-					if code, msg, ok := strings.Cut(a, " "); ok && code == "410" {
-						http.Error(w, msg, http.StatusGone)
+					if code, msg, ok := strings.Cut(a, " "); ok && (code == "410" || code == "502" || code == "429") {
+						status := map[string]int{"410": http.StatusGone, "502": http.StatusBadGateway, "429": http.StatusTooManyRequests}[code]
+						http.Error(w, msg, status)
 						return
 					}
 					io.WriteString(w, a)
@@ -76,8 +80,8 @@ func TestLogin(t *testing.T) {
 			if computer != "td-abcdef012345" || opened != ts.URL+"/connect" || !strings.Contains(out.String(), "BCDF-GH23") || strings.Contains(out.String(), "tdl_secret") {
 				t.Errorf("computer %q, opened %q, printed:\n%s", computer, opened, &out)
 			}
-			if n := polled.Load(); n != 2 {
-				t.Errorf("polled %d times, want 2", n)
+			if want := map[bool]int32{false: 2, true: 3}[c.polls3]; polled.Load() != want {
+				t.Errorf("polled %d times, want %d", polled.Load(), want)
 			}
 		})
 	}
