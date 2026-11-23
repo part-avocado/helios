@@ -107,7 +107,8 @@ func TestE2E(t *testing.T) {
 	run("", "sync", "-server", site.URL, "-key", "tdk_e2e")
 
 	// Claude Code runs the hook with its stdout read through a pipe. The
-	// hook returns at once, and its background relay and sync reach the site.
+	// hook returns at once, and its background relay and sync reach the
+	// site, even when the hook's process group is killed after it returns.
 	for _, ev := range []map[string]string{
 		{"hook_event_name": "UserPromptSubmit", "prompt": secretPrompt},
 		{"hook_event_name": "Stop"},
@@ -117,10 +118,12 @@ func TestE2E(t *testing.T) {
 		hook := exec.Command(exe, "hook", "claude-code")
 		hook.Env, hook.Dir = env, project
 		hook.Stdin = bytes.NewReader(payload)
+		ownGroup(hook)
 		start := time.Now()
 		if _, err := hook.Output(); err != nil {
 			t.Fatalf("hook %s: %v", ev["hook_event_name"], err)
 		}
+		killGroup(hook)
 		if took := time.Since(start); took > 2*time.Second {
 			t.Errorf("hook %s took %s; it must not wait for the site", ev["hook_event_name"], took)
 		}

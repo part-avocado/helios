@@ -79,6 +79,7 @@ func relaySoon(count bool) {
 	if count {
 		cmd.Args = append(cmd.Args, "-count")
 	}
+	detach(cmd)
 	if cmd.Start() == nil {
 		cmd.Process.Release()
 	}

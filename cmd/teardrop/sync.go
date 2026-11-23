@@ -257,6 +257,7 @@ func syncSoon(now bool) {
 	logf, _ := os.OpenFile(filepath.Join(dataDir(), "sync.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	cmd := exec.Command(exe, "sync", "-quiet", "-background")
 	cmd.Stdout, cmd.Stderr = logf, logf
+	detach(cmd)
 	if cmd.Start() == nil {
 		cmd.Process.Release()
 	}
