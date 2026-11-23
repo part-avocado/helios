@@ -123,6 +123,10 @@ func TestSyncWarnsAboutTheClock(t *testing.T) {
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
 				case "/api/v1/events":
+					// The site measures the clock from when the batch says it was sent.
+					if sent, err := time.Parse(time.RFC3339Nano, r.Header.Get("X-Teardrop-Sent-At")); err != nil || time.Since(sent).Abs() > time.Minute {
+						t.Errorf("X-Teardrop-Sent-At was %q", r.Header.Get("X-Teardrop-Sent-At"))
+					}
 					w.Write([]byte(`{"stored":0,"records":1,"dropped_future":2}`))
 				case "/api/v1/whoami":
 					if !c.whoam {

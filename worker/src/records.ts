@@ -16,7 +16,10 @@ const computerOf = (request: Request) => /^td-[0-9a-f]{12}$|^cloud$/.exec(reques
 export async function relayRecords(env: Env, user: User, request: Request, body: string): Promise<{ stored: number; future: number }> {
 	const offset = Math.max(-840, Math.min(840, Number(request.headers.get('X-Teardrop-UTC-Offset')) || 0))
 	const hub = env.HUB.get(env.HUB.idFromName(String(user.id)))
-	const { stored, future, limited } = await hub.add(user.id, computerOf(request), offset, body.split('\n'))
+	// How far the computer's clock runs behind this one, from when it says it sent the batch.
+	const sentAt = Date.parse(request.headers.get('X-Teardrop-Sent-At') ?? '')
+	const reading = Number.isNaN(sentAt) ? null : Date.now() - sentAt
+	const { stored, future, limited } = await hub.add(user.id, computerOf(request), offset, body.split('\n'), reading)
 	// The client keeps the batch on a 429 and sends it again later.
 	if (limited) throw new Refusal(429, limited.message, { 'Retry-After': String(limited.retryAfter) })
 	return { stored, future }

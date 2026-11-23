@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { honest, SCRIPTS } from '../scripts/simulate.ts'
-import { capSpans, credit, flags, type Rec, union } from '../src/timeline.ts'
+import { capSpans, credit, flags, nextClock, type Rec, union } from '../src/timeline.ts'
 
 const cases = JSON.parse(readFileSync(new URL('../../internal/timeline/testdata/credit.json', import.meta.url), 'utf8')) as { name: string; events: [number, string][]; engaged: number }[]
 
@@ -98,4 +98,26 @@ test('capSpans: caps count the person\'s own days, and weeks from Monday', () =>
 	assert.deepEqual(capSpans([monday, sunday], week, 0, Infinity, 3 * H), [[sunday[0], sunday[0] + H / 2], monday])
 	// No caps keep everything.
 	assert.deepEqual(capSpans([sunday], week, 0, Infinity, Infinity), [sunday])
+})
+
+test('nextClock: the first reading pins a clock, and only a different reading that holds a day moves it', () => {
+	const M = 60_000, D = 86400_000
+	assert.deepEqual(nextClock(null, 20 * M + 400, 0), { pin: 20 * M })
+	assert.equal(nextClock(null, 2 * 3600_000, 0), null, 'over an hour off is not corrected')
+	assert.equal(nextClock(null, null, 0), null)
+	const pinned = { pin: 20 * M }
+	assert.deepEqual(nextClock(pinned, 20 * M + 50_000, 0), pinned, 'within a minute agrees')
+	assert.deepEqual(nextClock(pinned, 7 * 24 * 60 * M, 0), pinned, 'a week-old sent time is ignored')
+	// A different reading waits: it moves the pin only once it has held for a day.
+	const waiting = nextClock(pinned, 50 * M, 1000)!
+	assert.deepEqual(waiting, { pin: 20 * M, cand: 50 * M, since: 1000 })
+	assert.deepEqual(nextClock(waiting, 50 * M + 30_000, 1000 + D - 1), waiting)
+	assert.deepEqual(nextClock(waiting, 50 * M, 1000 + D), { pin: 50 * M })
+	// One that changes again starts its wait over.
+	assert.deepEqual(nextClock(waiting, 35 * M, 1000 + D), { pin: 20 * M, cand: 35 * M, since: 1000 + D })
+	// The witness check uses the pin: 20 minutes late by the claimed time, on time once corrected.
+	const late = (skew?: number): Rec => ({ t: 0, arrived: 20 * M, tool: 'x', session: 's', project: 'p', human: false, ...(skew ? { skew } : {}) })
+	const human = (t: number, skew?: number): Rec => ({ ...late(skew), t, arrived: t + 20 * M, human: true })
+	assert.deepEqual(union(credit([human(0), late(), human(60_000)])).witnessed, 0)
+	assert.deepEqual(union(credit([human(0, 20 * M), late(20 * M), human(60_000, 20 * M)])).witnessed, 60_000)
 })

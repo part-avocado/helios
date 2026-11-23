@@ -9,7 +9,7 @@
 import { DurableObject } from 'cloudflare:workers'
 import { type Commit, remember } from './git.ts'
 import { refreshRecordComputer } from './reports.ts'
-import { blocks, RULES, type Rec, timed, totals, WATCH } from './timeline.ts'
+import { blocks, type Clock, nextClock, RULES, type Rec, timed, totals, WATCH } from './timeline.ts'
 
 const FLUSH = 10 * 60_000
 const SEAL = 48 * 3600_000
@@ -88,6 +88,11 @@ export class UserHub extends DurableObject<Env> {
 	 * it refused for a time ahead of this clock, which a computer whose clock
 	 * runs fast sends. Lines that are not a record are left out.
 	 *
+	 * reading is how far the computer's clock runs behind this one, as
+	 * measured on this batch, or null; it moves the computer's pinned
+	 * correction only as nextClock allows, and the pin, not the reading,
+	 * corrects the future check and is kept on each record for witnessing.
+	 *
 	 * Past the account's limits it stops and returns limited: what it to say,
 	 * and in how many seconds to try again. What it kept before then stays;
 	 * the client sends the batch again, and the site drops the repeats.
@@ -97,6 +102,7 @@ export class UserHub extends DurableObject<Env> {
 		computer: string,
 		offset: number,
 		lines: string[],
+		reading: number | null = null,
 	): Promise<{ stored: number; future: number; records: Rec[]; limited?: { message: string; retryAfter: number } }> {
 		const sql = this.ctx.storage.sql
 		sql.exec(`INSERT OR REPLACE INTO meta (k, v) VALUES ('user', ?)`, String(userID))
@@ -119,6 +125,17 @@ export class UserHub extends DurableObject<Env> {
 		for (const kind of ['recent', 'old'] as const) used[kind] = Number(sql.exec('SELECT v FROM meta WHERE k = ?', `${kind}:${today}`).toArray()[0]?.v ?? 0)
 		sql.exec(`DELETE FROM meta WHERE (k LIKE 'recent:%' OR k LIKE 'old:%') AND k NOT IN (?, ?)`, `recent:${today}`, `old:${today}`)
 		let limited: { message: string; retryAfter: number } | undefined
+		// Cloud records carry the cloud machine's times, not the sender's, so only a computer's own are corrected.
+		let skew = 0
+		if (computer !== 'cloud') {
+			const key = `clock:${computer}`
+			const was = sql.exec('SELECT v FROM meta WHERE k = ?', key).toArray()[0]?.v
+			const clock = nextClock(was ? (JSON.parse(String(was)) as Clock) : null, reading, now)
+			if (clock) {
+				sql.exec('INSERT OR REPLACE INTO meta (k, v) VALUES (?, ?)', key, JSON.stringify(clock))
+				skew = clock.pin
+			}
+		}
 
 		for (const line of lines) {
 			if (!line.trim() || line.length > MAX_LINE) continue
@@ -131,7 +148,7 @@ export class UserHub extends DurableObject<Env> {
 			const t = typeof ev?.t === 'string' ? Date.parse(ev.t) : NaN
 			const tool = text(ev.tool, 32), session = text(ev.session, 200), event = text(ev.event, 64)
 			if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(tool) || !session || !event || !(t > 0)) continue
-			if (t > now + CLOCK_SKEW) {
+			if (t + skew > now + CLOCK_SKEW) {
 				future++
 				continue
 			}
@@ -146,6 +163,7 @@ export class UserHub extends DurableObject<Env> {
 				...(tin || tout ? { in: Math.min(tin, MAX_TOKENS), out: Math.min(tout, MAX_TOKENS) } : {}),
 				...(added || removed ? { added: Math.min(added, MAX_LINES), removed: Math.min(removed, MAX_LINES) } : {}),
 				...(clamped ? { clamped: true } : {}),
+				...(Math.abs(skew) >= 1000 ? { skew } : {}),
 				...(event === 'commit' && typeof ev.sha === 'string' && /^[0-9a-f]{40}$/.test(ev.sha) ? { sha: ev.sha } : {}),
 			}
 			if (event === 'commit' && !rec.sha) continue

@@ -171,11 +171,20 @@ func whoami(client *http.Client, server, key string) (account, int, error) {
 // clockWarning says what a clock skew does to the person's time, or is ""
 // when it is too small to matter. The site refuses records dated more than 5
 // minutes ahead of it, and credits only records that reach it within 5
-// minutes of when they say they happened.
+// minutes of when they say they happened. A site that corrects clocks pins
+// one correction per computer, up to an hour, and follows a change only after
+// it holds for a day.
 func clockWarning(skew time.Duration) string {
 	off := plural(int(skew.Abs().Round(time.Minute)/time.Minute), "minute")
 	if skew.Abs() < 2*time.Minute {
 		return ""
+	}
+	if skew.Abs() <= time.Hour {
+		dir := "ahead of"
+		if skew < 0 {
+			dir = "behind"
+		}
+		return fmt.Sprintf("Your clock is %s %s the site's. The site corrects this computer's records by the offset it measured when they first arrived; if your clock changes, it takes a day to follow, and records sent meanwhile may not count. An older site doesn't correct at all. Set your clock to update automatically.", off, dir)
 	}
 	if skew > 0 {
 		return fmt.Sprintf("Your clock is %s ahead of the site's. Past 5 minutes ahead, the site refuses your records as dated in the future, and none of your time counts. Set your clock to update automatically.", off)

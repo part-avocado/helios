@@ -1362,6 +1362,45 @@ test('gaps between prompts that hold commits GitHub found are listed, and a neoa
 	assert.deepEqual(((await (await call(`/api/review/submissions/${again.id}`, { cookie: admin })).json()) as Page).commit_gaps, [])
 })
 
+test('a computer whose clock is off is corrected by one pinned skew, which a batch cannot choose', async () => {
+	const cookie = await signIn('offclock')
+	const { api_key: key } = await me(cookie)
+	const now = Date.now()
+	const min = 60_000
+	const iso = (t: number) => new Date(t).toISOString()
+	// Each computer's clock reads its own time; `behind` is how far it runs behind the site's.
+	const send = (computer: string, project: string, behind: number, ago: number[], session = project) =>
+		server.fetch(SITE + '/api/v1/events', {
+			method: 'POST',
+			headers: { Authorization: `Bearer ${key}`, 'X-Teardrop-Computer': computer, 'X-Teardrop-Sent-At': iso(now - behind) },
+			body: ago.map((a, i) => JSON.stringify({ t: iso(now - behind - a * 1000), tool: 'claude-code', event: i % 2 ? 'Stop' : 'UserPromptSubmit', session, project, human: i % 2 === 0, judged: 6, real: 6 })).join('\n'),
+		})
+	const submit = async (project: string) => (await (await call('/api/v1/submissions', { method: 'POST', key, body: JSON.stringify({ project }) })).json()) as { id: string; witnessed_seconds: number; unwitnessed_seconds: number }
+	const slow = 'td-aaaaaaaaaaa1', fast = 'td-aaaaaaaaaaa2', fresh = 'td-aaaaaaaaaaa3'
+
+	// 20 minutes slow: its records look 20 minutes late, and are witnessed at the pinned correction.
+	assert.equal((await send(slow, 'github.com/kid/slow', 20 * min, [240, 120, 10])).status, 200)
+	const slowSub = await submit('github.com/kid/slow')
+	assert.deepEqual([slowSub.witnessed_seconds, slowSub.unwitnessed_seconds], [230, 0])
+	// A later batch that claims a different clock (50 minutes slow) moves nothing: its records, sent now, stay late.
+	assert.equal((await send(slow, 'github.com/kid/moved', 50 * min, [240, 120, 10])).status, 200)
+	const moved = await submit('github.com/kid/moved')
+	assert.deepEqual([moved.witnessed_seconds, moved.unwitnessed_seconds], [0, 230])
+	// A computer's first batch can't pin a week back: last week's records, sent with a matching sent time, stay unwitnessed.
+	assert.equal((await send(fresh, 'github.com/kid/week', 7 * 24 * 60 * min, [240, 120, 10])).status, 200)
+	const week = await submit('github.com/kid/week')
+	assert.deepEqual([week.witnessed_seconds, week.unwitnessed_seconds], [0, 230])
+	// 10 minutes fast: its records are no longer refused as dated in the future, and are witnessed.
+	const res = await send(fast, 'github.com/kid/fast', -10 * min, [240, 120, 10])
+	assert.deepEqual(await res.json(), { stored: 0, records: 3 })
+	const fastSub = await submit('github.com/kid/fast')
+	assert.deepEqual([fastSub.witnessed_seconds, fastSub.unwitnessed_seconds], [230, 0])
+	// Reviewers are told which records were corrected by more than the witness window.
+	const page = (await (await call(`/api/review/submissions/${fastSub.id}`, { cookie: await signIn('admin') })).json()) as { flags: { kind: string; text: string }[] }
+	assert.deepEqual(page.flags.map((f) => f.kind), ['clock-skew'])
+	assert.match(page.flags[0]!.text, /3 records .*\(up to 10 minutes\)/)
+})
+
 test('the site keeps every prompt record in R2 and credits only time it saw arrive', async () => {
 	const cookie = await signIn('recorder')
 	const { api_key: key } = await me(cookie)

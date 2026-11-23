@@ -43,6 +43,8 @@ export interface Rec {
 	event?: string
 	/** It claimed more tokens or lines than one record can hold, and was cut to the most (hub.ts). */
 	clamped?: boolean
+	/** How far its computer's clock ran behind the site's, in ms, as pinned for that computer (hub.ts); ahead is negative. */
+	skew?: number
 }
 
 export interface Stretch {
@@ -51,7 +53,8 @@ export interface Stretch {
 	witnessed: boolean
 }
 
-const witnessed = (r: Rec) => r.arrived - r.t <= WITNESS
+/** Witnessed against the time the record claims, corrected by its computer's pinned clock skew. */
+const witnessed = (r: Rec) => r.arrived - (r.t + (r.skew ?? 0)) <= WITNESS
 /** timed says whether a record is a prompt or agent output, which time is credited between. */
 export const timed = (r: Rec) => !r.sha && r.event !== 'usage'
 
@@ -191,6 +194,37 @@ export function totals(all_: Rec[], from: number, to: number): Totals {
 	return t
 }
 
+/** The most a computer's clock is corrected by; a reading further off is ignored. */
+const MAX_SKEW = 3600_000
+/** A reading within this of the pin agrees with it. */
+const SKEW_AGREE = 60_000
+/** How long a different reading must hold before it replaces the pin. */
+const SKEW_HOLD = 86400_000
+
+/**
+ * A computer's clock correction: the pin, and a different reading waiting to
+ * replace it. The pin is set from a computer's first reading and changes only
+ * when another reading holds for a day, so a batch can't pick its own skew:
+ * one that says it was sent last week is ignored, and its records stay late.
+ */
+export interface Clock {
+	pin: number
+	cand?: number
+	since?: number
+}
+
+/** nextClock folds one reading, now minus the time the computer said it sent the batch, into its clock. */
+export function nextClock(clock: Clock | null, reading: number | null, now: number): Clock | null {
+	if (reading == null || !Number.isFinite(reading) || Math.abs(reading) > MAX_SKEW) return clock
+	const r = Math.round(reading / 1000) * 1000
+	if (!clock) return { pin: r }
+	if (Math.abs(r - clock.pin) <= SKEW_AGREE) return { pin: clock.pin }
+	if (clock.cand != null && clock.since != null && Math.abs(r - clock.cand) <= SKEW_AGREE) {
+		return now - clock.since >= SKEW_HOLD ? { pin: clock.cand } : clock
+	}
+	return { pin: clock.pin, cand: r, since: now }
+}
+
 /** A day with more witnessed time than this, across a person's computers, is worth a look. */
 const LONG_DAY = 16 * 3600
 /** A prompt sent this soon after the agent's reply was sent before the reply could be read. */
@@ -203,7 +237,7 @@ const ROLLING_DAY = 14 * 3600_000
 
 /** Reasons a reviewer should look at a submission first. None changes what is credited. */
 export interface Flag {
-	kind: 'long-day' | 'steady-gaps' | 'even-gaps' | 'no-turn-ends' | 'no-tokens' | 'clamped' | 'quick-replies' | 'unanswered' | 'no-break' | 'rolling-day'
+	kind: 'long-day' | 'steady-gaps' | 'even-gaps' | 'no-turn-ends' | 'no-tokens' | 'clamped' | 'quick-replies' | 'unanswered' | 'no-break' | 'rolling-day' | 'clock-skew'
 	text: string
 }
 
@@ -287,6 +321,12 @@ export function flags(all: (Rec & { event: string })[], dayTotals: { day: string
 	const silent = recs.filter((r) => !r.human && r.tool === 'amp' && r.event === 'agent.end' && !r.in && !r.out)
 	if (silent.length >= 3) out.push({ kind: 'no-tokens', text: `${silent.length} Amp turns ended with no tokens, which Amp always reports.` })
 	// Counted from all of them: commit and usage records carry lines and tokens too.
+	// Records witnessed only because their computer's clock was corrected by more than the witness window allows.
+	const skewed = recs.filter((r) => Math.abs(r.skew ?? 0) > WITNESS)
+	if (skewed.length) {
+		const most = Math.max(...skewed.map((r) => Math.abs(r.skew!)))
+		out.push({ kind: 'clock-skew', text: `${skewed.length} record${skewed.length === 1 ? '' : 's'} came from a computer whose clock was off by more than 5 minutes (up to ${Math.round(most / 60_000)} minutes), and ${skewed.length === 1 ? 'was' : 'were'} counted at the corrected time.` })
+	}
 	const clamped = all.filter((r) => r.clamped).length
 	if (clamped) out.push({ kind: 'clamped', text: `${clamped} record${clamped === 1 ? '' : 's'} claimed more than 200 million tokens or a million lines, and ${clamped === 1 ? 'was' : 'were'} cut to that.` })
 	return out

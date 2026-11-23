@@ -210,6 +210,9 @@ func relayRequestWith(client *http.Client, method, address, key string, body []b
 	req.Header.Set("Authorization", "Bearer "+key)
 	// The site may refuse versions older than its MIN_VERSION.
 	req.Header.Set("X-Teardrop-Version", version)
+	// When this computer sent it, by its clock, from which the site measures
+	// how far the clock is off and pins one correction for this computer.
+	req.Header.Set("X-Teardrop-Sent-At", time.Now().UTC().Format(time.RFC3339Nano))
 	res, err := client.Do(req)
 	if err != nil {
 		return 0, err
