@@ -114,7 +114,13 @@ async function route(request: Request, env: Env): Promise<Response> {
 		// Amp cloud events are also kept the old way, for cloud plugins that still count them themselves. A computer's own records are not.
 		const cloud = (request.headers.get('X-Teardrop-Computer') ?? 'cloud') === 'cloud'
 		const [records, stored] = await Promise.all([relayRecords(env, user, request, body), cloud ? holdEvents(env, user, body) : 0])
-		return json({ stored, records })
+		// dropped_future tells the CLI its clock runs fast, which it says.
+		return json({ stored, records: records.stored, ...(records.future ? { dropped_future: records.future } : {}) })
+	}
+	// Who a sync key belongs to, and this site's clock, for the CLI to compare its own against.
+	if (call === 'GET /api/v1/whoami') {
+		const user = await needKey(request, env, url)
+		return json({ name: user.name, handle: user.handle, time: new Date().toISOString() })
 	}
 	if (call === 'GET /api/v1/cloud') return json(await readEvents(env, await needKey(request, env, url), url.searchParams))
 	// teardrop v0.5.2 on a person's computer asks for cloud events to count

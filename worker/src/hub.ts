@@ -75,14 +75,16 @@ export class UserHub extends DurableObject<Env> {
 
 	/**
 	 * add keeps the records in lines, sent from computer, whose clock is
-	 * offset minutes ahead of UTC. It returns how many were new. Lines that
-	 * are not a record are left out.
+	 * offset minutes ahead of UTC. It returns how many were new, and how many
+	 * it refused for a time ahead of this clock, which a computer whose clock
+	 * runs fast sends. Lines that are not a record are left out.
 	 */
-	async add(userID: number, computer: string, offset: number, lines: string[]): Promise<{ stored: number; records: Rec[] }> {
+	async add(userID: number, computer: string, offset: number, lines: string[]): Promise<{ stored: number; future: number; records: Rec[] }> {
 		const sql = this.ctx.storage.sql
 		sql.exec(`INSERT OR REPLACE INTO meta (k, v) VALUES ('user', ?)`, String(userID))
 		const now = Date.now()
 		const kept: Rec[] = []
+		let future = 0
 		for (const line of lines) {
 			if (!line.trim() || line.length > MAX_LINE) continue
 			let ev: Line
@@ -93,7 +95,11 @@ export class UserHub extends DurableObject<Env> {
 			}
 			const t = typeof ev?.t === 'string' ? Date.parse(ev.t) : NaN
 			const tool = text(ev.tool, 32), session = text(ev.session, 200), event = text(ev.event, 64)
-			if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(tool) || !session || !event || !(t <= now + CLOCK_SKEW) || !(t > 0)) continue
+			if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(tool) || !session || !event || !(t > 0)) continue
+			if (t > now + CLOCK_SKEW) {
+				future++
+				continue
+			}
 			// The fingerprint is a 64-bit number: read from the text, so it is never rounded.
 			const sim = /"sim":\s*"?(\d{1,20})/.exec(line)?.[1]
 			const rec: Rec = {
@@ -118,7 +124,7 @@ export class UserHub extends DurableObject<Env> {
 		if (kept.length && (await this.ctx.storage.getAlarm()) == null) await this.ctx.storage.setAlarm(now + FLUSH)
 		// Open dashboards hear of it at once; a send never waits on the socket.
 		if (kept.length) this.broadcast()
-		return { stored: kept.length, records: kept }
+		return { stored: kept.length, future, records: kept }
 	}
 
 	/** load reads a sealed day's records back from R2 into the working copy, once. */

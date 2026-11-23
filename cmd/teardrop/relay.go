@@ -94,6 +94,7 @@ func runRelay(args []string) {
 	count := fs.Bool("count", false, "then count your cloud threads and sync the result")
 	verbose := fs.Bool("verbose", false, "say what was sent, or why nothing was")
 	fs.Parse(args)
+	future := 0 // this computer's records the site refused as dated in its future
 	counted, err := func() (bool, error) {
 		server, err := serverURL("")
 		if err != nil {
@@ -113,7 +114,10 @@ func runRelay(args []string) {
 				return false, err
 			}
 			if err := sendOutbox(dataDir(), localOutbox, func(lines []byte) (int, error) {
-				return relayRequestWith(client, "POST", server+"/api/v1/events", key, lines, nil, header)
+				var r eventsReply
+				status, err := relayRequestWith(client, "POST", server+"/api/v1/events", key, lines, &r, header)
+				future += r.Future
+				return status, err
 			}); err != nil {
 				return false, err
 			}
@@ -130,6 +134,9 @@ func runRelay(args []string) {
 	if *verbose {
 		check(err)
 		fmt.Println("Sent.")
+		if future > 0 {
+			fmt.Printf("The site refused %s dated more than 5 minutes ahead of its clock. Run `teardrop sync` to compare clocks.\n", plural(future, "record"))
+		}
 		if counted {
 			fmt.Println("Counted your cloud threads and synced them.")
 		}

@@ -1115,8 +1115,15 @@ test('the site keeps every prompt record in R2 and credits only time it saw arri
 	// Backdated: a session from three hours ago, sent now, is kept but not witnessed.
 	const old = now - 3 * 3600_000
 	await post([line(old, 'prompt', { human: true, session: 's2' }), line(old + 120_000, 'turn_end', { session: 's2' }), line(old + 240_000, 'prompt', { human: true, session: 's2' })])
-	assert.equal((await post([line(now + 3600_000, 'prompt', { human: true })])).status, 200)
+	// From a clock 10 minutes fast: refused, and the reply says so, so the CLI can warn.
+	res = await post([line(now + 600_000, 'prompt', { human: true, session: 'fast' }), line(now + 60_000, 'turn_end', { session: 'fast' })])
+	assert.deepEqual([res.status, await res.json()], [200, { stored: 0, records: 1, dropped_future: 1 }])
 	assert.equal((await call('/api/v1/events', { method: 'POST', body: live[0] })).status, 401)
+	// whoami names the key's owner and gives the site's clock.
+	const who = (await (await call('/api/v1/whoami', { key })).json()) as { name: string; handle: string; time: string }
+	assert.equal(who.name, '<b>recorder</b>')
+	assert.ok(Math.abs(Date.parse(who.time) - Date.now()) < 60_000, `whoami time ${who.time}`)
+	assert.equal((await call('/api/v1/whoami')).status, 401)
 
 	const worker = server.getWorker<{
 		HUB: { idFromName(name: string): unknown; get(id: unknown): unknown }

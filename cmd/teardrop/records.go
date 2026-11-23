@@ -121,19 +121,56 @@ func syncRecords(transcripts []sources.Raw, journal []sources.JournalEvent, reso
 	return out
 }
 
+// eventsReply is the site's answer to records: how many were new, and how
+// many it refused because they say they happened in its future.
+type eventsReply struct {
+	Records int `json:"records"`
+	Future  int `json:"dropped_future"`
+}
+
 // sendRecords posts records to the site's events API in batches, as from
-// this computer, and returns how many the site took as new.
-func sendRecords(client *http.Client, server, key string, lines []byte, header http.Header) (int, error) {
-	stored := 0
-	err := sendLines(lines, func(batch []byte) (int, error) {
-		var r struct {
-			Records int `json:"records"`
-		}
+// this computer. It returns how many the site took as new, and how many it
+// refused as dated in the future.
+func sendRecords(client *http.Client, server, key string, lines []byte, header http.Header) (stored, future int, err error) {
+	err = sendLines(lines, func(batch []byte) (int, error) {
+		var r eventsReply
 		status, err := relayRequestWith(client, "POST", server+"/api/v1/events", key, batch, &r, header)
 		stored += r.Records
+		future += r.Future
 		return status, err
 	})
-	return stored, err
+	return stored, future, err
+}
+
+// siteClockOffset asks the site for its time and returns how far this computer's
+// clock is ahead of it; behind is negative.
+func siteClockOffset(client *http.Client, server, key string) (time.Duration, error) {
+	var who struct {
+		Time time.Time `json:"time"`
+	}
+	start := time.Now()
+	if _, err := relayRequest(client, "GET", server+"/api/v1/whoami", key, nil, &who); err != nil {
+		return 0, err
+	}
+	if who.Time.IsZero() {
+		return 0, fmt.Errorf("the site did not say its time")
+	}
+	return start.Add(time.Since(start) / 2).Sub(who.Time), nil
+}
+
+// clockWarning says what a clock skew does to the person's time, or is ""
+// when it is too small to matter. The site refuses records dated more than 5
+// minutes ahead of it, and credits only records that reach it within 5
+// minutes of when they say they happened.
+func clockWarning(skew time.Duration) string {
+	off := plural(int(skew.Abs().Round(time.Minute)/time.Minute), "minute")
+	if skew.Abs() < 2*time.Minute {
+		return ""
+	}
+	if skew > 0 {
+		return fmt.Sprintf("Your clock is %s ahead of the site's. Past 5 minutes ahead, the site refuses your records as dated in the future, and none of your time counts. Set your clock to update automatically.", off)
+	}
+	return fmt.Sprintf("Your clock is %s behind the site's. Past 5 minutes behind, your records look like they arrived late, so the site keeps them but credits none of their time. Set your clock to update automatically.", off)
 }
 
 // computerHeader names this computer and its clock's UTC offset, which decides its records' days.

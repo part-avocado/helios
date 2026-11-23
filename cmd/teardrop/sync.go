@@ -135,7 +135,7 @@ func runSync(args []string) {
 	k, err := syncKey(*key, srv)
 	check(err)
 
-	sent, total := 0, 0
+	sent, total, future := 0, 0, 0
 	once := func() error {
 		now := time.Now()
 		stamp := filepath.Join(dataDir(), "last-records")
@@ -148,7 +148,7 @@ func runSync(args []string) {
 			return err
 		}
 		total = n
-		sent, err = sendRecords(&http.Client{Timeout: 2 * time.Minute}, srv, k, body, header)
+		sent, future, err = sendRecords(&http.Client{Timeout: 2 * time.Minute}, srv, k, body, header)
 		if err != nil {
 			return err
 		}
@@ -169,6 +169,15 @@ func runSync(args []string) {
 	}
 	id, _ := thisComputer()
 	fmt.Printf("Sent %s from this computer (%s); %d were new to the site.\n", plural(total, "record"), id, sent)
+	if future > 0 {
+		fmt.Printf("The site refused %s dated more than 5 minutes ahead of its clock.\n", plural(future, "record"))
+	}
+	// A site from before whoami answers 404; then there is nothing to compare.
+	if skew, err := siteClockOffset(&http.Client{Timeout: 10 * time.Second}, srv, k); err == nil {
+		if w := clockWarning(skew); w != "" {
+			fmt.Println(w)
+		}
+	}
 	fmt.Printf("See it at %s/dashboard\n", srv)
 }
 

@@ -9,13 +9,14 @@ const computerOf = (request: Request) => /^td-[0-9a-f]{12}$|^cloud$/.exec(reques
 
 /**
  * relayRecords hands a batch of records to the account's hub and returns how
- * many were new. The client's UTC offset, in minutes, decides its calendar days.
+ * many were new, and how many it refused as dated in the future. The
+ * client's UTC offset, in minutes, decides its calendar days.
  */
-export async function relayRecords(env: Env, user: User, request: Request, body: string): Promise<number> {
+export async function relayRecords(env: Env, user: User, request: Request, body: string): Promise<{ stored: number; future: number }> {
 	const offset = Math.max(-840, Math.min(840, Number(request.headers.get('X-Teardrop-UTC-Offset')) || 0))
 	const hub = env.HUB.get(env.HUB.idFromName(String(user.id)))
-	const { stored } = await hub.add(user.id, computerOf(request), offset, body.split('\n'))
-	return stored
+	const { stored, future } = await hub.add(user.id, computerOf(request), offset, body.split('\n'))
+	return { stored, future }
 }
 
 export interface PromptDay {

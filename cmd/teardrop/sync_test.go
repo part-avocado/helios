@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -95,6 +96,69 @@ func TestSyncDryRunSendsNothing(t *testing.T) {
 	}
 	if k, _ := syncKey("", srv); k != "tdk_mine" {
 		t.Errorf("dry run remembered key %q", k)
+	}
+}
+
+// A sync says when the site refused records as dated in its future, and
+// warns when this computer's clock is off by enough to lose time.
+func TestSyncWarnsAboutTheClock(t *testing.T) {
+	cases := []struct {
+		name  string
+		skew  time.Duration // how far this computer's clock is ahead of the site's
+		whoam bool          // whether the site answers whoami
+		want  []string
+		not   []string
+	}{
+		{"slow clock", -10 * time.Minute, true, []string{"10 minutes behind the site's", "refused 2 records"}, []string{"ahead of the site's"}},
+		{"fast clock", 7 * time.Minute, true, []string{"7 minutes ahead of the site's"}, []string{"behind the site's"}},
+		{"right clock", 30 * time.Second, true, nil, []string{"Your clock"}},
+		{"site without whoami", -10 * time.Minute, false, nil, []string{"Your clock"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Setenv("TEARDROP_DATA_DIR", dir)
+			t.Setenv("TEARDROP_SERVER", "")
+			t.Setenv("TEARDROP_KEY", "")
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/api/v1/events":
+					w.Write([]byte(`{"stored":0,"records":1,"dropped_future":2}`))
+				case "/api/v1/whoami":
+					if !c.whoam {
+						http.NotFound(w, r)
+						return
+					}
+					fmt.Fprintf(w, `{"name":"Ada","time":%q}`, time.Now().Add(-c.skew).Format(time.RFC3339Nano))
+				default:
+					w.Write([]byte("{}"))
+				}
+			}))
+			defer ts.Close()
+			sources.AppendJournal(dir, sources.JournalEvent{Time: time.Now().Add(-time.Minute), Tool: "claude-code", Event: "UserPromptSubmit", Human: true, Session: "s"})
+
+			out, err := os.Create(filepath.Join(t.TempDir(), "out"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			stdout := os.Stdout
+			os.Stdout = out
+			empty := t.TempDir()
+			runSync([]string{"-server", ts.URL, "-key", "tdk_k", "-claude-dir", empty, "-codex-dir", empty})
+			os.Stdout = stdout
+			out.Close()
+			got, _ := os.ReadFile(out.Name())
+			for _, w := range c.want {
+				if !strings.Contains(string(got), w) {
+					t.Errorf("sync printed %q, want %q in it", got, w)
+				}
+			}
+			for _, n := range c.not {
+				if strings.Contains(string(got), n) {
+					t.Errorf("sync printed %q, want no %q", got, n)
+				}
+			}
+		})
 	}
 }
 
