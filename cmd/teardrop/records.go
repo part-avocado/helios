@@ -43,7 +43,7 @@ func syncRecords(transcripts []sources.Raw, journal []sources.JournalEvent, reso
 		out = append(out, ev)
 	}
 	for _, r := range transcripts {
-		p, _ := resolve(r)
+		p, root := resolve(r)
 		hooks := hooked[key{r.Tool, r.ID}]
 		// hookSaw reports whether a hook recorded a prompt near t, and a turn end after it before the next prompt.
 		hookSaw := func(t time.Time) (prompt, end bool) {
@@ -90,7 +90,7 @@ func syncRecords(transcripts []sources.Raw, journal []sources.JournalEvent, reso
 					rec := base
 					rec.Time, rec.Event, rec.Human = at, "prompt", true
 					if s, ok := r.Scores[idx[start]]; ok {
-						rec.Judged, rec.Real, rec.Sim, rec.Low = s.Judged, s.Real, uint64(s.Sim), s.Low
+						rec.Judged, rec.Real, rec.Sim, rec.Low = s.Judged, s.Real+vocabHits(root, s.Unknown), uint64(s.Sim), s.Low
 					} else {
 						rec.Judged, rec.Real = 1, 1 // a prompt the transcript holds no words of, such as an image
 					}

@@ -81,6 +81,10 @@ func hookRecord(tool, event string, in hookInput, now time.Time) (ev sources.Jou
 	if ev.Human {
 		s := textscore.Analyze(in.Prompt)
 		ev.Judged, ev.Real, ev.Sim, ev.Low = s.Judged, s.Real, uint64(s.Sim), s.Low
+		// Words the dictionary lacks may be the project's own, if a sync saved them.
+		if len(s.Unknown) > 0 {
+			ev.Real += vocabHits(savedRoot(cwd), s.Unknown)
+		}
 	} else {
 		ev.In, ev.Out = max(0, in.TokensIn), max(0, in.TokensOut)
 		ev.Added, ev.Removed = max(0, in.LinesAdded), max(0, in.LinesRemoved)

@@ -124,7 +124,7 @@ func runSync(args []string) {
 	fs.Parse(args)
 	if *dryRun {
 		// Before serverURL and syncKey, which remember -server and -key.
-		_, _, body, n, err := pendingRecords(*claudeDir, *codexDir)
+		_, _, body, n, err := pendingRecords(*claudeDir, *codexDir, false)
 		check(err)
 		os.Stdout.Write(body)
 		fmt.Fprintf(os.Stderr, "A sync would send %s. Nothing was sent.\n", plural(n, "record"))
@@ -139,7 +139,7 @@ func runSync(args []string) {
 	once := func() error {
 		now := time.Now()
 		stamp := filepath.Join(dataDir(), "last-records")
-		transcripts, journal, body, n, err := pendingRecords(*claudeDir, *codexDir)
+		transcripts, journal, body, n, err := pendingRecords(*claudeDir, *codexDir, true)
 		if err != nil {
 			return err
 		}
@@ -187,8 +187,9 @@ func runSync(args []string) {
 
 // pendingRecords is what the next sync sends, as JSON lines: after the
 // first run, only what changed since the last one, with an hour to spare.
-// The site drops a record it already has.
-func pendingRecords(claudeDir, codexDir string) (transcripts []sources.Raw, journal []sources.JournalEvent, body []byte, n int, err error) {
+// The site drops a record it already has. With saveWords, it first saves the
+// words of recent projects' files (vocab.go), which a dry run leaves alone.
+func pendingRecords(claudeDir, codexDir string, saveWords bool) (transcripts []sources.Raw, journal []sources.JournalEvent, body []byte, n int, err error) {
 	window, _ := parseSince(syncWindow)
 	cutoff := time.Now().Add(-window)
 	if info, err := os.Stat(filepath.Join(dataDir(), "last-records")); err == nil && info.ModTime().After(cutoff) {
@@ -196,7 +197,11 @@ func pendingRecords(claudeDir, codexDir string) (transcripts []sources.Raw, jour
 	}
 	transcripts, _, _ = load(locations(claudeDir, codexDir), cutoff)
 	journal = sources.ReadJournalEvents(dataDir(), cutoff.Add(-24*time.Hour))
-	recs := syncRecords(transcripts, journal, localProjects(), cutoff)
+	resolve := localProjects()
+	if saveWords {
+		saveVocabs(recentRoots(transcripts, journal, resolve, time.Now()))
+	}
+	recs := syncRecords(transcripts, journal, resolve, cutoff)
 	var buf bytes.Buffer
 	for _, r := range recs {
 		b, err := json.Marshal(r)
