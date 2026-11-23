@@ -290,7 +290,7 @@ npm run dev</code></pre>
 		<tr><td><code>ADMINS</code></td><td>Slack user IDs of the superadmins, separated by commas. They add everyone else who reviews, in <a href="#review-app">the review app</a>.</td></tr>
 		<tr><td><code>GITHUB_TOKEN</code></td><td>Optional secret. Lets the hourly check ask GitHub which claimed commits exist. Without it, commits are linked but not checked.</td></tr>
 	</table>
-	<p>To change a secret later, edit it in the dashboard. For your own domain, add a <a href="https://developers.cloudflare.com/workers/configuration/routing/custom-domains/">custom domain</a> to the Worker and use it in the redirect URI. Cloudflare accepts uploads of up to 100 MB, so a larger submission has to go to the review server directly.</p>
+	<p>To change a secret later, edit it in the dashboard. For your own domain, add a <a href="https://developers.cloudflare.com/workers/configuration/routing/custom-domains/">custom domain</a> to the Worker and use it in the redirect URI. Cloudflare accepts uploads of up to 100 MB.</p>
 
 	<h3 id="review-app">The review app</h3>
 	<p>Reviewing has its own app at <code>/review/</code>, apart from the rest of the site. Reviewers get a Review link in the top bar. What a reviewer can do depends on their level:</p>

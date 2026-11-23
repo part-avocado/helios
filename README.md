@@ -196,6 +196,13 @@ cp .dev.vars.example .dev.vars   # signs you in as DEV_LOGIN, on localhost only
 npm run dev
 ```
 
+The site runs only on Cloudflare Workers, with D1, R2, and a Durable Object
+per account; there is no other backend. `npm run dev` runs all of it on your
+computer, with a local database and bucket, at `http://localhost:8787`. To
+sync a test computer to it without touching the server and key your real
+setup remembers, give the command its own data folder:
+`TEARDROP_DATA_DIR=/tmp/td teardrop sync -server http://localhost:8787 -key tdk_...`.
+
 To put it online without installing anything, connect this repository in the
 Cloudflare dashboard (Workers & Pages, Create, Import a repository). Name the
 Worker `teardrop`, set the root directory to `worker`, the build command to

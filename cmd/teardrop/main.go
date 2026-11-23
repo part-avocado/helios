@@ -5,6 +5,11 @@
 //	teardrop          show your timeline for the last 7 days
 //	teardrop setup    check which tools are found, install hooks, fix settings that lose history
 //	teardrop setup amp   set up one tool only: claude, codex, or amp
+//	teardrop dashboard   open a live dashboard in the browser
+//	teardrop calibrate   show how the time model's caps treat your logs
+//	teardrop export   write a signed report to upload on the website
+//	teardrop sync     send your records to your account on the website
+//	teardrop submit <project>   submit a project's hours, from the records the site holds
 //	teardrop update   replace this teardrop with the latest release
 //	teardrop hook claude-code   record one Claude Code hook event (run by Claude Code)
 //	teardrop relay    send events recorded in Amp's cloud to your teardrop site, and count them there (run by the Amp cloud plugin)
@@ -30,6 +35,20 @@ import (
 
 // version is set by the release build.
 var version = "dev"
+
+// usage lists the commands people run. hook, relay, and export-records are
+// left out: tools and superadmins run them, and the docs cover them.
+const usage = `Usage: teardrop [flags]        show your AI coding timeline (-l keeps it updating live)
+       teardrop setup           check which tools are found, install hooks, fix settings that lose history
+       teardrop setup amp       set up one tool only: claude, codex, or amp
+       teardrop dashboard       open a live dashboard of your stats in the browser
+       teardrop calibrate       show how the time model's caps treat your logs; uploads nothing
+       teardrop export          write a signed report to upload on the website, under Settings
+       teardrop sync            upload your signed counts (time, prompts, tokens, lines; no text) to your account on the website
+       teardrop submit <project>  submit a project's hours for review; the site uses the records it already has, nothing is uploaded
+       teardrop update          download the latest teardrop and replace this one with it
+
+`
 
 // A prompt with more than this share of unrecognized words earns no time.
 const noiseThreshold = 0.5
@@ -87,16 +106,7 @@ func main() {
 	// and hours counted with other rules wouldn't match an export or a sync.
 	rules := timeline.DefaultRules
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "Usage: teardrop [flags]   show your AI coding timeline (-l keeps it updating live)")
-		fmt.Fprintln(os.Stderr, "       teardrop setup      check which tools are found, install hooks, fix settings that lose history")
-		fmt.Fprintln(os.Stderr, "       teardrop setup amp  set up one tool only: claude, codex, or amp")
-		fmt.Fprintln(os.Stderr, "       teardrop dashboard  open a live dashboard of your stats in the browser")
-		fmt.Fprintln(os.Stderr, "       teardrop export     write a signed report to upload on the website, under Settings")
-		fmt.Fprintln(os.Stderr, "       teardrop sync       upload your signed counts (time, prompts, tokens, lines; no text) to your account on the website")
-		fmt.Fprintln(os.Stderr, "       teardrop submit     submit a project's hours with the full chat logs behind them, for review")
-		fmt.Fprintln(os.Stderr, "       teardrop server     run the review server")
-		fmt.Fprintln(os.Stderr, "       teardrop update     download the latest teardrop and replace this one with it")
-		fmt.Fprintln(os.Stderr)
+		fmt.Fprint(os.Stderr, usage)
 		flag.PrintDefaults()
 	}
 	flag.Parse()
