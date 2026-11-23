@@ -55,9 +55,17 @@
 			<h2>Set up a computer</h2>
 			<p class="muted">Do this on each computer you code on. They all add up on your dashboard.</p>
 			<div id="setup-steps"></div>
-			<h3>Sync key</h3>
-			<p class="muted">If your sync key gets out, make a new one. The old key stops working, so run the new connect command on each of your computers afterwards.</p>
-			<button class="btn small" id="new-key" type="button">Make a new key</button>
+			<h3>Sync keys</h3>
+			<p class="muted">Each computer you connect with <code>teardrop login</code> gets a sync key of its own, listed here by its computer ID. Revoke one, and that computer alone stops syncing. You can also make a key for a computer you set up by hand with <code>teardrop sync -key</code>.</p>
+			<form class="key-form" id="sync-key-form">
+				<label class="field">What will use it<input name="name" maxlength="60" autocomplete="off" placeholder="Such as: build server" required></label>
+				<button class="btn small primary">Make a sync key</button>
+			</form>
+			<p class="msg" id="sync-key-msg" role="status" hidden></p>
+			<div class="list" id="sync-keys"></div>
+			<h3>Account key</h3>
+			<p class="muted">Your account's own sync key is the one in the steps above, for Amp cloud threads. If it gets out, make a new one: the old one stops working, and the keys listed above keep theirs.</p>
+			<button class="btn small" id="new-key" type="button">Make a new account key</button>
 			<p class="msg" id="key-msg" role="status" hidden></p>
 		</section>
 
@@ -157,12 +165,16 @@
 	</div>
 </main>
 <dialog class="modal" id="key-dialog" aria-labelledby="key-dialog-title">
-	<h2 id="key-dialog-title">Your new sync key</h2>
-	<p>The old key has stopped working. Copy this one to wherever you put the old one by hand.</p>
+	<h2 id="key-dialog-title">Your new account key</h2>
+	<p>The old account key has stopped working. Copy this one to wherever you put the old one by hand. Computers with keys of their own keep syncing.</p>
 	<div class="box"><div class="cmd plain"><code id="new-key-value"></code><button class="copy" type="button">Copy</button></div></div>
-	<p>On each of your computers, run this once and type the code it shows:</p>
-	<div class="box"><div class="cmd"><code id="new-key-connect"></code><button class="copy" type="button">Copy</button></div></div>
 	<p class="fine">If you count Amp cloud threads, also put the new key in the <code>TEARDROP_KEY</code> secret, in Amp's Secrets &amp; Env Vars settings. The key stays visible under Setup, so you can come back for it.</p>
+	<form method="dialog" class="actions"><button class="btn primary small">Done</button></form>
+</dialog>
+<dialog class="modal" id="sync-dialog" aria-labelledby="sync-dialog-title">
+	<h2 id="sync-dialog-title">Your new sync key</h2>
+	<p>Copy it now: it is not shown again. On the computer it is for, run:</p>
+	<div class="box"><div class="cmd"><code id="sync-key-connect"></code><button class="copy" type="button">Copy</button></div></div>
 	<form method="dialog" class="actions"><button class="btn primary small">Done</button></form>
 </dialog>
 <dialog class="modal" id="api-dialog" aria-labelledby="api-dialog-title">

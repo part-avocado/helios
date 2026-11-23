@@ -3,7 +3,7 @@
 // person's synced reports in D1, and the API the pages and the CLI use. The
 // review app, at /review/, is the files in ../site/review and the API under
 // /api/review/.
-import { clearSession, finishSignIn, keyUser, reviewKeyUser, rotateKey, sameOrigin, sessionUser, signOut, startSignIn, type User, userByID } from './auth.ts'
+import { clearSession, createSyncKey, finishSignIn, keyUser, reviewKeyUser, revokeSyncKey, rotateKey, sameOrigin, sessionUser, signOut, startSignIn, syncKeys, type User, userByID } from './auth.ts'
 import { cloudComputer, holdEvents, MAX_EVENTS_BYTES, readEvents } from './events.ts'
 import { json, jsonText, readText, redirect, Refusal } from './http.ts'
 import { checkGit } from './git.ts'
@@ -229,6 +229,13 @@ async function route(request: Request, env: Env): Promise<Response> {
 		return res
 	}
 	if (call === 'POST /api/key') return json({ api_key: await rotateKey(env, user) })
+	// Sync keys beside the account's own: one per computer that ran `teardrop login`, and any made here.
+	if (call === 'GET /api/sync-keys') return json({ keys: await syncKeys(env, user) })
+	if (call === 'POST /api/sync-keys') return json(await createSyncKey(env, user, String((await jsonBody(request)).name ?? '')))
+	if (request.method === 'DELETE' && path.startsWith('/api/sync-keys/')) {
+		await revokeSyncKey(env, user, path.slice('/api/sync-keys/'.length))
+		return json({})
+	}
 	// Their public profile: its handle, whether it is public, and which projects it names.
 	if (call === 'GET /api/profile') return json(await ownProfile(env, user))
 	if (call === 'POST /api/profile') {

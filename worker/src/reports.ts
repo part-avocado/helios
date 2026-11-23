@@ -488,6 +488,7 @@ export async function deleteUser(env: Env, userID: number): Promise<void> {
 		// Their profile goes: its handle is free for someone else, and their choices of what it shows are forgotten.
 		env.DB.prepare('DELETE FROM project_settings WHERE user_id = ?').bind(userID),
 		env.DB.prepare(`UPDATE users SET name = '', handle = NULL, profile_public = 1, api_key = ?, deleted_at = ? WHERE id = ?`).bind(newKey(), Date.now(), userID),
+		env.DB.prepare('DELETE FROM sync_keys WHERE user_id = ?').bind(userID),
 	])
 	// The archived part of their log stays too, without project names or report keys.
 	const { results: archives } = await env.DB.prepare('SELECT key FROM log_archives WHERE user_id = ?').bind(userID).all<{ key: string }>()

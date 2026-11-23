@@ -44,13 +44,12 @@ async function load() {
 }
 
 $('new-key').addEventListener('click', async () => {
-	if (!confirm('Make a new sync key? Your computers stop syncing until you run teardrop login on each of them again.')) return
+	if (!confirm('Make a new account key? The old one stops working wherever you put it by hand, such as Amp cloud threads. Computers with keys of their own keep syncing.')) return
 	try {
 		const key = (await change('/api/key', 'POST')).api_key
 		renderSetup($('setup-steps'), key)
 		// The new key in a popup, to copy to wherever the old one was.
 		$('new-key-value').textContent = key
-		$('new-key-connect').textContent = `teardrop login -server ${location.origin}`
 		$('key-dialog').showModal()
 		say($('key-msg'), 'New key made. The steps above now use it.', true)
 	} catch (e) {
@@ -94,6 +93,39 @@ $('profile-public').addEventListener('change', (e) => saveProfile({ public: e.ta
 $('profile-projects').addEventListener('change', (e) => {
 	const key = e.target.dataset.project
 	if (key !== undefined) saveProfile({ projects: { [key]: e.target.checked } })
+})
+
+// Sync keys beside the account's own: one per computer that ran teardrop login, and any made here.
+async function listSyncKeys() {
+	const { keys } = await api('/api/sync-keys')
+	$('sync-keys').innerHTML = keys.map((k) => `<div class="item">
+			<div class="grow">${/^td-[0-9a-f]{12}$/.test(k.name) ? `Computer <code>${esc(k.name)}</code>` : `<b>${esc(k.name)}</b>`} <code>${esc(k.hint)}…</code>
+				<div class="sub">Made ${esc(ago(k.created_at))} - ${k.last_used_at ? `last used ${esc(ago(k.last_used_at))}` : 'never used'}</div></div>
+			<button class="btn small danger" type="button" data-revoke="${k.id}" data-name="${esc(k.name)}">Revoke</button>
+		</div>`).join('') || '<div class="item"><div class="grow muted">No other sync keys. Each computer you connect with teardrop login adds one.</div></div>'
+}
+$('sync-key-form').addEventListener('submit', async (e) => {
+	e.preventDefault()
+	try {
+		const made = await change('/api/sync-keys', 'POST', JSON.stringify({ name: e.target.name.value }))
+		e.target.reset()
+		$('sync-key-msg').hidden = true
+		$('sync-key-connect').textContent = `teardrop sync -server ${location.origin} -key ${made.key}`
+		$('sync-dialog').showModal()
+		await listSyncKeys()
+	} catch (err) {
+		say($('sync-key-msg'), err.message, false)
+	}
+})
+$('sync-keys').addEventListener('click', async (e) => {
+	const d = e.target.closest('[data-revoke]')?.dataset
+	if (!d || !confirm(`Revoke the sync key "${d.name}"? Whatever uses it stops syncing at once.`)) return
+	try {
+		await change('/api/sync-keys/' + d.revoke, 'DELETE')
+		await listSyncKeys()
+	} catch (err) {
+		say($('sync-key-msg'), err.message, false)
+	}
 })
 
 // Read keys for the public API.
@@ -179,6 +211,7 @@ $('delete-account').addEventListener('click', async () => {
 if ('hosted' in document.documentElement.dataset) {
 	load().catch((e) => say($('key-msg'), e.message, false))
 	listKeys().catch((e) => say($('api-msg'), e.message, false))
+	listSyncKeys().catch((e) => say($('sync-key-msg'), e.message, false))
 	api('/api/profile').then(showProfile, (e) => say($('profile-msg'), e.message, false))
 }
 else location.replace('dashboard.html')

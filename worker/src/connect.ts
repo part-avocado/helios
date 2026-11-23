@@ -2,14 +2,15 @@
 // The CLI asks for a login (POST /api/v1/login) and shows its person a short
 // code. Signed in on the site, they open /connect, type the code, check the
 // computer's ID, and allow it. The CLI, polling GET /api/v1/login/{code}
-// with a secret code of its own, then gets their sync key, once.
+// with a secret code of its own, then gets a sync key of its own, once,
+// named by its computer ID, which they can revoke alone under Settings.
 //
 // Someone could start a login and send the code to another person, to get
 // their key. So the code must be typed, not followed from a link; the page
 // says what allowing gives away and names the computer; a login lasts 10
 // minutes and gives the key once. The allow page also says when and from
 // where the login was asked for, which a code sent by someone else won't match.
-import { keyHash, sameOrigin, sessionUser, userByID } from './auth.ts'
+import { createSyncKey, keyHash, sameOrigin, sessionUser, userByID } from './auth.ts'
 import { json, readText, redirect, Refusal, randomToken } from './http.ts'
 import { esc, page } from './signin.ts'
 
@@ -60,9 +61,9 @@ export async function pollLogin(env: Env, code: string): Promise<Response> {
 	const gone = new Refusal(410, 'That login has expired or was used already. Run `teardrop login` again.')
 	if (!/^tdl_[A-Za-z0-9_-]+$/.test(code)) throw gone
 	const hash = await keyHash(code)
-	const row = await env.DB.prepare('SELECT user_id, expires_at, allowed_at, denied_at, collected_at FROM cli_logins WHERE hash = ?')
+	const row = await env.DB.prepare('SELECT user_id, computer_id, expires_at, allowed_at, denied_at, collected_at FROM cli_logins WHERE hash = ?')
 		.bind(hash)
-		.first<{ user_id: number | null; expires_at: number; allowed_at: number | null; denied_at: number | null; collected_at: number | null }>()
+		.first<{ user_id: number | null; computer_id: string; expires_at: number; allowed_at: number | null; denied_at: number | null; collected_at: number | null }>()
 	if (!row || row.collected_at != null || Date.now() > row.expires_at) throw gone
 	if (row.denied_at != null) return json({ status: 'denied' })
 	if (row.allowed_at == null || row.user_id == null) return json({ status: 'pending' })
@@ -72,7 +73,9 @@ export async function pollLogin(env: Env, code: string): Promise<Response> {
 	const user = await userByID(env, row.user_id)
 	if (!user) throw gone
 	if (user.ban) throw new Refusal(403, 'This account is banned, so no computer can be connected to it.')
-	return json({ status: 'done', key: user.api_key, name: user.name, handle: user.handle })
+	// A computer that logs in again gets a new key, and its old one stops.
+	const { key } = await createSyncKey(env, user, row.computer_id, true)
+	return json({ status: 'done', key, name: user.name, handle: user.handle })
 }
 
 /** connect answers GET and POST /connect, where a signed-in person allows a login by its code. */
@@ -125,8 +128,8 @@ function allowPage(short: string, computer: string, asked: number, place: string
 	return page(200, 'Connect this computer?', `
 		<p class="muted">Computer <b class="site">${esc(computer)}</b> asked to connect to your account ${when}${place ? `, from near <b>${esc(place)}</b>` : ''}. Check that <code>teardrop login</code> shows the same ID, and that you ran it then and there. If you didn't, cancel: someone sent you their code.</p>
 		<ul class="grants">
-			<li>It gets your sync key, so it can send records, submit projects as you, and read your submissions and reviewers' notes</li>
-			<li>Making a new key under Settings disconnects it, and every other computer</li>
+			<li>It gets a sync key, so it can send records, submit projects as you, and read your submissions and reviewers' notes</li>
+			<li>Revoking its key under Settings, then Setup, disconnects it alone</li>
 		</ul>
 		<form method="post" action="/connect">
 			<input type="hidden" name="user_code" value="${esc(short)}">

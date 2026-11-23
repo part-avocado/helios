@@ -133,7 +133,48 @@ export const userByHandle = (env: Env, handle: string) => load(env, 'u.handle = 
 /** keyUser returns whose sync key request carries, or null. */
 export async function keyUser(request: Request, env: Env): Promise<User | null> {
 	const key = /^Bearer (tdk_[A-Za-z0-9_-]+)$/.exec(request.headers.get('Authorization') ?? '')?.[1]
-	return key ? load(env, 'u.api_key = ?2', key) : null
+	if (!key) return null
+	// The account's own key, else one of its other sync keys.
+	const own = await load(env, 'u.api_key = ?2', key)
+	if (own) return own
+	const row = await env.DB.prepare('SELECT id, user_id FROM sync_keys WHERE hash = ?').bind(await keyHash(key)).first<{ id: number; user_id: number }>()
+	if (!row) return null
+	await env.DB.prepare('UPDATE sync_keys SET last_used_at = ?1 WHERE id = ?2 AND (last_used_at IS NULL OR last_used_at < ?1 - 60000)').bind(Date.now(), row.id).run()
+	return load(env, 'u.id = ?2', row.user_id)
+}
+
+/** The most sync keys one person has beside the account's own. */
+const MAX_SYNC_KEYS = 50
+
+/** syncKeys lists a person's sync keys beside the account's own, newest first, without the keys. */
+export async function syncKeys(env: Env, user: User) {
+	const { results } = await env.DB.prepare('SELECT id, name, hint, created_at, last_used_at FROM sync_keys WHERE user_id = ? ORDER BY id DESC').bind(user.id).all()
+	return results
+}
+
+/**
+ * createSyncKey makes a person a sync key named name, and returns it, the
+ * only time it is shown. With replace, it replaces their key of that name,
+ * as a computer that logs in again does.
+ */
+export async function createSyncKey(env: Env, user: User, name: string, replace = false) {
+	name = name.trim().slice(0, 60)
+	if (!name) throw new Refusal(400, 'Name the key after the computer or tool that will use it, so you can tell your keys apart.')
+	if (replace) await env.DB.prepare('DELETE FROM sync_keys WHERE user_id = ? AND name = ?').bind(user.id, name).run()
+	const have = await env.DB.prepare('SELECT COUNT(*) AS n FROM sync_keys WHERE user_id = ?').bind(user.id).first<{ n: number }>()
+	if ((have?.n ?? 0) >= MAX_SYNC_KEYS) throw new Refusal(409, `You have ${MAX_SYNC_KEYS} sync keys, which is the most one person can have. Revoke one under Settings, then Setup.`)
+	const key = newKey()
+	const hint = key.slice(0, 9)
+	const row = await env.DB.prepare('INSERT INTO sync_keys (user_id, name, hash, hint, created_at) VALUES (?, ?, ?, ?, ?) RETURNING id')
+		.bind(user.id, name, await keyHash(key), hint, Date.now())
+		.first<{ id: number }>()
+	return { id: row!.id, name, hint, key }
+}
+
+/** revokeSyncKey deletes one of a person's sync keys, which stops working at once. */
+export async function revokeSyncKey(env: Env, user: User, id: string): Promise<void> {
+	const gone = /^\d{1,15}$/.test(id) ? await env.DB.prepare('DELETE FROM sync_keys WHERE id = ? AND user_id = ?').bind(Number(id), user.id).run() : null
+	if (!gone?.meta.changes) throw new Refusal(404, 'No such key.')
 }
 
 /** keyHash is what the server keeps of a review key, which it can check a key against but not turn back into one. */

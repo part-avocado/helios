@@ -1727,6 +1727,43 @@ test('logins and wrong codes are limited, so codes can\'t be guessed or logins p
 	assert.deepEqual([guesses.slice(0, 10).every((s) => s === 400), guesses[10]], [true, 429])
 })
 
+test('a person has several sync keys at once, and revoking one leaves the rest', async () => {
+	const cookie = await signIn('manykeys')
+	const { api_key: account } = await me(cookie)
+	const keys = async () => ((await (await call('/api/sync-keys', { cookie })).json()) as { keys: { id: number; name: string; hint: string; last_used_at: number | null }[] }).keys
+	const make = (name: string) => call('/api/sync-keys', { method: 'POST', cookie, origin: SITE, body: JSON.stringify({ name }) })
+	const works = async (key: string) => (await call('/api/v1/whoami', { key })).status === 200
+
+	assert.equal((await make('')).status, 400, 'a key is named')
+	assert.equal((await call('/api/sync-keys', { method: 'POST', cookie, origin: 'https://evil.example', body: '{"name":"x"}' })).status, 403)
+	const laptop = (await (await make('laptop')).json()) as { id: number; key: string; hint: string }
+	const server = (await (await make('build server')).json()) as { id: number; key: string }
+	assert.ok(laptop.key.startsWith('tdk_') && laptop.key.startsWith(laptop.hint))
+	assert.deepEqual([await works(account), await works(laptop.key), await works(server.key)], [true, true, true])
+	// Records sent with any of them are the person's.
+	const t = new Date().toISOString()
+	const sent = await call('/api/v1/events', { method: 'POST', key: server.key, body: JSON.stringify({ t, tool: 'cursor', event: 'turn_end', session: 's', project: 'p' }) })
+	assert.deepEqual(await sent.json(), { stored: 0, records: 1 })
+	const listed = await keys()
+	assert.deepEqual(listed.map((k) => k.name), ['build server', 'laptop'])
+	assert.ok(listed[0]!.last_used_at, 'when each was last used is shown')
+	assert.ok(!JSON.stringify(listed).includes(laptop.key), 'a key is shown only once')
+
+	// Revoking one stops it alone.
+	assert.equal((await call(`/api/sync-keys/${laptop.id}`, { method: 'DELETE', cookie, origin: SITE })).status, 200)
+	assert.deepEqual([await works(account), await works(laptop.key), await works(server.key)], [true, false, true])
+	// A new account key leaves the others working too.
+	const fresh = ((await (await call('/api/key', { method: 'POST', cookie, origin: SITE })).json()) as { api_key: string }).api_key
+	assert.deepEqual([await works(account), await works(fresh), await works(server.key)], [false, true, true])
+	// No one revokes another person's key.
+	const other = await signIn('notmine')
+	assert.equal((await call(`/api/sync-keys/${server.id}`, { method: 'DELETE', cookie: other, origin: SITE })).status, 404)
+	assert.ok(await works(server.key))
+	// Deleting the account stops every one.
+	assert.equal((await call('/api/account', { method: 'DELETE', cookie, origin: SITE })).status, 200)
+	assert.equal(await works(server.key), false)
+})
+
 test('teardrop login connects a computer once, only by a typed code, and never for a banned account', async () => {
 	const cookie = await signIn('connector')
 	const { api_key } = await me(cookie)
@@ -1759,7 +1796,11 @@ test('teardrop login connects a computer once, only by a typed code, and never f
 	assert.match(checkPage, /asked to connect to your account just now/, 'the page says when the login was asked for')
 	assert.equal((await pollKey(login.code)).status, 'pending')
 	assert.equal((await form({ user_code: login.user_code, decision: 'allow' })).status, 200)
-	assert.deepEqual(await pollKey(login.code), { status: 'done', key: api_key, name: '<b>connector</b>', handle: (await me(cookie)).handle })
+	// The computer gets a sync key of its own, not the account's.
+	const got = await pollKey(login.code)
+	assert.deepEqual({ ...got, key: undefined }, { status: 'done', key: undefined, name: '<b>connector</b>', handle: (await me(cookie)).handle })
+	assert.ok(got.key?.startsWith('tdk_') && got.key !== api_key, 'a key of its own')
+	assert.equal((await call('/api/v1/whoami', { key: got.key })).status, 200)
 	assert.equal((await call(`/api/v1/login/${login.code}`)).status, 410, 'the key is given once')
 	assert.equal((await form({ user_code: login.user_code, decision: 'allow' })).status, 400, 'a code is allowed once')
 
