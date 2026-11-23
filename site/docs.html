@@ -228,7 +228,7 @@
 		<tr><td><code>teardrop calibrate</code></td><td>Show how the time model's caps treat your logs (<code>-since 30d</code>). Uploads nothing.</td></tr>
 		<tr><td><code>teardrop hook -check &lt;tool&gt;</code></td><td>Print the record a hook payload on stdin would make, and write nothing.</td></tr>
 		<tr><td><code>teardrop export</code></td><td>Write a signed report to upload under Settings on the website (<code>-o file</code>, <code>-since</code>, default 365d).</td></tr>
-		<tr><td><code>teardrop sync</code></td><td>Send your records to your account (<code>-server URL -key KEY</code> once; both are remembered).</td></tr>
+		<tr><td><code>teardrop sync</code></td><td>Send your records to your account (<code>-server URL -key KEY</code> once; both are remembered). <code>-dry-run</code> prints the records it would send, and sends nothing.</td></tr>
 		<tr><td><code>teardrop submit &lt;project&gt;</code></td><td>Submit a project's hours, made by the site from the records it holds. Nothing is uploaded.</td></tr>
 		<tr><td><code>teardrop export-records</code></td><td>Print the submission records of a retired review server (<code>-data</code>), for a superadmin to import.</td></tr>
 		<tr><td><code>teardrop -version</code></td><td>Print the installed version.</td></tr>
@@ -341,6 +341,7 @@ npm run dev</code></pre>
 
 	<h2 id="privacy">Privacy</h2>
 	<p>teardrop reads timestamps, token counts, line counts, and working folders from your logs. Prompt text is only scored in memory to count recognized words; it is never stored or printed, and <code>sync</code> never uploads it. In Amp's cloud, the plugin sends your website each prompt's time, thread, folder, repository, and word counts, without its text, and every other harness's hooks send the same kind of record. The website keeps these records in R2 for good. The website keeps each report your computers send, which holds those counts and times, so reviewers can read it; deleting your account deletes them. Your public profile shows your hours, your days, and the projects it names to anyone, unless you make it private. Chat logs and prompt text never leave your computer.</p>
+	<p>To see exactly what leaves your computer, run <code>teardrop sync -dry-run</code>, which prints the records the next sync would send and sends nothing, or pipe a hook payload into <code>teardrop hook -check &lt;tool&gt;</code>.</p>
 
 	<h2 id="troubleshooting">Troubleshooting</h2>
 	<h3>“No Claude Code or Codex sessions found”</h3>

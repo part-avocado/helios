@@ -120,7 +120,16 @@ func runSync(args []string) {
 	background := fs.Bool("background", false, "do nothing while another background sync runs, and sync again if a turn ended meanwhile (used by hooks)")
 	claudeDir := fs.String("claude-dir", "", "Claude Code config directories, comma-separated")
 	codexDir := fs.String("codex-dir", "", "Codex home directories, comma-separated")
+	dryRun := fs.Bool("dry-run", false, "print the records a sync would send, as JSON lines, and send nothing")
 	fs.Parse(args)
+	if *dryRun {
+		// Before serverURL and syncKey, which remember -server and -key.
+		_, _, body, n, err := pendingRecords(*claudeDir, *codexDir)
+		check(err)
+		os.Stdout.Write(body)
+		fmt.Fprintf(os.Stderr, "A sync would send %s. Nothing was sent.\n", plural(n, "record"))
+		return
+	}
 	srv, err := serverURL(*server)
 	check(err)
 	k, err := syncKey(*key, srv)
@@ -129,31 +138,17 @@ func runSync(args []string) {
 	sent, total := 0, 0
 	once := func() error {
 		now := time.Now()
-		// After the first run, only what changed since the last one, with an
-		// hour to spare. The site drops a record it already has.
 		stamp := filepath.Join(dataDir(), "last-records")
-		window, _ := parseSince(syncWindow)
-		cutoff := now.Add(-window)
-		if info, err := os.Stat(stamp); err == nil && info.ModTime().After(cutoff) {
-			cutoff = info.ModTime().Add(-time.Hour)
-		}
-		transcripts, _, _ := load(locations(*claudeDir, *codexDir), cutoff)
-		journal := sources.ReadJournalEvents(dataDir(), cutoff.Add(-24*time.Hour))
-		recs := syncRecords(transcripts, journal, localProjects(), cutoff)
-		var body bytes.Buffer
-		for _, r := range recs {
-			b, err := json.Marshal(r)
-			if err != nil {
-				return err
-			}
-			body.Write(append(b, '\n'))
+		transcripts, journal, body, n, err := pendingRecords(*claudeDir, *codexDir)
+		if err != nil {
+			return err
 		}
 		header, err := computerHeader()
 		if err != nil {
 			return err
 		}
-		n, err := sendRecords(&http.Client{Timeout: 2 * time.Minute}, srv, k, body.Bytes(), header)
-		sent, total = n, len(recs)
+		total = n
+		sent, err = sendRecords(&http.Client{Timeout: 2 * time.Minute}, srv, k, body, header)
 		if err != nil {
 			return err
 		}
@@ -175,6 +170,29 @@ func runSync(args []string) {
 	id, _ := thisComputer()
 	fmt.Printf("Sent %s from this computer (%s); %d were new to the site.\n", plural(total, "record"), id, sent)
 	fmt.Printf("See it at %s/dashboard\n", srv)
+}
+
+// pendingRecords is what the next sync sends, as JSON lines: after the
+// first run, only what changed since the last one, with an hour to spare.
+// The site drops a record it already has.
+func pendingRecords(claudeDir, codexDir string) (transcripts []sources.Raw, journal []sources.JournalEvent, body []byte, n int, err error) {
+	window, _ := parseSince(syncWindow)
+	cutoff := time.Now().Add(-window)
+	if info, err := os.Stat(filepath.Join(dataDir(), "last-records")); err == nil && info.ModTime().After(cutoff) {
+		cutoff = info.ModTime().Add(-time.Hour)
+	}
+	transcripts, _, _ = load(locations(claudeDir, codexDir), cutoff)
+	journal = sources.ReadJournalEvents(dataDir(), cutoff.Add(-24*time.Hour))
+	recs := syncRecords(transcripts, journal, localProjects(), cutoff)
+	var buf bytes.Buffer
+	for _, r := range recs {
+		b, err := json.Marshal(r)
+		if err != nil {
+			return nil, nil, nil, 0, err
+		}
+		buf.Write(append(b, '\n'))
+	}
+	return transcripts, journal, buf.Bytes(), len(recs), nil
 }
 
 // journalRaws gives each journal session's folder, for finding its repository.
