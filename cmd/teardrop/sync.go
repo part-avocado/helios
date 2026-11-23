@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"text/tabwriter"
 	"time"
 
 	"github.com/part-avocado/teardrop/internal/sources"
@@ -312,11 +313,22 @@ func runSubmit(args []string) {
 	server := fs.String("server", "", "central server URL, remembered for later runs")
 	claudeDir := fs.String("claude-dir", "", "Claude Code config directories, comma-separated")
 	codexDir := fs.String("codex-dir", "", "Codex home directories, comma-separated")
+	note := fs.String("note", "", "a note for the reviewers, such as what the project is or why some time arrived late")
+	list := fs.Bool("list", false, "list your submissions and how each was decided, instead of submitting")
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage: teardrop submit [flags] <project>")
+		fmt.Fprintln(os.Stderr, "       teardrop submit -list")
 		fs.PrintDefaults()
 	}
 	projects := parseAnywhere(fs, args)
+	if *list {
+		srv, err := serverURL(*server)
+		check(err)
+		k, err := syncKey("", srv)
+		check(err)
+		check(listSubmissions(&http.Client{Timeout: 30 * time.Second}, srv, k, os.Stdout))
+		return
+	}
 	if len(projects) != 1 {
 		fs.Usage()
 		os.Exit(2)
@@ -333,7 +345,7 @@ func runSubmit(args []string) {
 	check(err)
 	k, err := syncKey("", srv)
 	check(err)
-	body, _ := json.Marshal(map[string]string{"project": key})
+	body, _ := json.Marshal(map[string]string{"project": key, "note": *note})
 	res, err := post(srv, k, "/api/v1/submissions", body)
 	check(err)
 	var r struct {
@@ -353,6 +365,55 @@ func runSubmit(args []string) {
 	if r.Unwitness > 0 {
 		fmt.Printf("  %s reached the site late, such as from before teardrop's hooks were set up, and is not credited unless a reviewer accepts it.\n", dur(time.Duration(r.Unwitness)*time.Second))
 	}
+}
+
+// listSubmissions prints the person's submissions, newest first, with what
+// each credited and, once a reviewer has decided, what they accepted and why.
+func listSubmissions(client *http.Client, srv, key string, out io.Writer) error {
+	var r struct {
+		Submissions []struct {
+			Project       string `json:"project_name"`
+			Received      int64  `json:"received_at"`
+			Credited      int64  `json:"credited_seconds"`
+			Unwitnessed   int64  `json:"unwitnessed_seconds"`
+			Accepted      int64  `json:"accepted_seconds"`
+			State         string `json:"state"`
+			Decided       *int64 `json:"decided_at"`
+			Note          string `json:"note"`
+			SubmitterNote string `json:"submitter_note"`
+		} `json:"submissions"`
+	}
+	if _, err := relayRequest(client, "GET", srv+"/api/v1/submissions", key, nil, &r); err != nil {
+		return err
+	}
+	if len(r.Submissions) == 0 {
+		fmt.Fprintln(out, "No submissions yet. Run `teardrop submit <project>` to make one.")
+		return nil
+	}
+	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "SUBMITTED\tPROJECT\tCREDITED\tUNWITNESSED\tACCEPTED\tSTATE")
+	for _, s := range r.Submissions {
+		state := "waiting for review"
+		if s.State == "decided" && s.Decided != nil {
+			state = "decided " + time.UnixMilli(*s.Decided).Format("Jan 2")
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", time.UnixMilli(s.Received).Format("Jan 2 15:04"), s.Project,
+			dur(time.Duration(s.Credited)*time.Second), dur(time.Duration(s.Unwitnessed)*time.Second), dur(time.Duration(s.Accepted)*time.Second), state)
+	}
+	w.Flush()
+	var notes []string
+	for _, s := range r.Submissions {
+		if s.SubmitterNote != "" {
+			notes = append(notes, fmt.Sprintf("%s, %s, your note: %s", s.Project, time.UnixMilli(s.Received).Format("Jan 2"), s.SubmitterNote))
+		}
+		if s.Note != "" {
+			notes = append(notes, fmt.Sprintf("%s, %s, the reviewer's note: %s", s.Project, time.UnixMilli(s.Received).Format("Jan 2"), s.Note))
+		}
+	}
+	if len(notes) > 0 {
+		fmt.Fprintln(out, "\n"+strings.Join(notes, "\n"))
+	}
+	return nil
 }
 
 // parseAnywhere parses flags that come before or after the other arguments,

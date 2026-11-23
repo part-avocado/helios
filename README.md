@@ -178,7 +178,10 @@ dashboard adds up every computer you
 connect. Settings lists them, makes a new key, and takes a
 `teardrop export` file from a computer that can't reach the site.
 
-`teardrop submit <project>`, or the review app, submits a project's hours.
+`teardrop submit <project>` (with `-note` for the reviewers), or the Submit
+button on the dashboard, submits a project's hours. `teardrop submit -list`
+and the dashboard list your submissions and the reviewer's note once one is
+decided, without saying which reviewer decided.
 Nothing is uploaded: the site makes the submission from the per-prompt
 records your hooks already sent it. Only time whose records reached the site
 within 5 minutes of when they happened is credited ("witnessed"); time that

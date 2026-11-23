@@ -9,7 +9,7 @@ import { json, jsonText, readText, redirect, Refusal } from './http.ts'
 import { checkGit } from './git.ts'
 import { connect, pollLogin, startLogin } from './connect.ts'
 import { relayRecords } from './records.ts'
-import { accept, importRecords, listSubmissions, submission, submit } from './submissions.ts'
+import { accept, importRecords, listSubmissions, ownSubmissions, submission, submit } from './submissions.ts'
 export { UserHub } from './hub.ts'
 import { ownProfile, updateProfile, visibleOwner } from './profile.ts'
 import { createUserKey, publicAPI, revokeUserKey, userKeys } from './public.ts'
@@ -135,6 +135,7 @@ async function route(request: Request, env: Env): Promise<Response> {
 		const user = await needKey(request, env, url)
 		return json(await submit(env, user, await jsonBody(request)))
 	}
+	if (call === 'GET /api/v1/submissions') return json({ submissions: await ownSubmissions(env, (await needKey(request, env, url)).id) })
 
 	// Signing in and out.
 	if (call === 'GET /auth/hca') return startSignIn(request, env)
@@ -205,6 +206,8 @@ async function route(request: Request, env: Env): Promise<Response> {
 		if (!person) throw new Refusal(404, 'No such person.')
 		return jsonText(`{"person":${JSON.stringify(person)},"computers":${await reportsJSON(env, person.id)}}`)
 	}
+	// Their own submissions, and how each was decided.
+	if (call === 'GET /api/submissions') return json({ submissions: await ownSubmissions(env, user.id) })
 	if (call === 'POST /api/submissions') {
 		if (user.ban) throw new Refusal(403, banMessage())
 		return json(await submit(env, user, await jsonBody(request)))

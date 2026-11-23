@@ -1080,6 +1080,7 @@ async function submissionPage(arg) {
 			<div><span class="muted">Prompts</span><b>${num(s.prompts)}</b></div>
 		</div>
 		${me.level < 2 ? `<p class="muted">By <a href="#/person/id:${s.user_id}">${esc(s.name)}</a>, ${esc(s.project_key)}, received ${esc(when(s.received_at))}.</p>` : `<p class="muted">Received ${esc(when(s.received_at))}.</p>`}
+		${s.submitter_note ? `<p>Their note: ${esc(s.submitter_note)}</p>` : ''}
 		${s.note ? `<p>Accepted by ${esc(s.decided_by)}: ${esc(s.note)}</p>` : ''}
 	</div>
 	${flags ? `<div class="panel"><h2>Look at first</h2><ul>${flags}</ul></div>` : ''}

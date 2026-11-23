@@ -1149,7 +1149,7 @@ test('a submission credits only witnessed time, and only once', async () => {
 	const now = Date.now()
 	const line = (t: number, event: string, extra: object = {}) => JSON.stringify({ t: new Date(t).toISOString(), tool: 'claude-code', event, session: 'p1', project: 'github.com/kid/game', ...extra })
 	const post = (lines: string[]) => call('/api/v1/events', { method: 'POST', key, body: lines.join('\n') })
-	const submitIt = (as = key) => call('/api/v1/submissions', { method: 'POST', key: as, body: JSON.stringify({ project: 'github.com/kid/game' }) })
+	const submitIt = (as = key, note?: string) => call('/api/v1/submissions', { method: 'POST', key: as, body: JSON.stringify({ project: 'github.com/kid/game', note }) })
 	// Witnessed, sent within 5 minutes: 2 minutes watching, 2 writing. Backdated by 3 hours: 2 and 2, not credited.
 	await post([line(now - 290_000, 'UserPromptSubmit', { human: true, judged: 6, real: 6 }), line(now - 170_000, 'Stop'), line(now - 50_000, 'UserPromptSubmit', { human: true, judged: 5, real: 5 })])
 	const old = now - 3 * 3600_000
@@ -1162,7 +1162,7 @@ test('a submission credits only witnessed time, and only once', async () => {
 	assert.deepEqual([first.witnessed_seconds, first.unwitnessed_seconds, first.credited_seconds, first.prompts], [240, 240, 240, 4])
 	// A second submission credits only what is new: 30 more witnessed seconds.
 	await post([line(now - 20_000, 'Stop', { session: 'p1' })])
-	const second = (await (await submitIt()).json()) as { credited_seconds: number; earlier_overlap_seconds: number }
+	const second = (await (await submitIt(key, 'The level editor.')).json()) as { credited_seconds: number; earlier_overlap_seconds: number }
 	assert.deepEqual([second.credited_seconds, second.earlier_overlap_seconds], [30, 240])
 
 	// Review: every level reads it; a reviewer sees no project key and no computer IDs.
@@ -1179,6 +1179,21 @@ test('a submission credits only witnessed time, and only once', async () => {
 	assert.equal(list.submissions.find((s) => s.id === first.id)!.accepted_seconds, 240)
 	const env = await server.getWorker<{ DB: { prepare(sql: string): { first<T>(): Promise<T | null> } } }>().getEnv()
 	assert.ok(await env.DB.prepare(`SELECT 1 FROM staff_log WHERE action = 'accept'`).first())
+
+	// The person sees their own submissions, newest first, by sync key or on the site: the decision and its note, not who made it.
+	type Own = { id: string; state: string; credited_seconds: number; accepted_seconds: number; note: string | null; submitter_note: string | null; decided_at: number | null; decided_by?: string }
+	const byKey = ((await (await call('/api/v1/submissions', { key })).json()) as { submissions: Own[] }).submissions
+	const bySession = ((await (await call('/api/submissions', { cookie })).json()) as { submissions: Own[] }).submissions
+	assert.deepEqual(bySession, byKey)
+	assert.deepEqual(byKey.map((x) => [x.state, x.credited_seconds, x.accepted_seconds, x.submitter_note]), [['pending', 30, 0, 'The level editor.'], ['decided', 240, 240, null]])
+	assert.equal(byKey[1]!.id, first.id)
+	assert.equal(byKey[1]!.note, 'Offline on a train; commits match.')
+	assert.ok(byKey[1]!.decided_at)
+	assert.ok(byKey.every((x) => !('decided_by' in x)), 'who decided stays with the reviewers')
+	const reviewed = (await (await call(`/api/review/submissions/${byKey[0]!.id}`, { cookie: admin })).json()) as { submission: { submitter_note: string } }
+	assert.equal(reviewed.submission.submitter_note, 'The level editor.')
+	const stranger = await me(await signIn('bystander'))
+	assert.deepEqual(await (await call('/api/v1/submissions', { key: stranger.api_key })).json(), { submissions: [] })
 
 	// A banned account can't submit.
 	assert.equal((await call('/api/review/bans', { method: 'POST', cookie: admin, origin: SITE, body: JSON.stringify({ slack_id: 'USUBMITTER', reason: 'test' }) })).status, 200)

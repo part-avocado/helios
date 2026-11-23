@@ -33,6 +33,8 @@ export interface SubmissionRow {
 	decided_by: string | null
 	decided_at: number | null
 	note: string | null
+	/** What the person said about it when they submitted it. */
+	submitter_note: string | null
 	snapshot_key: string
 	imported: number
 }
@@ -122,6 +124,7 @@ export async function submit(env: Env, user: User, body: Record<string, unknown>
 	}
 	const key = typeof body.project === 'string' ? body.project.trim() : ''
 	if (!key || key.length > 500) throw new Refusal(400, 'Name the project to submit by its key, such as github.com/you/repo.')
+	const note = typeof body.note === 'string' ? body.note.trim().slice(0, 1000) || null : null
 	// Records still in the hub's working copy go to R2 first, so the newest count.
 	await env.HUB.get(env.HUB.idFromName(String(user.id))).flush()
 	const { recs, days } = await projectRecords(env, user.id, key)
@@ -145,16 +148,32 @@ export async function submit(env: Env, user: User, body: Record<string, unknown>
 		witnessed_seconds: seconds(witnessed), unwitnessed_seconds: seconds(unwitnessed),
 		earlier_overlap_seconds: seconds(witnessed) - seconds(credited), credited_seconds: seconds(credited), accepted_seconds: 0,
 		prompts: recs.filter((r) => r.human && !r.sha).length, tokens_in: recs.reduce((n, r) => n + (r.in ?? 0), 0), tokens_out: recs.reduce((n, r) => n + (r.out ?? 0), 0),
-		state: 'pending', decided_by: null, decided_at: null, note: null, snapshot_key: snapshotKey, imported: 0,
+		state: 'pending', decided_by: null, decided_at: null, note: null, submitter_note: note, snapshot_key: snapshotKey, imported: 0,
 	}
 	await env.DB.prepare(
 		`INSERT INTO submissions (id, user_id, project_key, project_name, received_at, witnessed_seconds, unwitnessed_seconds, earlier_overlap_seconds,
-			credited_seconds, accepted_seconds, prompts, tokens_in, tokens_out, state, snapshot_key)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 'pending', ?)`,
+			credited_seconds, accepted_seconds, prompts, tokens_in, tokens_out, state, snapshot_key, submitter_note)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 'pending', ?, ?)`,
 	)
-		.bind(id, user.id, key, row.project_name, row.received_at, row.witnessed_seconds, row.unwitnessed_seconds, row.earlier_overlap_seconds, row.credited_seconds, row.prompts, row.tokens_in, row.tokens_out, snapshotKey)
+		.bind(id, user.id, key, row.project_name, row.received_at, row.witnessed_seconds, row.unwitnessed_seconds, row.earlier_overlap_seconds, row.credited_seconds, row.prompts, row.tokens_in, row.tokens_out, snapshotKey, note)
 		.run()
 	return row
+}
+
+/**
+ * ownSubmissions is a person's own submissions, newest first: what each
+ * credited, what a reviewer accepted and why, and when. Who decided stays
+ * with the reviewers.
+ */
+export async function ownSubmissions(env: Env, userID: number) {
+	const { results } = await env.DB.prepare(
+		`SELECT id, project_key, project_name, received_at, witnessed_seconds, unwitnessed_seconds, earlier_overlap_seconds, credited_seconds,
+			accepted_seconds, prompts, state, decided_at, note, submitter_note, imported
+		 FROM submissions WHERE user_id = ? ORDER BY received_at DESC LIMIT 200`,
+	)
+		.bind(userID)
+		.all()
+	return results
 }
 
 /** listSubmissions is the review app's list, newest first. A reviewer sees project names only. */
