@@ -7,8 +7,11 @@
 // it ends; a record for a sealed day reads the day back from R2 first.
 // Records never hold prompt or reply text.
 import { DurableObject } from 'cloudflare:workers'
+import type { User } from './auth.ts'
 import { type Commit, remember } from './git.ts'
+import { Refusal } from './http.ts'
 import { refreshRecordComputer } from './reports.ts'
+import { makeSubmission, type SubmissionRow } from './submissions.ts'
 import { blocks, type Clock, corrected, nextClock, RULES, type Rec, timed, totals, WATCH } from './timeline.ts'
 
 const FLUSH = 10 * 60_000
@@ -213,6 +216,24 @@ export class UserHub extends DurableObject<Env> {
 
 	async alarm() {
 		await this.flush()
+	}
+
+	/**
+	 * submit makes one of the person's submissions, with nothing else running
+	 * in this hub meanwhile: no other submission, and no record arriving
+	 * between writing the working copy to R2 and reading it back. A refusal
+	 * is returned, since an error loses its status on the way back.
+	 */
+	async submit(user: User, body: Record<string, unknown>): Promise<{ row?: SubmissionRow; refused?: { status: number; message: string } }> {
+		return this.ctx.blockConcurrencyWhile(async () => {
+			await this.flush()
+			try {
+				return { row: await makeSubmission(this.env, user, body) }
+			} catch (e) {
+				if (e instanceof Refusal) return { refused: { status: e.status, message: e.message } }
+				throw e
+			}
+		})
 	}
 
 	/**

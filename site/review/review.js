@@ -1081,6 +1081,9 @@ async function submissionPage(arg) {
 		<td>${r.human ? `${r.real ?? 0}/${r.judged ?? 0} words${r.low ? ', low effort' : ''}` : ''}</td><td>${r.in || r.out ? `${num(r.in ?? 0)} / ${num(r.out ?? 0)}` : ''}</td><td>${r.added || r.removed ? `+${r.added ?? 0} −${r.removed ?? 0}` : ''}</td></tr>`)
 	const flags = d.flags.map((f) => `<li>${esc(f.text)}</li>`).join('')
 	const gaps = d.commit_gaps ?? []
+	// Deciding again starts from what was accepted for each gap. Adjusting can't credit accepted gap time.
+	const gapsAccepted = JSON.parse(s.gaps_accepted ?? '[]')
+	const most = s.credited_seconds + s.unwitnessed_seconds
 	return head(esc(s.project_name), `<span class="status">${esc(s.id)}</span>`) + `
 	<div class="panel">
 		<div class="sub-stats">
@@ -1095,15 +1098,15 @@ async function submissionPage(arg) {
 		</div>
 		${me.level < 2 ? `<p class="muted">By <a href="#/person/id:${s.user_id}">${esc(s.name)}</a>, ${esc(s.project_key)}, received ${esc(when(s.received_at))}.</p>` : `<p class="muted">Received ${esc(when(s.received_at))}.</p>`}
 		${s.submitter_note ? `<p>Their note: ${esc(s.submitter_note)}</p>` : ''}
-		${s.state !== 'pending' && s.decided_by ? `<p><span class="status">${esc(s.state[0].toUpperCase() + s.state.slice(1))}</span> by ${esc(s.decided_by)}${s.decided_at ? `, ${esc(when(s.decided_at))}` : ''}${s.note ? `: ${esc(s.note)}` : ''}</p>` : ''}
+		${s.state !== 'pending' ? `<p><span class="status">${esc(s.state[0].toUpperCase() + s.state.slice(1))}</span>${me.level < 2 && s.decided_by ? ` by ${esc(s.decided_by)}` : ''}${s.decided_at ? `, ${esc(when(s.decided_at))}` : ''}${s.note ? `: ${esc(s.note)}` : ''}</p>` : ''}
 	</div>
 	${flags ? `<div class="panel"><h2>Look at first</h2><ul>${flags}</ul></div>` : ''}
 	${gaps.length ? `<div class="panel">
 		<h2>Gaps with commits <small>${plural(gaps.length, 'gap')}</small></h2>
-		<p class="muted">Time between credited stretches that holds commits GitHub has, dated as claimed: perhaps coding by hand between prompts. It earns nothing unless a neoadmin accepts it when approving, up to ${dur(2 * 3600)} a gap. A commit's time is set by its author, so weigh it with the rest.</p>
+		<p class="muted">Time between credited stretches that holds commits GitHub has, dated as claimed: perhaps coding by hand between prompts. It earns nothing unless a neoadmin accepts it when approving, up to ${dur(2 * 3600)} a gap. A commit's time is set by its author, and anyone's public commits can be named, so check the account is theirs and weigh it with the rest.</p>
 		<div class="table-scroll"><table class="data left stack">
 			<tr><th>Gap</th><th>Length</th><th>Commits</th></tr>
-			${gaps.map((g, i) => `<tr><td>${i + 1}. ${esc(exact(g.start))} to ${esc(exact(g.end))}</td><td>${dur(Math.round((g.end - g.start) / 1000))}</td><td>${g.commits.map((c) => `${esc(exact(c.t))} ${repoURL ? `<a href="${esc(repoURL)}/commit/${esc(c.sha)}" rel="nofollow noopener"><code>${esc(c.sha.slice(0, 7))}</code></a>` : `<code>${esc(c.sha.slice(0, 7))}</code>`} +${num(c.added)} −${num(c.removed)}`).join('<br>')}</td></tr>`).join('')}
+			${gaps.map((g, i) => `<tr><td>${i + 1}. ${esc(exact(g.start))} to ${esc(exact(g.end))}</td><td>${dur(Math.round((g.end - g.start) / 1000))}</td><td>${g.commits.map((c) => `${esc(exact(c.t))} ${c.sha ? (repoURL ? `<a href="${esc(repoURL)}/commit/${esc(c.sha)}" rel="nofollow noopener"><code>${esc(c.sha.slice(0, 7))}</code></a>` : `<code>${esc(c.sha.slice(0, 7))}</code>`) : ''} +${num(c.added)} −${num(c.removed)}${c.sha ? ` ${c.login ? `by <a href="https://github.com/${esc(c.login)}" rel="nofollow noopener" target="_blank">@${esc(c.login)}</a>` : '<span class="muted">by no linked account</span>'}` : ''}`).join('<br>')}</td></tr>`).join('')}
 		</table></div>
 	</div>` : ''}
 	<div class="panel">
@@ -1116,13 +1119,13 @@ async function submissionPage(arg) {
 		<h2>${s.state === 'pending' ? 'Decide' : 'Decide again'}</h2>
 		<form class="rv-form" data-form="decide" data-id="${esc(s.id)}">
 			${me.level < 2 ? `${s.unwitnessed_seconds > 0 ? `<label>Unwitnessed seconds to accept, if approved, at most ${num(s.unwitnessed_seconds)}<input name="accept" type="number" min="0" max="${s.unwitnessed_seconds}" value="${s.state === 'pending' ? 0 : s.accepted_seconds}"></label>` : ''}
-			${gaps.map((g, i) => `<label>Gap ${i + 1}, seconds to accept if approved, at most ${num(g.most)}<input name="gap-${i}" type="number" min="0" max="${g.most}" value="0"></label>`).join('')}
-			<label>Seconds in all, if adjusted, at most ${num(s.credited_seconds + s.unwitnessed_seconds)}<input name="total" type="number" min="0" max="${s.credited_seconds + s.unwitnessed_seconds}" value="${s.final_seconds ?? s.credited_seconds}"></label>` : ''}
+			${gaps.map((g, i) => `<label>Gap ${i + 1}, seconds to accept if approved, at most ${num(g.most)}<input name="gap-${i}" type="number" min="0" max="${g.most}" value="${gapsAccepted[i] ?? 0}"></label>`).join('')}
+			<label>Seconds in all, if adjusted, at most ${num(most)}<input name="total" type="number" min="0" max="${most}" value="${Math.min(s.final_seconds ?? s.credited_seconds, most)}"></label>` : ''}
 			<label class="grow">Why, for the person to read<input name="note" placeholder="Such as matching commits" required></label>
 			<div class="rv-actions">
 				<button class="btn primary" name="action" value="approve">Approve</button>
 				${me.level < 2 ? '<button class="btn" name="action" value="adjust">Adjust</button>' : ''}
-				<button class="btn danger" name="action" value="reject">Reject</button>
+				<button class="btn danger" name="action" value="reject" formnovalidate>Reject</button>
 			</div>
 		</form>
 		<p class="muted fine">Approving credits what was witnessed${me.level < 2 ? ', plus any unwitnessed time and gaps with commits accepted. Adjusting sets what it credits in all' : ''}. Rejecting credits nothing; its time still counts as covered, so submitting again won't credit it.</p>
