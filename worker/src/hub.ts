@@ -9,7 +9,7 @@
 import { DurableObject } from 'cloudflare:workers'
 import { type Commit, remember } from './git.ts'
 import { refreshRecordComputer } from './reports.ts'
-import { blocks, type Clock, nextClock, RULES, type Rec, timed, totals, WATCH } from './timeline.ts'
+import { blocks, type Clock, corrected, nextClock, RULES, type Rec, timed, totals, WATCH } from './timeline.ts'
 
 const FLUSH = 10 * 60_000
 const SEAL = 48 * 3600_000
@@ -148,7 +148,7 @@ export class UserHub extends DurableObject<Env> {
 			const t = typeof ev?.t === 'string' ? Date.parse(ev.t) : NaN
 			const tool = text(ev.tool, 32), session = text(ev.session, 200), event = text(ev.event, 64)
 			if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(tool) || !session || !event || !(t > 0)) continue
-			if (t + skew > now + CLOCK_SKEW) {
+			if (t + corrected(skew) > now + CLOCK_SKEW) {
 				future++
 				continue
 			}

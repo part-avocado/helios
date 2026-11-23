@@ -100,9 +100,11 @@ test('capSpans: caps count the person\'s own days, and weeks from Monday', () =>
 	assert.deepEqual(capSpans([sunday], week, 0, Infinity, Infinity), [sunday])
 })
 
-test('nextClock: the first reading pins a clock, and only a different reading that holds a day moves it', () => {
+test('nextClock: a computer starts at 0, and only a reading that holds a day moves its pin, its first one too', () => {
 	const M = 60_000, D = 86400_000
-	assert.deepEqual(nextClock(null, 20 * M + 400, 0), { pin: 20 * M })
+	// A new computer ID gets no correction from its first batch: the reading waits a day like any other.
+	assert.deepEqual(nextClock(null, 20 * M + 400, 0), { pin: 0, cand: 20 * M, since: 0 })
+	assert.deepEqual(nextClock(null, 30_000, 0), { pin: 0 }, 'within a minute of 0 agrees')
 	assert.equal(nextClock(null, 2 * 3600_000, 0), null, 'over an hour off is not corrected')
 	assert.equal(nextClock(null, null, 0), null)
 	const pinned = { pin: 20 * M }
@@ -115,9 +117,16 @@ test('nextClock: the first reading pins a clock, and only a different reading th
 	assert.deepEqual(nextClock(waiting, 50 * M, 1000 + D), { pin: 50 * M })
 	// One that changes again starts its wait over.
 	assert.deepEqual(nextClock(waiting, 35 * M, 1000 + D), { pin: 20 * M, cand: 35 * M, since: 1000 + D })
-	// The witness check uses the pin: 20 minutes late by the claimed time, on time once corrected.
-	const late = (skew?: number): Rec => ({ t: 0, arrived: 20 * M, tool: 'x', session: 's', project: 'p', human: false, ...(skew ? { skew } : {}) })
-	const human = (t: number, skew?: number): Rec => ({ ...late(skew), t, arrived: t + 20 * M, human: true })
-	assert.deepEqual(union(credit([human(0), late(), human(60_000)])).witnessed, 0)
-	assert.deepEqual(union(credit([human(0, 20 * M), late(20 * M), human(60_000, 20 * M)])).witnessed, 60_000)
+})
+
+test('witnessing corrects a record by its pin, but by 5 minutes at most', () => {
+	const M = 60_000
+	const at = (t: number, late: number, human: boolean, skew?: number): Rec => ({ t, arrived: t + late, tool: 'x', session: 's', project: 'p', human, ...(skew ? { skew } : {}) })
+	const stretch = (late: number, skew?: number) => union(credit([at(0, late, true, skew), at(30_000, late, false, skew), at(60_000, late, true, skew)])).witnessed
+	// 8 minutes late: unwitnessed as claimed, witnessed once a 4-minute pin corrects it.
+	assert.equal(stretch(8 * M), 0)
+	assert.equal(stretch(8 * M, 4 * M), 60_000)
+	// A pin of 20 minutes moves it 5 at most: 11 minutes late stays unwitnessed, 10 is on time.
+	assert.equal(stretch(11 * M, 20 * M), 0)
+	assert.equal(stretch(10 * M, 20 * M), 60_000)
 })

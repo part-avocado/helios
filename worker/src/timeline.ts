@@ -53,8 +53,17 @@ export interface Stretch {
 	witnessed: boolean
 }
 
-/** Witnessed against the time the record claims, corrected by its computer's pinned clock skew. */
-const witnessed = (r: Rec) => r.arrived - (r.t + (r.skew ?? 0)) <= WITNESS
+/**
+ * A clock correction moves a record's time by at most this much, for the
+ * future check and for witnessing. A computer further off is flagged, and its
+ * late time is unwitnessed, for a neoadmin to accept: a pin can't be checked,
+ * so it must not buy a client more than a few minutes of backdating.
+ */
+export const MOST_CORRECTED = WITNESS
+/** corrected is the part of a computer's pinned skew a record's time may be moved by. */
+export const corrected = (skew = 0) => Math.max(-MOST_CORRECTED, Math.min(MOST_CORRECTED, skew))
+/** Witnessed against the time the record claims, corrected by its computer's pinned clock skew, up to MOST_CORRECTED. */
+const witnessed = (r: Rec) => r.arrived - (r.t + corrected(r.skew)) <= WITNESS
 /** timed says whether a record is a prompt or agent output, which time is credited between. */
 export const timed = (r: Rec) => !r.sha && r.event !== 'usage'
 
@@ -194,7 +203,7 @@ export function totals(all_: Rec[], from: number, to: number): Totals {
 	return t
 }
 
-/** The most a computer's clock is corrected by; a reading further off is ignored. */
+/** The furthest off a reading may be to be pinned, and flagged; a reading further off is ignored. Witnessing uses at most MOST_CORRECTED of a pin. */
 const MAX_SKEW = 3600_000
 /** A reading within this of the pin agrees with it. */
 const SKEW_AGREE = 60_000
@@ -203,9 +212,10 @@ const SKEW_HOLD = 86400_000
 
 /**
  * A computer's clock correction: the pin, and a different reading waiting to
- * replace it. The pin is set from a computer's first reading and changes only
- * when another reading holds for a day, so a batch can't pick its own skew:
- * one that says it was sent last week is ignored, and its records stay late.
+ * replace it. A computer starts pinned at 0, and the pin changes only when
+ * another reading holds for a day, its first one included, so a batch can't
+ * pick its own skew, not even under a new computer ID: one that says it was
+ * sent last week is ignored, and its records stay late.
  */
 export interface Clock {
 	pin: number
@@ -217,7 +227,7 @@ export interface Clock {
 export function nextClock(clock: Clock | null, reading: number | null, now: number): Clock | null {
 	if (reading == null || !Number.isFinite(reading) || Math.abs(reading) > MAX_SKEW) return clock
 	const r = Math.round(reading / 1000) * 1000
-	if (!clock) return { pin: r }
+	clock ??= { pin: 0 }
 	if (Math.abs(r - clock.pin) <= SKEW_AGREE) return { pin: clock.pin }
 	if (clock.cand != null && clock.since != null && Math.abs(r - clock.cand) <= SKEW_AGREE) {
 		return now - clock.since >= SKEW_HOLD ? { pin: clock.cand } : clock
@@ -325,7 +335,7 @@ export function flags(all: (Rec & { event: string })[], dayTotals: { day: string
 	const skewed = recs.filter((r) => Math.abs(r.skew ?? 0) > WITNESS)
 	if (skewed.length) {
 		const most = Math.max(...skewed.map((r) => Math.abs(r.skew!)))
-		out.push({ kind: 'clock-skew', text: `${skewed.length} record${skewed.length === 1 ? '' : 's'} came from a computer whose clock was off by more than 5 minutes (up to ${Math.round(most / 60_000)} minutes), and ${skewed.length === 1 ? 'was' : 'were'} counted at the corrected time.` })
+		out.push({ kind: 'clock-skew', text: `${skewed.length} record${skewed.length === 1 ? '' : 's'} came from a computer whose clock was off by more than 5 minutes (up to ${Math.round(most / 60_000)} minutes), and ${skewed.length === 1 ? 'was' : 'were'} corrected by 5 minutes at most: the rest of ${skewed.length === 1 ? 'its' : 'their'} lateness is unwitnessed.` })
 	}
 	const clamped = all.filter((r) => r.clamped).length
 	if (clamped) out.push({ kind: 'clamped', text: `${clamped} record${clamped === 1 ? '' : 's'} claimed more than 200 million tokens or a million lines, and ${clamped === 1 ? 'was' : 'were'} cut to that.` })
