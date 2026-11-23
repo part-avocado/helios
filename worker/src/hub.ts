@@ -124,8 +124,8 @@ export class UserHub extends DurableObject<Env> {
 		// Records a UTC day, recent and old, counted as they are written.
 		const today = new Date(now).toISOString().slice(0, 10)
 		const caps = { recent: setting(this.env.RECENT_RECORDS_PER_DAY, 30_000), old: setting(this.env.OLD_RECORDS_PER_DAY, 1_000_000) }
-		const used = { recent: 0, old: 0 }
-		for (const kind of ['recent', 'old'] as const) used[kind] = Number(sql.exec('SELECT v FROM meta WHERE k = ?', `${kind}:${today}`).toArray()[0]?.v ?? 0)
+		// Read and counted in storage at each record, never held across an await, so batches at once share the count.
+		const used = (kind: 'recent' | 'old') => Number(sql.exec('SELECT v FROM meta WHERE k = ?', `${kind}:${today}`).toArray()[0]?.v ?? 0)
 		sql.exec(`DELETE FROM meta WHERE (k LIKE 'recent:%' OR k LIKE 'old:%') AND k NOT IN (?, ?)`, `recent:${today}`, `old:${today}`)
 		let limited: { message: string; retryAfter: number } | undefined
 		// Cloud records carry the cloud machine's times, not the sender's, so only a computer's own are corrected.
@@ -171,7 +171,9 @@ export class UserHub extends DurableObject<Env> {
 			}
 			if (event === 'commit' && !rec.sha) continue
 			const kind = now - t <= SEAL ? 'recent' : 'old'
-			if (used[kind] >= caps[kind]) {
+			const day = dayOf(t, offset)
+			if (now - (Date.parse(day) + DAY - offset * 60_000) > SEAL) await this.load(userID, day)
+			if (used(kind) >= caps[kind]) {
 				const midnight = Date.parse(today) + DAY
 				limited = {
 					message: `This account sent ${caps[kind].toLocaleString('en-US')} ${kind === 'recent' ? 'records from the last two days' : 'older records'} today, the most a day takes. The rest wait on your computer until midnight UTC.`,
@@ -179,19 +181,14 @@ export class UserHub extends DurableObject<Env> {
 				}
 				break
 			}
-			const day = dayOf(t, offset)
-			if (now - (Date.parse(day) + DAY - offset * 60_000) > SEAL) await this.load(userID, day)
 			// A turn's usage, from its transcript, is sent again as the turn grows, and the latest counts.
 			const done = sql.exec(`INSERT OR ${event === 'usage' ? 'REPLACE' : 'IGNORE'} INTO recs (computer, tool, session, event, t, arrived, day, rec) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 				computer, tool, session, event, t, now, day, JSON.stringify({ ...rec, computer, event, offset }))
 			if (done.rowsWritten) {
 				sql.exec('INSERT OR IGNORE INTO dirty (day) VALUES (?)', day)
 				kept.push(rec)
-				used[kind]++
+				sql.exec(`INSERT INTO meta (k, v) VALUES (?, '1') ON CONFLICT (k) DO UPDATE SET v = CAST(v AS INTEGER) + 1`, `${kind}:${today}`)
 			}
-		}
-		for (const kind of ['recent', 'old'] as const) {
-			if (used[kind]) sql.exec('INSERT OR REPLACE INTO meta (k, v) VALUES (?, ?)', `${kind}:${today}`, String(used[kind]))
 		}
 		if (kept.length && (await this.ctx.storage.getAlarm()) == null) await this.ctx.storage.setAlarm(now + FLUSH)
 		// Open dashboards hear of it at once; a send never waits on the socket.

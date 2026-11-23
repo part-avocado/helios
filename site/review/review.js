@@ -1253,7 +1253,9 @@ view.addEventListener('submit', (e) => {
 	if (kind === 'add') act(form, () => send('POST', '/team', fields))
 	if (kind === 'ban') act(form, () => send('POST', '/bans', fields))
 	if (kind === 'decide') {
-		const action = e.submitter?.value ?? 'approve'
+		// A browser that doesn't say which button was pressed decides nothing.
+		const action = e.submitter?.value
+		if (!action) return say(form.closest('[data-area]').querySelector('.msg'), 'Press Approve, Adjust, or Reject.')
 		const seconds = action === 'approve' ? Number(fields.accept ?? 0) : action === 'adjust' ? Number(fields.total) : 0
 		const gaps = Object.keys(fields).filter((k) => k.startsWith('gap-')).sort((a, b) => a.slice(4) - b.slice(4)).map((k) => Number(fields[k] || 0))
 		act(form, () => send('POST', `/submissions/${encodeURIComponent(form.dataset.id)}/decide`, { action, seconds, gaps, note: fields.note }))
@@ -1393,6 +1395,12 @@ view.addEventListener('input', (e) => {
 	if (form) find(form)
 })
 view.addEventListener('keydown', (e) => {
+	// Enter in the decide form would press its first button, Approve, whatever
+	// was typed for Adjust. A decision takes a button pressed on purpose.
+	if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.closest('[data-form="decide"]')) {
+		e.preventDefault()
+		return say(e.target.closest('[data-area]').querySelector('.msg'), 'Press Approve, Adjust, or Reject.')
+	}
 	const form = e.target.closest?.('[data-form="find"]')
 	const box = form?.querySelector('.rv-found')
 	if (!box) return

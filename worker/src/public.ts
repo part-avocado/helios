@@ -88,7 +88,7 @@ async function answer(request: Request, env: Env, url: URL): Promise<Response> {
 	if (profile) return profileJSON(env, profile[1]!)
 	// Its badge, for a README.
 	const badge = /^GET \/users\/([^/]+)\/badge\.svg$/.exec(call)
-	if (badge) return profileBadge(env, decodeURIComponent(badge[1]!), url.searchParams.get('project'))
+	if (badge) return profileBadge(env, badge[1]!, url.searchParams.get('project'))
 	if (!/^Bearer tdp_/.test(request.headers.get('Authorization') ?? '')) {
 		throw new Refusal(401, 'Send a read key as a bearer token. Make one on your teardrop site under Settings, then API.')
 	}

@@ -22,6 +22,10 @@ const typed = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, '')
 
 /** startLogin answers POST /api/v1/login from the CLI, which names its computer. */
 export async function startLogin(request: Request, env: Env, url: URL): Promise<Response> {
+	// Ten a minute from one address (LOGINS), so no one piles logins up in D1.
+	if (!(await env.LOGINS.limit({ key: 'ip:' + (request.headers.get('CF-Connecting-IP') ?? '') })).success) {
+		throw new Refusal(429, 'Too many logins from this address. Wait a minute, then run `teardrop login` again.', { 'Retry-After': '60' })
+	}
 	let body: { computer?: unknown }
 	try {
 		body = JSON.parse((await readText(request, 4 << 10)) || '{}')
@@ -87,6 +91,8 @@ export async function connect(request: Request, env: Env): Promise<Response> {
 				.first<{ hash: string; computer_id: string; created_at: number; expires_at: number; allowed_at: number | null; denied_at: number | null; place: string | null }>()
 		: null
 	if (!row || Date.now() > row.expires_at || row.allowed_at != null || row.denied_at != null) {
+		// Ten wrong codes a minute (LOGINS), so no one guesses another person's code.
+		if (!(await env.LOGINS.limit({ key: `user:${user.id}` })).success) return codePage(429, 'Too many codes that didn’t match. Wait a minute, then type the code again.')
 		return codePage(400, 'That code is not one teardrop is waiting for. Check it against your terminal, or run `teardrop login` again: a code lasts 10 minutes.')
 	}
 	const decision = form.get('decision')

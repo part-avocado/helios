@@ -292,6 +292,36 @@ test('an account past its upload limits is told to wait, and its records are kep
 	}
 })
 
+test('batches sent at once share the day\'s record limit', async () => {
+	const site = createTestHarness({
+		workers: [
+			{
+				configPath: new URL('../wrangler.jsonc', import.meta.url),
+				vars: { DEV_LOGIN: 'UDEV', OLD_RECORDS_PER_DAY: '4' },
+				secrets: { SESSION_SECRET: 'x', HCA_CLIENT_ID: 'a', HCA_CLIENT_SECRET: 'b', ADMINS: '' },
+			},
+		],
+	})
+	try {
+		await site.listen()
+		const env = await site.getWorker<{ DB: { prepare(sql: string): { run(): Promise<unknown> } } }>().getEnv()
+		const migrations = new URL('../migrations/', import.meta.url)
+		for (const file of readdirSync(migrations).sort()) {
+			for (const statement of unstable_splitSqlQuery(readFileSync(new URL(file, migrations), 'utf8'))) await env.DB.prepare(statement).run()
+		}
+		const { api_key: key } = (await (await site.fetch('/api/me')).json()) as { api_key: string }
+		const day = 86400_000, now = Date.now()
+		// Six batches of old records, each on sealed days of its own, so each waits on R2 between records.
+		const batch = (b: number) => [0, 1].map((i) => JSON.stringify({ t: new Date(now - (10 + b * 2 + i) * day).toISOString(), tool: 'cursor', event: 'turn_end', session: `b${b}-${i}`, project: 'github.com/kid/old' }))
+		const answers = await Promise.all([0, 1, 2, 3, 4, 5].map((b) => site.fetch('/api/v1/events', { method: 'POST', headers: { Authorization: `Bearer ${key}` }, body: batch(b).join('\n') })))
+		let kept = 0
+		for (const res of answers) if (res.status === 200) kept += ((await res.json()) as { records: number }).records
+		assert.ok(kept <= 4, `${kept} old records kept at once, past the limit of 4`)
+	} finally {
+		await site.close()
+	}
+})
+
 test('DEV_LOGIN signs visitors in on localhost only', async () => {
 	const local = (await (await server.fetch('/api/me')).json()) as { slack_id: string }
 	assert.equal(local.slack_id, 'UDEV')
@@ -1097,6 +1127,8 @@ test('every profile is public by default, and shows no name, Slack ID, or folder
 	assert.match(await page.text(), /profile\.js/)
 	assert.equal((await call('/@u-000000000000')).status, 404)
 	assert.equal((await profile('u-000000000000')).status, 404)
+	// A handle that isn't even valid percent-encoding is no one too.
+	assert.equal((await call('/api/public/v1/users/%E0/badge.svg')).status, 404)
 	// Its badge shows the same hours, in all or in a project it names, and nothing it doesn't.
 	const all = await badge(handle)
 	assert.ok(typeof all === 'object')
@@ -1678,6 +1710,21 @@ test('old log rows move to R2, and reviewers still read every one', async () => 
 	assert.deepEqual(flagged.log.map((r) => r.at), [0])
 	const all = (await (await call(`/api/review/log?id=${id}`, { cookie: admin })).json()) as { log: unknown[] }
 	assert.equal(all.log.length, 451)
+})
+
+test('logins and wrong codes are limited, so codes can\'t be guessed or logins piled up', async () => {
+	const cookie = await signIn('guesser')
+	const start = () => server.fetch(SITE + '/api/v1/login', { method: 'POST', body: JSON.stringify({ computer: 'td-abcdef012345' }), headers: { 'CF-Connecting-IP': '203.0.113.7' } })
+	const starts = []
+	for (let i = 0; i < 11; i++) starts.push((await start()).status)
+	assert.deepEqual([starts.slice(0, 10).every((s) => s === 200), starts[10]], [true, 429])
+	// Another address still starts one.
+	assert.equal((await server.fetch(SITE + '/api/v1/login', { method: 'POST', body: JSON.stringify({ computer: 'td-abcdef012345' }), headers: { 'CF-Connecting-IP': '203.0.113.8' } })).status, 200)
+	// Ten wrong codes a minute, then the page asks to wait.
+	const guess = (code: string) => server.fetch(SITE + '/connect', { method: 'POST', body: new URLSearchParams({ user_code: code }).toString(), headers: { Cookie: cookie, Origin: SITE, 'Content-Type': 'application/x-www-form-urlencoded' }, redirect: 'manual' })
+	const guesses = []
+	for (let i = 0; i < 11; i++) guesses.push((await guess('BBBB-BBB' + 'BCDFGHJKLMN'[i])).status)
+	assert.deepEqual([guesses.slice(0, 10).every((s) => s === 400), guesses[10]], [true, 429])
 })
 
 test('teardrop login connects a computer once, only by a typed code, and never for a banned account', async () => {
