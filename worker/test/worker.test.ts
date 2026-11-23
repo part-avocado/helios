@@ -1132,8 +1132,12 @@ test('the site keeps every prompt record in R2 and credits only time it saw arri
 	const sum = (k: 'witnessed_seconds' | 'unwitnessed_seconds' | 'prompts' | 'tokens_in') => rows.reduce((n, r) => n + r[k], 0)
 	// Live: 160s watching the agent, then 119s writing the next prompt. Backdated: 120s + 120s.
 	assert.deepEqual([sum('witnessed_seconds'), sum('unwitnessed_seconds'), sum('prompts'), sum('tokens_in')], [279, 240, 4, 900])
-	const obj = await env.REPORTS.get(`${id}/prompts/${days[0]!.slice(0, 4)}/${days[0]!.slice(5)}.ndjson.gz`)
-	const text = await new Response(obj!.body.pipeThrough(new DecompressionStream('gzip'))).text()
+	// The backdated records can fall on the day before the live ones, so read every day's file.
+	let text = ''
+	for (const day of days) {
+		const obj = await env.REPORTS.get(`${id}/prompts/${day.slice(0, 4)}/${day.slice(5)}.ndjson.gz`)
+		text += await new Response(obj!.body.pipeThrough(new DecompressionStream('gzip'))).text()
+	}
 	assert.match(text, /"sim":"18446744073709551615"/, 'the fingerprint is never rounded')
 	assert.doesNotMatch(text, /prompt text/)
 })
