@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -155,20 +156,31 @@ func TestDue(t *testing.T) {
 // Two background syncs that start at once don't both find the check due,
 // which would run two updates over the same files.
 func TestDueOnce(t *testing.T) {
-	stamp := filepath.Join(t.TempDir(), "update-checked")
-	var wg sync.WaitGroup
-	var got atomic.Int32
-	for range 50 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if due(stamp, time.Hour) {
-				got.Add(1)
-			}
-		}()
+	// Many rounds, since one round without the lock can still come out right.
+	for round := range 20 {
+		stamp := filepath.Join(t.TempDir(), "update-checked")
+		var wg sync.WaitGroup
+		var got atomic.Int32
+		for range 50 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if due(stamp, time.Hour) {
+					got.Add(1)
+				}
+			}()
+		}
+		wg.Wait()
+		if n := got.Load(); n != 1 {
+			t.Fatalf("round %d: %d of 50 at once found it due, want 1", round, n)
+		}
 	}
-	wg.Wait()
-	if n := got.Load(); n != 1 {
-		t.Errorf("%d of 50 at once found it due, want 1", n)
+	// A lock dated in the future, left when the clock was set back, is stale too.
+	stamp := filepath.Join(t.TempDir(), "update-checked")
+	os.WriteFile(stamp+".lock", nil, 0o600)
+	future := time.Now().Add(time.Hour)
+	os.Chtimes(stamp+".lock", future, future)
+	if !due(stamp, time.Hour) {
+		t.Error("a lock from the future kept the check from ever running")
 	}
 }

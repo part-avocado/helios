@@ -25,6 +25,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -388,6 +389,10 @@ func resolveProject(cwd, gitURL string) (timeline.Project, string) {
 func nameProject(root, gitURL string) timeline.Project {
 	if dir, ok := localRemote(gitURL); ok {
 		return timeline.Project{Key: folderKey(dir), Name: filepath.Base(dir)}
+	}
+	// A relayed event's local remote, already keyed from its computer's home.
+	if strings.HasPrefix(gitURL, "~/") {
+		return timeline.Project{Key: gitURL, Name: path.Base(gitURL)}
 	}
 	if gitURL != "" {
 		key := normalizeRemote(gitURL)

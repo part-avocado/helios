@@ -321,7 +321,8 @@ func due(stamp string, every time.Duration) bool {
 	// start at once don't both find it due. A lock left by one that died
 	// is taken over after a minute.
 	lock := stamp + ".lock"
-	if info, err := os.Stat(lock); err == nil && time.Since(info.ModTime()) > time.Minute {
+	// One dated in the future, from before the clock was set back, is stale too.
+	if info, err := os.Stat(lock); err == nil && (time.Since(info.ModTime()) > time.Minute || time.Since(info.ModTime()) < 0) {
 		os.Remove(lock)
 	}
 	f, err := os.OpenFile(lock, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)

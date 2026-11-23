@@ -66,8 +66,8 @@ func runUninstall(args []string) {
 				fmt.Printf("\n  Removed the installer's PATH line from %s\n", p)
 			}
 		}
-		// Windows has install.ps1's Path entry; Git Bash's install.sh line names the folder its own way.
-		if !found {
+		// On Windows, removeWindowsPath below takes out install.ps1's Path entry, and there are no shell profiles.
+		if !found && runtime.GOOS != "windows" {
 			fmt.Printf("\n  Found no installer PATH line for %s in your shell's startup files. If you added one, delete it.\n", dir)
 		}
 		if runtime.GOOS == "windows" {

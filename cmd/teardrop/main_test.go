@@ -112,4 +112,8 @@ func TestFolderKey(t *testing.T) {
 			t.Errorf("remote %q: key %q, name %q", remote, p.Key, p.Name)
 		}
 	}
+	// A relayed event carries that key, which is used as it is, case and all.
+	if p := nameProject("", "~/Repos/X"); p.Key != "~/Repos/X" || p.Name != "X" {
+		t.Errorf("a relayed ~/ key became %q, %q", p.Key, p.Name)
+	}
 }

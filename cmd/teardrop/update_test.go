@@ -271,3 +271,36 @@ func TestUpdateErrorClears(t *testing.T) {
 		})
 	}
 }
+
+// An update that finds the release already installed, by another update
+// meanwhile, keeps the .old of the one before.
+func TestAutoUpdateAlreadyInstalled(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the stand-in release is a shell script")
+	}
+	defer func(v string) { version = v }(version)
+	version = "v0.9.0"
+	t.Setenv("TEARDROP_DATA_DIR", t.TempDir())
+	script := "#!/bin/sh\necho teardrop v0.10.0\n"
+	asset := assetName()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/download/v0.10.0/" + asset:
+			fmt.Fprint(w, script)
+		case "/download/v0.10.0/checksums.txt":
+			fmt.Fprintf(w, "%x  %s\n", sha256.Sum256([]byte(script)), asset)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	exe := filepath.Join(t.TempDir(), "teardrop")
+	os.WriteFile(exe, []byte(script), 0o755)
+	os.WriteFile(exe+".old", []byte("v0.9.0 teardrop"), 0o755)
+	if err := autoUpdate(srv.Client(), srv.URL, exe, "v0.10.0"); err != nil {
+		t.Fatal(err)
+	}
+	if old, _ := os.ReadFile(exe + ".old"); string(old) != "v0.9.0 teardrop" {
+		t.Errorf(".old is now %q", old)
+	}
+}

@@ -260,7 +260,7 @@ func replaceExecutable(target string, binary []byte) error {
 		os.Remove(next)
 		return err
 	}
-	// WriteFile keeps the mode of a file that was already there.
+	// CreateTemp makes the file 0600.
 	if err := os.Chmod(next, 0o755); err != nil {
 		os.Remove(next)
 		return err
@@ -384,12 +384,15 @@ func autoUpdate(client *http.Client, releases, exe, latest string) error {
 	if err != nil {
 		return err
 	}
+	// Another update installed it meanwhile; its .old is the one to keep.
+	if bytes.Equal(previous, binary) {
+		return nil
+	}
 	if err := replaceExecutable(exe, binary); err != nil {
 		return err
 	}
 	// Windows keeps the running one as .old already, until it can be deleted.
-	// One that is already this release, from an update that ran meanwhile, isn't kept.
-	if runtime.GOOS != "windows" && !bytes.Equal(previous, binary) {
+	if runtime.GOOS != "windows" {
 		os.WriteFile(exe+".old", previous, 0o755)
 	}
 	os.WriteFile(filepath.Join(dataDir(), "update-installed"), []byte(version+" "+latest+"\n"), 0o600)
