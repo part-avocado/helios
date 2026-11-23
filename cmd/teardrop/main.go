@@ -393,7 +393,25 @@ func nameProject(root, gitURL string) timeline.Project {
 	if root == "" {
 		return timeline.Project{Key: "(unknown)", Name: "(unknown)"}
 	}
-	return timeline.Project{Key: root, Name: filepath.Base(root)}
+	return timeline.Project{Key: folderKey(root), Name: filepath.Base(root)}
+}
+
+// folderKey is the key of a project with no remote. A folder in the home
+// folder is keyed from it, as ~/code/app, so the key, which reaches the
+// site, doesn't name the person's account on this computer.
+func folderKey(root string) string {
+	home, _ := os.UserHomeDir()
+	if home == "" {
+		return root
+	}
+	rel, err := filepath.Rel(home, root)
+	switch {
+	case err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel):
+		return root
+	case rel == ".":
+		return "home"
+	}
+	return "~/" + filepath.ToSlash(rel)
 }
 
 // normalizeRemote maps git@host:o/r.git and https://host/o/r to host/o/r.

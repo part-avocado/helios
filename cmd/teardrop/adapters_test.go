@@ -163,6 +163,37 @@ func TestListCommits(t *testing.T) {
 	}
 }
 
+// A repository without a remote is keyed by its folder, which no host can
+// check, so its commits stay on the computer, even keyed as ~/app.
+func TestQueueCommitsNeedsARemote(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("TEARDROP_DATA_DIR", t.TempDir())
+	dir := filepath.Join(home, "app")
+	os.MkdirAll(dir, 0o700)
+	git := func(args ...string) {
+		t.Helper()
+		if out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("init", "-q")
+	git("-c", "user.email=kid@example.com", "-c", "user.name=Kid", "commit", "-q", "--allow-empty", "-m", "first")
+	raws := []sources.Raw{{Tool: "claude-code", ID: "s", Cwd: dir}}
+	if n := queueCommits(raws, time.Now()); n != 0 {
+		t.Fatalf("queued %d commits of a repository with no remote", n)
+	}
+	git("remote", "add", "origin", "git@github.com:kid/app.git")
+	os.Remove(filepath.Join(dataDir(), "last-commits"))
+	if n := queueCommits(raws, time.Now()); n != 1 {
+		t.Errorf("queued %d commits once it has a remote, want 1", n)
+	}
+}
+
 func TestCalibrate(t *testing.T) {
 	at := time.Date(2026, 3, 1, 9, 0, 0, 0, time.UTC)
 	ev := func(min int, k timeline.Kind) timeline.Event {

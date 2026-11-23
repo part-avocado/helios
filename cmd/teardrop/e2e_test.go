@@ -106,7 +106,8 @@ func TestE2E(t *testing.T) {
 
 	home := filepath.Join(root, "home")
 	claude := filepath.Join(home, ".claude")
-	project := filepath.Join(root, "project")
+	// In the home folder, so its key must not name the folder.
+	project := filepath.Join(home, "code", "project")
 	for _, d := range []string{claude, project} {
 		os.MkdirAll(d, 0o700)
 	}
@@ -194,7 +195,7 @@ func TestE2E(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		for _, rec := range records {
-			if rec["session"] == "e2e-session" && rec["human"] == true && rec["judged"] != nil {
+			if rec["session"] == "e2e-session" && rec["human"] == true && rec["judged"] != nil && rec["git"] == "~/code/project" {
 				return true
 			}
 		}
@@ -204,7 +205,7 @@ func TestE2E(t *testing.T) {
 		time.Sleep(200 * time.Millisecond)
 	}
 	if !prompted() {
-		t.Fatal("the site never received the prompt's record from the hook's background relay or sync")
+		t.Fatal("the site never received the prompt's record, keyed ~/code/project, from the hook's background relay or sync")
 	}
 
 	// A person's own relay and sync finish without error.
@@ -250,6 +251,10 @@ func TestE2E(t *testing.T) {
 	for _, b := range bodies {
 		if bytes.Contains(b, []byte("marmalade")) {
 			t.Errorf("a request to the site held the prompt text: %.200s", b)
+		}
+		homeJSON, _ := json.Marshal(home) // a Windows path, as JSON writes it
+		if bytes.Contains(b, []byte(filepath.ToSlash(home))) || bytes.Contains(b, homeJSON[1:len(homeJSON)-1]) {
+			t.Errorf("a request to the site held the home folder's path: %.300s", b)
 		}
 	}
 

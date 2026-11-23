@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -82,5 +83,26 @@ func TestReportSaysWhyPromptsWereSkipped(t *testing.T) {
 	printReport(&out, rep, 1)
 	if strings.Contains(out.String(), "earned no time") {
 		t.Errorf("with nothing skipped:\n%s", &out)
+	}
+}
+
+func TestFolderKey(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "ada")
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // Windows
+	for _, c := range []struct{ root, want string }{
+		{filepath.Join(home, "code", "app"), "~/code/app"},
+		{home, "home"},
+		// A folder whose name starts like the home folder's is not in it.
+		{home + "2", home + "2"},
+		{filepath.Dir(home), filepath.Dir(home)},
+	} {
+		if got := folderKey(c.root); got != c.want {
+			t.Errorf("folderKey(%q) = %q, want %q", c.root, got, c.want)
+		}
+	}
+	// A project with a remote is still keyed by it.
+	if p := nameProject(filepath.Join(home, "code", "app"), "git@github.com:Kid/App.git"); p.Key != "github.com/kid/app" {
+		t.Errorf("remote project key %q", p.Key)
 	}
 }

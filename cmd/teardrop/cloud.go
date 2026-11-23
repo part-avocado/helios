@@ -56,8 +56,13 @@ func countCloud(client *http.Client, server, key string, now time.Time) error {
 
 // cloudProject names a cloud thread's project by the repository its events
 // carry, else by its folder. It looks nothing up on this machine: the thread
-// may have run on another, where the same folder held another project.
+// may have run on another, where the same folder held another project. A
+// folder is kept as it is: it is on Amp's machine, and this machine's home
+// folder says nothing about it.
 func cloudProject(r sources.Raw) (timeline.Project, string) {
+	if r.GitURL == "" && r.Cwd != "" {
+		return timeline.Project{Key: r.Cwd, Name: filepath.Base(r.Cwd)}, ""
+	}
 	return nameProject(r.Cwd, r.GitURL), ""
 }
 

@@ -132,7 +132,7 @@ func queueCommits(raws []sources.Raw, now time.Time) int {
 	for _, r := range raws {
 		p, root := resolve(r)
 		// A project named by its folder has no remote to check against.
-		if p.Key == root || seen[root] || !strings.Contains(p.Key, "/") || strings.HasPrefix(p.Key, "/") {
+		if p.Key == folderKey(root) || seen[root] || !strings.Contains(p.Key, "/") || strings.HasPrefix(p.Key, "/") {
 			continue
 		}
 		seen[root] = true
