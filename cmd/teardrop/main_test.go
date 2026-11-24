@@ -112,8 +112,11 @@ func TestFolderKey(t *testing.T) {
 			t.Errorf("remote %q: key %q, name %q", remote, p.Key, p.Name)
 		}
 	}
-	// A relayed event carries that key, which is used as it is, case and all.
-	if p := nameProject("", "~/Repos/X"); p.Key != "~/Repos/X" || p.Name != "X" {
-		t.Errorf("a relayed ~/ key became %q, %q", p.Key, p.Name)
+	// A relayed event carries that key, which is used as it is, case and all,
+	// and a remote git takes as ~/repos/x.git is the same folder.
+	for _, remote := range []string{"~/Repos/X", "~/Repos/X.git"} {
+		if p := nameProject("", remote); p.Key != "~/Repos/X" || p.Name != "X" {
+			t.Errorf("remote %q became %q, %q", remote, p.Key, p.Name)
+		}
 	}
 }

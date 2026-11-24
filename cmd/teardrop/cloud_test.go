@@ -183,4 +183,12 @@ func TestDueOnce(t *testing.T) {
 	if !due(stamp, time.Hour) {
 		t.Error("a lock from the future kept the check from ever running")
 	}
+	// One a few seconds ahead, such as from a clock that just stepped back, is someone's live lock.
+	os.Remove(stamp)
+	os.WriteFile(stamp+".lock", nil, 0o600)
+	soon := time.Now().Add(5 * time.Second)
+	os.Chtimes(stamp+".lock", soon, soon)
+	if due(stamp, time.Hour) {
+		t.Error("a lock a few seconds ahead was taken as stale")
+	}
 }

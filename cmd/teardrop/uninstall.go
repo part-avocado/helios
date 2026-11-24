@@ -66,7 +66,7 @@ func runUninstall(args []string) {
 				fmt.Printf("\n  Removed the installer's PATH line from %s\n", p)
 			}
 		}
-		// On Windows, removeWindowsPath below takes out install.ps1's Path entry, and there are no shell profiles.
+		// On Windows, removeWindowsPath below takes out install.ps1's Path entry, the usual install.
 		if !found && runtime.GOOS != "windows" {
 			fmt.Printf("\n  Found no installer PATH line for %s in your shell's startup files. If you added one, delete it.\n", dir)
 		}
@@ -107,10 +107,11 @@ func runUninstall(args []string) {
 
 // shellProfiles lists the files install.sh may have added a PATH line to.
 func shellProfiles() []string {
-	if runtime.GOOS == "windows" {
-		return nil
-	}
 	home, _ := os.UserHomeDir()
+	if runtime.GOOS == "windows" {
+		// Git Bash, where install.sh also runs.
+		return []string{filepath.Join(home, ".bashrc"), filepath.Join(home, ".bash_profile")}
+	}
 	zdot := os.Getenv("ZDOTDIR")
 	if zdot == "" {
 		zdot = home
@@ -185,6 +186,10 @@ func installerDir(line string) string {
 func sameDir(written, dir string) bool {
 	if written == "" {
 		return false
+	}
+	// Git Bash writes C:\Users\ada\bin as /c/Users/ada/bin.
+	if runtime.GOOS == "windows" && len(written) > 2 && written[0] == '/' && written[2] == '/' {
+		written = strings.ToUpper(written[1:2]) + ":" + filepath.FromSlash(written[2:])
 	}
 	if filepath.Clean(written) == filepath.Clean(dir) {
 		return true

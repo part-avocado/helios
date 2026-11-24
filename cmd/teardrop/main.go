@@ -25,7 +25,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -390,10 +389,6 @@ func nameProject(root, gitURL string) timeline.Project {
 	if dir, ok := localRemote(gitURL); ok {
 		return timeline.Project{Key: folderKey(dir), Name: filepath.Base(dir)}
 	}
-	// A relayed event's local remote, already keyed from its computer's home.
-	if strings.HasPrefix(gitURL, "~/") {
-		return timeline.Project{Key: gitURL, Name: path.Base(gitURL)}
-	}
 	if gitURL != "" {
 		key := normalizeRemote(gitURL)
 		return timeline.Project{Key: key, Name: filepath.Base(key)}
@@ -426,6 +421,14 @@ func folderKey(root string) string {
 // computer, such as /home/ada/x.git, file:///home/ada/x, or C:\\x.git, less .git.
 func localRemote(u string) (string, bool) {
 	u = strings.TrimSpace(u)
+	// ~/repos/x.git, which git takes, and a relayed event's key, already keyed from its computer's home.
+	if rest, ok := strings.CutPrefix(u, "~/"); ok {
+		home, _ := os.UserHomeDir()
+		if home == "" {
+			return strings.TrimSuffix(u, ".git"), true
+		}
+		return strings.TrimSuffix(filepath.Join(home, filepath.FromSlash(rest)), ".git"), true
+	}
 	if rest, ok := strings.CutPrefix(u, "file://"); ok {
 		u = filepath.FromSlash(rest)
 		if len(u) > 2 && u[0] == filepath.Separator && u[2] == ':' {

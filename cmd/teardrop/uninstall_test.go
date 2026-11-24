@@ -66,3 +66,17 @@ func TestRemoveInstallerLines(t *testing.T) {
 		t.Errorf("a missing file: removed %v, err %v", removed, err)
 	}
 }
+
+// Git Bash's install.sh writes the folder its own way, /c/Users/ada/bin.
+func TestSameDirGitBash(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Git Bash paths are Windows paths")
+	}
+	if !sameDir("/c/Users/ada/bin", `C:\Users\ada\bin`) || sameDir("/c/Users/ada/bin2", `C:\Users\ada\bin`) {
+		t.Error("a Git Bash line for the folder doesn't match, or another folder's does")
+	}
+	home, _ := os.UserHomeDir()
+	if p := shellProfiles(); len(p) == 0 || p[0] != filepath.Join(home, ".bashrc") {
+		t.Errorf("profiles on Windows: %v, want Git Bash's ~/.bashrc", p)
+	}
+}
