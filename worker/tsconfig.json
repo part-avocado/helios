@@ -16,6 +16,8 @@
 		"skipLibCheck": true
 	},
 	"include": [
-		"src"
+		"src",
+		// Runs in the Worker: the hub the hub tests drive.
+		"test/hub-entry.ts"
 	]
 }

@@ -186,6 +186,7 @@ export class UserHub extends DurableObject<Env> {
 				computer, tool, session, event, t, now, day, JSON.stringify({ ...rec, computer, event, offset }))
 			if (done.rowsWritten) {
 				sql.exec('INSERT OR IGNORE INTO dirty (day) VALUES (?)', day)
+				this.marks.set(day, (this.marks.get(day) ?? 0) + 1)
 				kept.push(rec)
 				sql.exec(`INSERT INTO meta (k, v) VALUES (?, '1') ON CONFLICT (k) DO UPDATE SET v = CAST(v AS INTEGER) + 1`, `${kind}:${today}`)
 			}
@@ -253,6 +254,8 @@ export class UserHub extends DurableObject<Env> {
 
 	/** The flushes waiting in this hub, run one after another. */
 	private flushes: Promise<unknown> = Promise.resolve()
+	/** Records kept for each day since this hub started, so a flush can tell one arrived while it wrote the day. */
+	private marks = new Map<string, number>()
 
 	private async writeDays(): Promise<string[]> {
 		const sql = this.ctx.storage.sql
@@ -260,15 +263,15 @@ export class UserHub extends DurableObject<Env> {
 		const days = sql.exec('SELECT day FROM dirty ORDER BY day').toArray().map((r) => String(r.day))
 		if (!user) return []
 		for (const day of days) {
+			const mark = this.marks.get(day)
 			const lines = sql.exec('SELECT rec FROM recs WHERE day = ? ORDER BY t, computer, tool, session, event', day).toArray().map((r) => String(r.rec))
-			// Marked written as it is read, before any wait: a record that arrives
-			// while this writes the day marks it again, for the next flush.
-			sql.exec('DELETE FROM dirty WHERE day = ?', day)
-			try {
-				await this.writeDay(user, day, lines)
-			} catch (e) {
-				sql.exec('INSERT OR IGNORE INTO dirty (day) VALUES (?)', day)
-				throw e
+			await this.writeDay(user, day, lines)
+			// The day stays marked until it is written, so a write that fails, or
+			// a hub reset partway through one, leaves it for the next flush; and
+			// it stays marked when a record arrived while it was written.
+			if (this.marks.get(day) === mark) {
+				sql.exec('DELETE FROM dirty WHERE day = ?', day)
+				this.marks.delete(day)
 			}
 		}
 		// The computers the days came from show their new totals on the dashboard and in the review app.
@@ -282,8 +285,8 @@ export class UserHub extends DurableObject<Env> {
 		return days
 	}
 
-	/** writeDay writes one day's records to R2, and its totals and commits to D1. */
-	private async writeDay(user: number, day: string, lines: string[]) {
+	/** writeDay writes one day's records to R2, and its totals and commits to D1. The tests hold it open, in test/hub-entry.ts. */
+	protected async writeDay(user: number, day: string, lines: string[]) {
 		const body = lines.join('\n') + '\n'
 		const gzip = await new Response(new Blob([body]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer()
 		await this.env.REPORTS.put(dayKey(user, day), gzip)

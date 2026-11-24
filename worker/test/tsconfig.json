@@ -17,5 +17,9 @@
 	},
 	"include": [
 		"."
+	],
+	// Checked with the Worker, in ../tsconfig.json.
+	"exclude": [
+		"hub-entry.ts"
 	]
 }
