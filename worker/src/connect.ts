@@ -134,7 +134,7 @@ function allowPage(short: string, computer: string, asked: number, place: string
 	return page(200, 'Connect this computer?', `
 		<p class="muted">Computer <b class="site">${esc(computer)}</b> asked to connect to your account ${when}${place ? `, from near <b>${esc(place)}</b>` : ''}. Check that <code>teardrop login</code> shows the same ID, and that you ran it then and there. If you didn't, cancel: someone sent you their code.</p>
 		<ul class="grants">
-			<li>It gets a sync key, so it can send records, submit projects as you, and read your submissions and reviewers' notes</li>
+			<li>It gets a sync key, so it can send records as you</li>
 			<li>Revoking its key under Settings, then Setup, disconnects it alone</li>
 		</ul>
 		<form method="post" action="/connect">

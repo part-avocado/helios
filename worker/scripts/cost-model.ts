@@ -19,7 +19,7 @@ const inputs = {
 	keptReportBytes: 40_000, // each such report, kept in R2 for good
 	promptDayBytes: 300,
 	pageRequests: 4_500_000, // pages, API calls, profiles, and sockets
-	submissionsPerPerson: 2,
+	statsCallsPerPerson: 2, // programs reading a person's time through the stats API
 }
 
 const price = {
@@ -36,11 +36,11 @@ function month(m: number) {
 	const records = prompts * i.recordsPerTurn
 	const syncs = prompts * i.syncsPerTurn
 	const reportSyncs = syncs * i.reportSyncShare
-	const requests = records + syncs + i.pageRequests + i.people * i.submissionsPerPerson
+	const requests = records + syncs + i.pageRequests + i.people * i.statsCallsPerPerson
 	const workers = price.workersBase + Math.max(0, requests - price.requestsIncluded) / 1e6 * price.perMillionRequests + Math.max(0, requests * price.cpuMsPerRequest - price.cpuMsIncluded) / 1e6 * price.perMillionCpuMs
 
 	const flushes = i.engagedHours * i.flushesPerHour
-	const r2Writes = flushes + syncs + i.people * i.submissionsPerPerson
+	const r2Writes = flushes + syncs
 	const recordsGB = (records * i.bytesPerRecord * m) / 1e9 + (reportSyncs * (i.keptReportBytes + i.logRowBytes / 4) * m) / 1e9
 	const reportsGB = (i.people * i.computersPerPerson * i.reportBytes) / 1e9
 	const r2GB = recordsGB + reportsGB

@@ -181,60 +181,6 @@ test('MIN_VERSION sends older and unversioned clients to teardrop update', async
 	}
 })
 
-test('payable caps: projects on one day share the cap, and a rejected submission frees its share', async (t) => {
-	const now = Date.now()
-	if (new Date(now - 600_000).getUTCDate() !== new Date(now).getUTCDate()) return t.skip('these records would straddle midnight UTC')
-	const site = createTestHarness({
-		workers: [
-			{
-				configPath: new URL('../wrangler.jsonc', import.meta.url),
-				// Three minutes a day.
-				vars: { DEV_LOGIN: 'UDEV', DAILY_CAP_HOURS: '0.05' },
-				secrets: { SESSION_SECRET: 'x', HCA_CLIENT_ID: 'a', HCA_CLIENT_SECRET: 'b', ADMINS: '' },
-			},
-		],
-	})
-	try {
-		await site.listen()
-		const env = await site.getWorker<{ DB: { prepare(sql: string): { run(): Promise<unknown>; bind(...v: unknown[]): { run(): Promise<unknown> } } } }>().getEnv()
-		const migrations = new URL('../migrations/', import.meta.url)
-		for (const file of readdirSync(migrations).sort()) {
-			for (const statement of unstable_splitSqlQuery(readFileSync(new URL(file, migrations), 'utf8'))) await env.DB.prepare(statement).run()
-		}
-		const { api_key: key } = (await (await site.fetch('/api/me')).json()) as { api_key: string }
-		const auth = { Authorization: `Bearer ${key}` }
-		const line = (project: string, ago: number, event: string) => JSON.stringify({ t: new Date(now - ago).toISOString(), tool: 'claude-code', event, session: project, project, human: event === 'UserPromptSubmit', judged: 6, real: 6 })
-		// Witnessed: 240 seconds on a and on b, at the same time; 120 on c.
-		const work = (p: string) => [line(p, 290_000, 'UserPromptSubmit'), line(p, 170_000, 'Stop'), line(p, 50_000, 'UserPromptSubmit')]
-		const body = [...work('github.com/kid/a'), ...work('github.com/kid/b'), line('github.com/kid/c', 200_000, 'UserPromptSubmit'), line('github.com/kid/c', 80_000, 'UserPromptSubmit')]
-		assert.equal((await site.fetch('/api/v1/events', { method: 'POST', headers: auth, body: body.join('\n') })).status, 200)
-		const submit = async (project: string) => (await (await site.fetch('/api/v1/submissions', { method: 'POST', headers: auth, body: JSON.stringify({ project }) })).json()) as { id: string; witnessed_seconds: number; credited_seconds: number; capped_seconds: number }
-		const a = await submit('github.com/kid/a')
-		assert.deepEqual([a.witnessed_seconds, a.credited_seconds, a.capped_seconds], [240, 180, 60])
-		// b's time is its own project's, but the day's cap is spent.
-		const b = await submit('github.com/kid/b')
-		assert.deepEqual([b.witnessed_seconds, b.credited_seconds, b.capped_seconds], [240, 0, 240])
-		// With a rejected, only what b credited (nothing) counts against c.
-		await env.DB.prepare(`UPDATE submissions SET state = 'rejected', final_seconds = 0 WHERE id = ?`).bind(a.id).run()
-		const c = await submit('github.com/kid/c')
-		assert.deepEqual([c.credited_seconds, c.capped_seconds], [120, 0])
-		// The person sees what the cap held back.
-		const own = (await (await site.fetch('/api/v1/submissions', { headers: auth })).json()) as { submissions: { capped_seconds: number }[] }
-		assert.deepEqual(own.submissions.map((x) => x.capped_seconds), [0, 240, 60])
-		// Moving the clock's time zone so midnight falls inside the work can't
-		// split it into two days with room: the days stay those of the first
-		// submission. At offset 0, 120 seconds of the day are used, so 60 are left.
-		const midnight = now - 170_000
-		const minutes = Math.round(-midnight / 60_000) % 1440
-		const offset = ((minutes % 1440) + 1440) % 1440 > 720 ? (((minutes % 1440) + 1440) % 1440) - 1440 : ((minutes % 1440) + 1440) % 1440
-		assert.equal((await site.fetch('/api/v1/events', { method: 'POST', headers: { ...auth, 'X-Teardrop-UTC-Offset': String(offset) }, body: work('github.com/kid/d').join('\n') })).status, 200)
-		const d = await submit('github.com/kid/d')
-		assert.deepEqual([d.witnessed_seconds, d.credited_seconds], [240, 60])
-	} finally {
-		await site.close()
-	}
-})
-
 test('an account past its upload limits is told to wait, and its records are kept for later', async () => {
 	const site = createTestHarness({
 		workers: [
@@ -1258,176 +1204,56 @@ test('another site gets a read key when a person signs in there with teardrop', 
 	assert.equal((await allow(cookie, 'allow')).status, 403)
 })
 
-test('a submission credits only witnessed time, and only once', async () => {
-	const cookie = await signIn('submitter')
+test('programs read a person\'s witnessed time through the review API, with a review key', async () => {
+	const cookie = await signIn('learner')
 	const { api_key: key } = await me(cookie)
 	const now = Date.now()
 	const line = (t: number, event: string, extra: object = {}) => JSON.stringify({ t: new Date(t).toISOString(), tool: 'claude-code', event, session: 'p1', project: 'github.com/kid/game', ...extra })
 	const post = (lines: string[]) => call('/api/v1/events', { method: 'POST', key, body: lines.join('\n') })
-	const submitIt = (as = key, note?: string) => call('/api/v1/submissions', { method: 'POST', key: as, body: JSON.stringify({ project: 'github.com/kid/game', note }) })
-	// Witnessed, sent within 5 minutes: 2 minutes watching, 2 writing. Backdated by 3 hours: 2 and 2, not credited.
+	// Witnessed, sent within 5 minutes: 2 minutes watching, 2 writing. Backdated by 3 hours: 2 and 2, unwitnessed. And 2 minutes on another project.
 	await post([line(now - 290_000, 'UserPromptSubmit', { human: true, judged: 6, real: 6 }), line(now - 170_000, 'Stop'), line(now - 50_000, 'UserPromptSubmit', { human: true, judged: 5, real: 5 })])
 	const old = now - 3 * 3600_000
 	await post([line(old, 'UserPromptSubmit', { human: true, session: 'p0' }), line(old + 120_000, 'Stop', { session: 'p0' }), line(old + 240_000, 'UserPromptSubmit', { human: true, session: 'p0' })])
-	assert.equal((await call('/api/v1/submissions', { method: 'POST', body: '{}' })).status, 401)
-	const oldClient = await call('/api/v1/submissions', { method: 'POST', key, body: JSON.stringify({ signed: { v: 1 }, logs: ['x'] }) })
-	assert.equal(oldClient.status, 400)
-	assert.match(await oldClient.text(), /teardrop update/)
-	const first = (await (await submitIt()).json()) as { id: string; witnessed_seconds: number; unwitnessed_seconds: number; credited_seconds: number; prompts: number }
-	assert.deepEqual([first.witnessed_seconds, first.unwitnessed_seconds, first.credited_seconds, first.prompts], [240, 240, 240, 4])
-	// A second submission credits only what is new: 30 more witnessed seconds.
-	await post([line(now - 20_000, 'Stop', { session: 'p1' })])
-	const second = (await (await submitIt(key, 'The level editor.')).json()) as { credited_seconds: number; earlier_overlap_seconds: number }
-	assert.deepEqual([second.credited_seconds, second.earlier_overlap_seconds], [30, 240])
+	await post([line(now - 200_000, 'UserPromptSubmit', { human: true, session: 'q1', project: 'github.com/kid/site' }), line(now - 80_000, 'Stop', { session: 'q1', project: 'github.com/kid/site' })])
 
-	// Review: every level reads it; a reviewer sees no project key and no computer IDs.
+	// A reviewer makes a key in the review app; the key acts as they do, with no cookie.
 	const admin = await signIn('admin')
-	const page = (await (await call(`/api/review/submissions/${first.id}`, { cookie: admin })).json()) as { records: { computer: string; late_ms: number }[]; flags: unknown[] }
-	assert.equal(page.records.length, 7)
-	assert.ok(page.records.some((r) => r.late_ms > 3600_000), 'how late each record arrived is shown')
-	assert.deepEqual(page.flags, [])
-	// Accepting unwitnessed time: a neoadmin or superadmin, with a note, capped at what is unwitnessed.
-	const accept = (as: string, body: object) => call(`/api/review/submissions/${first.id}/accept`, { method: 'POST', cookie: as, origin: SITE, body: JSON.stringify(body) })
-	assert.equal((await accept(admin, { seconds: 999 })).status, 400)
-	assert.equal((await accept(admin, { seconds: 999, note: 'Offline on a train; commits match.' })).status, 200)
-	const list = (await (await call('/api/review/submissions', { cookie: admin })).json()) as { submissions: { id: string; accepted_seconds: number; project_key?: string }[] }
-	assert.equal(list.submissions.find((s) => s.id === first.id)!.accepted_seconds, 240)
-	const env = await server.getWorker<{ DB: { prepare(sql: string): { first<T>(): Promise<T | null> } } }>().getEnv()
-	assert.ok(await env.DB.prepare(`SELECT 1 FROM staff_log WHERE action = 'approve'`).first())
-
-	// The person sees their own submissions, newest first, by sync key or on the site: the decision and its note, not who made it.
-	type Own = { id: string; state: string; credited_seconds: number; accepted_seconds: number; final_seconds: number | null; note: string | null; submitter_note: string | null; decided_at: number | null; decided_by?: string }
-	const byKey = ((await (await call('/api/v1/submissions', { key })).json()) as { submissions: Own[] }).submissions
-	const bySession = ((await (await call('/api/submissions', { cookie })).json()) as { submissions: Own[] }).submissions
-	assert.deepEqual(bySession, byKey)
-	assert.deepEqual(byKey.map((x) => [x.state, x.credited_seconds, x.accepted_seconds, x.final_seconds, x.submitter_note]), [['pending', 30, 0, null, 'The level editor.'], ['approved', 240, 240, 480, null]])
-	assert.equal(byKey[1]!.id, first.id)
-	assert.equal(byKey[1]!.note, 'Offline on a train; commits match.')
-	assert.ok(byKey[1]!.decided_at)
-	assert.ok(byKey.every((x) => !('decided_by' in x)), 'who decided stays with the reviewers')
-	const reviewed = (await (await call(`/api/review/submissions/${byKey[0]!.id}`, { cookie: admin })).json()) as { submission: { submitter_note: string } }
-	assert.equal(reviewed.submission.submitter_note, 'The level editor.')
-	const stranger = await me(await signIn('bystander'))
-	assert.deepEqual(await (await call('/api/v1/submissions', { key: stranger.api_key })).json(), { submissions: [] })
-
-	// A banned account can't submit.
-	assert.equal((await call('/api/review/bans', { method: 'POST', cookie: admin, origin: SITE, body: JSON.stringify({ slack_id: 'USUBMITTER', reason: 'test' }) })).status, 200)
-	assert.equal((await submitIt()).status, 403)
-})
-
-test('reviewers approve, adjust, or reject a submission, and a rejection keeps covering its time', async () => {
-	const cookie = await signIn('decided')
-	const { api_key: key } = await me(cookie)
-	const now = Date.now()
-	const line = (t: number, event: string, extra: object = {}) => JSON.stringify({ t: new Date(t).toISOString(), tool: 'claude-code', event, session: 'd1', project: 'github.com/kid/app', ...extra })
-	const post = (lines: string[]) => call('/api/v1/events', { method: 'POST', key, body: lines.join('\n') })
-	const submitIt = async () => (await (await call('/api/v1/submissions', { method: 'POST', key, body: JSON.stringify({ project: 'github.com/kid/app' }) })).json()) as { id: string; credited_seconds: number; unwitnessed_seconds: number; earlier_overlap_seconds: number }
-	// 240 seconds witnessed, and 240 sent 3 hours late.
-	await post([line(now - 290_000, 'UserPromptSubmit', { human: true, judged: 6, real: 6 }), line(now - 170_000, 'Stop'), line(now - 50_000, 'UserPromptSubmit', { human: true, judged: 5, real: 5 })])
-	const old = now - 3 * 3600_000
-	await post([line(old, 'UserPromptSubmit', { human: true, session: 'd0' }), line(old + 120_000, 'Stop', { session: 'd0' }), line(old + 240_000, 'UserPromptSubmit', { human: true, session: 'd0' })])
-	const first = await submitIt()
-	assert.deepEqual([first.credited_seconds, first.unwitnessed_seconds], [240, 240])
-
-	const superadmin = await signIn('admin')
-	assert.equal((await call('/api/review/team', { method: 'POST', cookie: superadmin, origin: SITE, body: JSON.stringify({ slack_id: 'UREVIEWS', level: 2 }) })).status, 200)
-	const rev = await signIn('reviews')
-	const decide = (as: string, id: string, body: object) => call(`/api/review/submissions/${id}/decide`, { method: 'POST', cookie: as, origin: SITE, body: JSON.stringify(body) })
-	const final = async (id: string) => ((await (await call('/api/v1/submissions', { key })).json()) as { submissions: { id: string; state: string; final_seconds: number | null; accepted_seconds: number }[] }).submissions.find((s) => s.id === id)!
-
-	// Every decision needs a known action and a note.
-	assert.equal((await decide(superadmin, first.id, { action: 'approve' })).status, 400)
-	assert.equal((await decide(superadmin, first.id, { action: 'pay', note: 'x' })).status, 400)
-	assert.equal((await decide(superadmin, 'sub-nope', { action: 'reject', note: 'x' })).status, 404)
-	// A reviewer may not accept unwitnessed time or adjust, nor use the old accept route.
-	assert.equal((await decide(rev, first.id, { action: 'approve', seconds: 60, note: 'Looks fine.' })).status, 403)
-	assert.equal((await decide(rev, first.id, { action: 'adjust', seconds: 100, note: 'Trim.' })).status, 403)
-	assert.equal((await call(`/api/review/submissions/${first.id}/accept`, { method: 'POST', cookie: rev, origin: SITE, body: JSON.stringify({ seconds: 0, note: 'x' }) })).status, 403)
-	assert.equal((await final(first.id)).state, 'pending')
-	// A reviewer approves a pending one: what was witnessed, nothing more. Then it is decided, and theirs to leave.
-	assert.equal((await decide(rev, first.id, { action: 'approve', note: 'Matches the commits.' })).status, 200)
-	assert.deepEqual(await final(first.id), { ...(await final(first.id)), state: 'approved', final_seconds: 240, accepted_seconds: 0 })
-	assert.equal((await decide(rev, first.id, { action: 'reject', note: 'Changed my mind.' })).status, 403)
-	// A reviewer sees the decision, not who made it or who submitted it.
-	type Row = { id: string; state: string; decided_by?: string; name?: string; slack_id?: string; handle: string }
-	const seen = ((await (await call(`/api/review/submissions/${first.id}`, { cookie: rev })).json()) as { submission: Row }).submission
-	assert.deepEqual([seen.state, seen.decided_by, seen.name, seen.slack_id, seen.handle], ['approved', undefined, undefined, undefined, (await me(cookie)).handle])
-	// Nor the harness's session IDs, which for Amp name a thread that may name the repository: sessions are numbered.
-	const sessions = ((await (await call(`/api/review/submissions/${first.id}`, { cookie: rev })).json()) as { records: { session: string }[] }).records.map((r) => r.session)
-	assert.deepEqual([...new Set(sessions)].sort(), ['session 1', 'session 2'])
-	const listed = ((await (await call('/api/review/submissions', { cookie: rev })).json()) as { submissions: Row[] }).submissions
-	assert.ok(listed.length && listed.every((x) => x.decided_by === undefined && x.slack_id === undefined && x.name === undefined))
-	assert.equal(((await (await call(`/api/review/submissions/${first.id}`, { cookie: superadmin })).json()) as { submission: Row }).submission.decided_by, 'UREVIEWS')
-	// No one decides their own submission, a superadmin included.
-	const own = (await me(superadmin)).api_key
-	await call('/api/v1/events', { method: 'POST', key: own, body: [line(now - 200_000, 'UserPromptSubmit', { human: true, judged: 6, real: 6, session: 'mine', project: 'github.com/admin/x' }), line(now - 100_000, 'Stop', { session: 'mine', project: 'github.com/admin/x' })].join('\n') })
-	const mine = (await (await call('/api/v1/submissions', { method: 'POST', key: own, body: JSON.stringify({ project: 'github.com/admin/x' }) })).json()) as { id: string }
-	assert.equal((await decide(superadmin, mine.id, { action: 'approve', note: 'Mine.' })).status, 403)
-	// A neoadmin adjusts: never above witnessed plus unwitnessed, and anything above what was witnessed is accepted time.
-	assert.equal((await decide(superadmin, first.id, { action: 'adjust', seconds: 481, note: 'Too much.' })).status, 400)
-	assert.equal((await decide(superadmin, first.id, { action: 'adjust', seconds: 300, note: 'One late stretch was real.' })).status, 200)
-	assert.deepEqual(await final(first.id), { ...(await final(first.id)), state: 'adjusted', final_seconds: 300, accepted_seconds: 60 })
-	assert.equal((await decide(superadmin, first.id, { action: 'adjust', seconds: 100, note: 'Half was idle.' })).status, 200)
-	assert.deepEqual(await final(first.id), { ...(await final(first.id)), final_seconds: 100, accepted_seconds: 0 })
-	// Rejected, it credits nothing, and still covers its time: submitting again credits none of it.
-	assert.equal((await decide(superadmin, first.id, { action: 'reject', note: 'Replayed records.' })).status, 200)
-	assert.deepEqual(await final(first.id), { ...(await final(first.id)), state: 'rejected', final_seconds: 0, accepted_seconds: 0 })
-	const again = await submitIt()
-	// The late time the first one listed isn't listed as unwitnessed again, where a neoadmin could accept it twice.
-	assert.deepEqual([again.credited_seconds, again.earlier_overlap_seconds, again.unwitnessed_seconds], [0, 240, 0])
-	const env = await server.getWorker<{ DB: { prepare(sql: string): { all<T>(): Promise<{ results: T[] }> } } }>().getEnv()
-	const { results } = await env.DB.prepare(`SELECT action FROM staff_log WHERE detail LIKE '${first.id}:%' ORDER BY id`).all<{ action: string }>()
-	assert.deepEqual(results.map((r) => r.action), ['approve', 'adjust', 'adjust', 'reject'])
-})
-
-test('gaps between prompts that hold commits GitHub found are listed, and a neoadmin may accept them', async () => {
-	const cookie = await signIn('handcoder')
-	const { api_key: key } = await me(cookie)
-	const now = Date.now()
-	const min = 60_000
-	const rec = (ago: number, event: string, extra: object = {}) => JSON.stringify({ t: new Date(now - ago * min).toISOString(), tool: 'claude-code', event, session: 'h1', project: 'github.com/kid/hand', human: event === 'UserPromptSubmit', judged: 6, real: 6, ...extra })
-	const commit = (ago: number, sha: string) => JSON.stringify({ t: new Date(now - ago * min).toISOString(), tool: 'git', event: 'commit', session: sha, git: 'github.com/kid/hand', sha, added: 40, removed: 4 })
-	const [found, missing, early] = ['f'.repeat(40), 'e'.repeat(40), '9'.repeat(40)]
-	// Three prompt clusters: 100 to 98 minutes ago, 62 to 58, and 10 to 3. A commit GitHub lacks sits in the first gap; one it has, in the second.
-	const lines = [rec(100, 'UserPromptSubmit'), rec(98, 'Stop'), commit(80, missing), rec(62, 'UserPromptSubmit'), rec(60, 'Stop'), rec(58, 'UserPromptSubmit'), commit(30, found), commit(40, early), rec(5, 'UserPromptSubmit'), rec(3, 'Stop')]
-	assert.equal((await call('/api/v1/events', { method: 'POST', key, body: lines.join('\n') })).status, 200)
-	// What the hourly check would have found: one commit there, one not, one dated a day before its claimed time.
-	const env = await server.getWorker<{ DB: { prepare(sql: string): { bind(...v: unknown[]): { first<T>(): Promise<T | null>; run(): Promise<unknown> } } } }>().getEnv()
-	const id = (await env.DB.prepare('SELECT id FROM users WHERE slack_id = ?').bind('UHANDCODER').first<{ id: number }>())!.id
-	const at = (ago: number) => Math.floor((now - ago * min) / 1000) * 1000
-	const recent = [
-		{ sha: found, t: at(30), added: 40, removed: 4, seen: now, found: true, author_t: at(30), login: 'kid' },
-		{ sha: early, t: at(40), added: 40, removed: 4, seen: now, found: true, author_t: at(40) - 86400_000 },
-		{ sha: missing, t: at(80), added: 40, removed: 4, seen: now, found: false },
-	]
-	await env.DB.prepare('INSERT OR REPLACE INTO project_git (user_id, project_key, claimed, found, checked_at, recent) VALUES (?, ?, 3, 2, ?, ?)').bind(id, 'github.com/kid/hand', now, JSON.stringify(recent)).run()
-
-	const submitIt = async () => (await (await call('/api/v1/submissions', { method: 'POST', key, body: JSON.stringify({ project: 'github.com/kid/hand' }) })).json()) as { id: string; credited_seconds: number; unwitnessed_seconds: number }
-	const sub = await submitIt()
-	const admin = await signIn('admin')
-	type Page = { submission: { gaps_accepted: string | null }; records: { event: string; sha?: string }[]; commit_gaps: { start: number; end: number; most: number; commits: { sha?: string; login?: string | null }[] }[] }
-	const page = (await (await call(`/api/review/submissions/${sub.id}`, { cookie: admin })).json()) as Page
-	// Only the second gap, from the prompt 58 minutes ago to 5 minutes before the one 5 minutes ago: 48 minutes, with only the commit GitHub has and dates as claimed.
-	assert.deepEqual(page.commit_gaps.map((g) => [(now - g.start) / min, (now - g.end) / min, g.most, g.commits.map((c) => [c.sha, c.login])]), [[58, 10, 48 * 60, [[found, 'kid']]]])
-
-	// A reviewer may not accept it; a neoadmin may, up to the gap.
-	assert.equal((await call('/api/review/team', { method: 'POST', cookie: admin, origin: SITE, body: JSON.stringify({ slack_id: 'UGAPREVIEW', level: 2 }) })).status, 200)
-	const decide = (as: string, body: object) => call(`/api/review/submissions/${sub.id}/decide`, { method: 'POST', cookie: as, origin: SITE, body: JSON.stringify(body) })
-	const reviewer = await signIn('gapreview')
-	assert.equal((await decide(reviewer, { action: 'approve', gaps: [600], note: 'Hand coding.' })).status, 403)
-	// A full SHA or a GitHub login would name the repository, which a reviewer doesn't see.
-	const theirs = (await (await call(`/api/review/submissions/${sub.id}`, { cookie: reviewer })).json()) as Page
-	assert.deepEqual(theirs.commit_gaps[0]!.commits.map((c) => Object.keys(c).sort()), [['added', 'removed', 't']])
-	assert.ok(theirs.records.some((r) => r.event === 'commit') && theirs.records.every((r) => r.sha === undefined))
-	assert.equal((await decide(admin, { action: 'approve', gaps: [-1], note: 'x' })).status, 400)
-	assert.equal((await decide(admin, { action: 'approve', gaps: [999_999, 500], note: 'The commit matches the gap.' })).status, 200)
-	const own = ((await (await call('/api/v1/submissions', { key })).json()) as { submissions: { id: string; accepted_seconds: number; final_seconds: number }[] }).submissions.find((x) => x.id === sub.id)!
-	assert.deepEqual([own.accepted_seconds, own.final_seconds], [48 * 60, sub.credited_seconds + 48 * 60], 'clamped to the gap; an index with no gap adds nothing')
-	// What each gap got is kept, so deciding again starts from it.
-	assert.equal(((await (await call(`/api/review/submissions/${sub.id}`, { cookie: admin })).json()) as Page).submission.gaps_accepted, '[2880]')
-	// Submitting again lists no gap a submission already listed.
-	const again = await submitIt()
-	assert.deepEqual(((await (await call(`/api/review/submissions/${again.id}`, { cookie: admin })).json()) as Page).commit_gaps, [])
+	assert.equal((await call('/api/review/team', { method: 'POST', cookie: admin, origin: SITE, body: JSON.stringify({ slack_id: 'UPROGRAM', level: 2 }) })).status, 200)
+	const program = await signIn('program')
+	const made = (await (await call('/api/review/keys', { method: 'POST', cookie: program, origin: SITE, body: JSON.stringify({ name: 'YSWS payouts' }) })).json()) as { key: string }
+	type Stats = { person: { slack_id: string }; ban: { reason: string } | null; witnessed_seconds: number; unwitnessed_seconds: number; prompts: number; projects: { name: string; key?: string; witnessed_seconds: number; unwitnessed_seconds: number }[]; days: { date: string; witnessed_seconds: number }[]; flags?: unknown[] }
+	const stats = async (query: string, as = made.key) => {
+		const res = await call(`/api/review/stats?${query}`, { key: as })
+		assert.equal(res.status, 200, await res.clone().text())
+		return (await res.json()) as Stats
+	}
+	// Read at once: the hub writes what it holds before the answer.
+	const all = await stats('slack=ULEARNER')
+	assert.equal(all.person.slack_id, 'ULEARNER')
+	// Time on two projects at once counts once in the total.
+	assert.deepEqual([all.witnessed_seconds, all.unwitnessed_seconds, all.prompts], [240, 240, 5])
+	// A reviewer's key sees project names, never keys, which can name a folder on their computer.
+	assert.deepEqual(all.projects.map((p) => [p.name, p.key, p.witnessed_seconds, p.unwitnessed_seconds]), [['game', undefined, 240, 240], ['site', undefined, 120, 0]])
+	// Narrowed to one project, by name; and to days, which leave out the ones before.
+	const game = await stats('slack=ULEARNER&project=game')
+	assert.deepEqual([game.witnessed_seconds, game.unwitnessed_seconds, game.projects.length], [240, 240, 1])
+	const tomorrow = new Date(now + 2 * DAY).toISOString().slice(0, 10)
+	assert.deepEqual((await stats(`slack=ULEARNER&start=${tomorrow}`)).days, [])
+	// A neoadmin's session sees keys too, and filters by them. Flags read the records behind it.
+	const full = (await (await call('/api/review/stats?slack=ULEARNER&project=github.com/kid/site&flags=true', { cookie: admin })).json()) as Stats
+	assert.deepEqual(full.projects.map((p) => [p.key, p.witnessed_seconds]), [['github.com/kid/site', 120]])
+	assert.deepEqual(full.flags, [])
+	// Bad dates, someone unknown, and no key are refused; a person's own sync key is no key here.
+	assert.equal((await call('/api/review/stats?slack=ULEARNER&start=jan', { key: made.key })).status, 400)
+	assert.equal((await call('/api/review/stats?slack=UNOBODY', { key: made.key })).status, 404)
+	assert.equal((await call('/api/review/stats?slack=ULEARNER')).status, 401)
+	assert.equal((await call('/api/review/stats?slack=ULEARNER', { key })).status, 401)
+	// A ban shows, with its reason, so a program can hold payment.
+	assert.equal((await call('/api/review/bans', { method: 'POST', cookie: admin, origin: SITE, body: JSON.stringify({ slack_id: 'ULEARNER', reason: 'test' }) })).status, 200)
+	assert.equal((await stats('slack=ULEARNER')).ban?.reason, 'test')
+	// An old `teardrop submit` is told submissions are gone.
+	const oldSubmit = await call('/api/v1/submissions', { method: 'POST', key, body: JSON.stringify({ project: 'github.com/kid/game' }) })
+	assert.equal(oldSubmit.status, 410)
 })
 
 test('a computer whose clock is off can\'t pick its own correction, not even under a new computer ID', async () => {
@@ -1443,7 +1269,8 @@ test('a computer whose clock is off can\'t pick its own correction, not even und
 			headers: { Authorization: `Bearer ${key}`, 'X-Teardrop-Computer': computer, 'X-Teardrop-Sent-At': iso(now - behind) },
 			body: ago.map((a, i) => JSON.stringify({ t: iso(now - behind - a * 1000), tool: 'claude-code', event: i % 2 ? 'Stop' : 'UserPromptSubmit', session, project, human: i % 2 === 0, judged: 6, real: 6 })).join('\n'),
 		})
-	const submit = async (project: string) => (await (await call('/api/v1/submissions', { method: 'POST', key, body: JSON.stringify({ project }) })).json()) as { id: string; witnessed_seconds: number; unwitnessed_seconds: number }
+	const admin = await signIn('admin')
+	const submit = async (project: string) => (await (await call(`/api/review/stats?slack=UOFFCLOCK&project=${project}`, { cookie: admin })).json()) as { witnessed_seconds: number; unwitnessed_seconds: number }
 
 	// A new computer ID that says it runs an hour behind, with records an hour old: they stay late, unwitnessed.
 	assert.equal((await send('td-aaaaaaaaaaa1', 'github.com/kid/backdated', 60 * min, [240, 120, 10])).status, 200)
@@ -1634,29 +1461,6 @@ test('commits travel as records, earn no time, and are checked against GitHub', 
 	await env.DB.prepare(`UPDATE project_git SET checked_at = NULL, recent = (SELECT json_group_array(json_remove(value, '$.author_t', '$.login')) FROM json_each(recent)) WHERE user_id = ?`).bind(id).run()
 	await checkGit({ DB: env.DB, GITHUB_TOKEN: 't', GITHUB_API: github } as never)
 	assert.deepEqual((await view(`/api/review/person?id=${id}`)).commits.map((c) => c.moved), [true, false, false])
-})
-
-test('a superadmin imports what the old review server credited, and it is never credited again', async () => {
-	const cookie = await signIn('importer')
-	const { api_key: key } = await me(cookie)
-	const sync = computer()
-	assert.equal((await call('/api/v1/reports', { method: 'POST', key, body: sync({ blocks: [], projects: [], engaged_seconds: 0 }) })).status, 200)
-	const { computers: mine } = (await (await call('/api/me', { cookie })).json()) as { computers: { id: string }[] }
-	const now = Date.now()
-	const iso = (t: number) => new Date(t).toISOString()
-	const lines = [
-		{ id: 'r1', account: mine[0]!.id, project: { key: 'github.com/kid/old', name: 'old' }, received_at: iso(now - 86400_000), engaged: [{ start: iso(now - 600_000), end: iso(now - 280_000) }], credited_seconds: 320 },
-		{ id: 'r2', account: 'td-ffffffffffff', project: { key: 'x', name: 'x' }, received_at: iso(now), credited_seconds: 5 },
-	].map((r) => JSON.stringify(r)).join('\n')
-	const reviewer = await signIn('admin')
-	const importIt = () => call('/api/review/import', { method: 'POST', cookie: reviewer, origin: SITE, body: lines })
-	assert.deepEqual(await (await importIt()).json(), { imported: 1, unknown: ['r2'] })
-	assert.deepEqual(await (await importIt()).json(), { imported: 0, unknown: ['r2'] }, 'importing twice adds nothing')
-	// Live records over the same stretch earn nothing new.
-	const line = (t: number, event: string, extra: object = {}) => JSON.stringify({ t: iso(t), tool: 'claude-code', event, session: 'o', project: 'github.com/kid/old', ...extra })
-	await call('/api/v1/events', { method: 'POST', key, body: [line(now - 290_000, 'UserPromptSubmit', { human: true }), line(now - 170_000, 'Stop')].join('\n') })
-	const sub = (await (await call('/api/v1/submissions', { method: 'POST', key, body: JSON.stringify({ project: 'github.com/kid/old' }) })).json()) as { credited_seconds: number; earlier_overlap_seconds: number }
-	assert.deepEqual([sub.credited_seconds, sub.earlier_overlap_seconds], [110, 10])
 })
 
 test('a computer that sends only records shows on the dashboard, and usage earns no time', async () => {

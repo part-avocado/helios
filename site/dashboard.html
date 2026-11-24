@@ -110,22 +110,10 @@
 			<div class="panel"><h2>Tools</h2><div class="rows" id="tools"></div></div>
 			<div class="panel"><h2>Projects</h2><div class="table-scroll"><table class="data stack" id="projects"></table></div></div>
 			<div class="panel"><h2>Time of day<small id="hours-peak"></small></h2><div class="bars" id="hours"></div><div class="bar-labels"><span>0:00</span><span>6:00</span><span>12:00</span><span>18:00</span><span>23:00</span></div></div>
-			<div class="panel wide" id="submissions-panel" hidden><h2>Submissions</h2>
-				<div class="table-scroll"><table class="data stack" id="submissions"></table></div>
-				<p class="muted fine">A submission credits the time your site saw arrive as it happened, less what earlier submissions of the project covered. Time that arrived late is listed as unwitnessed, and counts only if a reviewer accepts it.</p></div>
 			<div class="panel wide" id="blocks-panel"><h2 id="blocks-title">Recent work blocks</h2><div class="table-scroll"><table class="data stack" id="blocks"></table></div></div>
 		</div>
 	</div>
 </main>
-<dialog class="modal" id="submit-dialog" aria-labelledby="submit-title">
-	<form id="submit-form">
-		<h2 id="submit-title">Submit this project</h2>
-		<p>Your site makes the submission from the records it already has: nothing is uploaded. You can submit a project again as it grows; time an earlier submission covered is credited once.</p>
-		<label class="field">A note for the reviewers<input name="note" maxlength="1000" autocomplete="off" placeholder="Optional: what it is, or why some time arrived late" style="max-width:none"></label>
-		<p class="msg bad" id="submit-msg" role="alert" hidden></p>
-		<div class="actions"><button class="btn small" type="button" id="submit-cancel">Cancel</button><button class="btn primary small" id="submit-go">Submit</button></div>
-	</form>
-</dialog>
 <div class="tip" id="tip" role="tooltip" hidden><b></b><span></span><em></em></div>
 <script src="site.js"></script>
 <script src="account.js"></script>

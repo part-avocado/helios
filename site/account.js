@@ -6,7 +6,7 @@ const $ = (id) => document.getElementById(id)
 function showBan(ban) {
 	$('ban-banner').hidden = !ban
 	if (!ban) return
-	$('ban-text').textContent = `It is banned until a reviewer lifts the ban. Nothing new is taken from it: no syncs, uploads, cloud events, or submissions. What was synced before stays here for you to see.`
+	$('ban-text').textContent = `It is banned until a reviewer lifts the ban. Nothing new is taken from it: no syncs, uploads, or cloud events. What was synced before stays here for you to see.`
 }
 const esc = (s) => String(s).replace(/[&<>\"']/g, (c) => `&#${c.charCodeAt(0)};`)
 const dur = (sec) => {
@@ -135,7 +135,7 @@ function renderSetup(el, key) {
 			<h3>Connect it to your account</h3>
 			<p>Open a new terminal and run this once. It shows a code to type on this site, then uploads your hours, and teardrop syncs again each time a reply finishes in Claude Code or Amp, or you stop one.</p>
 			<div class="cmdbox">${cmd(connect)}</div>
-			<p class="fine">Only type a code that your own terminal shows. Anyone whose code you type gets your sync key: they can submit and read your submissions.</p>
+			<p class="fine">Only type a code that your own terminal shows. Anyone whose code you type gets your sync key: they can send records as you.</p>
 		</div></li>
 		<li><div>
 			<h3>Check your tools</h3>

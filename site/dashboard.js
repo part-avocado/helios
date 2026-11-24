@@ -138,11 +138,9 @@ function render() {
 		`<div class="row"${tipAttrs(t, `${dur(v)}, ${pct(v, toolTotal)} of the time`)}><div class="top"><span>${esc(t)}</span><span class="muted">${dur(v)}</span></div><div class="track"><div class="fill" style="width:${(v / maxTool) * 100}%"></div></div></div>`).join('') ||
 		'<p class="muted">No activity in this range.</p>'
 
-	// On the site, a person submits their own projects from here.
-	const canSubmit = hosted && !viewing
-	$('projects').innerHTML = `<tr><th>Project</th><th>Engaged</th><th>Prompts</th><th>Tokens</th>${canSubmit ? '<th></th>' : ''}</tr>` +
-		(ranked.map((p) => `<tr class="pick${only === p.key ? ' sel' : ''}" data-project="${esc(p.key)}"><td><button type="button" class="link" aria-pressed="${only === p.key}" title="${only === p.key ? 'Show all projects' : 'Show only this project'}">${esc(p.name)}</button></td><td>${dur(p.engaged)}</td><td>${p.prompts}</td><td>${count(p.tin)}/${count(p.tout)}</td>${canSubmit ? `<td><button type="button" class="btn small" data-submit="${esc(p.key)}" data-name="${esc(p.name)}">Submit</button></td>` : ''}</tr>`).join('') ||
-			`<tr><td colspan="${canSubmit ? 5 : 4}" class="muted">No activity in this range.</td></tr>`)
+	$('projects').innerHTML = '<tr><th>Project</th><th>Engaged</th><th>Prompts</th><th>Tokens</th></tr>' +
+		(ranked.map((p) => `<tr class="pick${only === p.key ? ' sel' : ''}" data-project="${esc(p.key)}"><td><button type="button" class="link" aria-pressed="${only === p.key}" title="${only === p.key ? 'Show all projects' : 'Show only this project'}">${esc(p.name)}</button></td><td>${dur(p.engaged)}</td><td>${p.prompts}</td><td>${count(p.tin)}/${count(p.tout)}</td></tr>`).join('') ||
+			'<tr><td colspan="4" class="muted">No activity in this range.</td></tr>')
 
 	// With a day picked, list that day's blocks, even if it is outside the range above.
 	const listed = (pick ? scoped.filter((b) => b.s >= pick.from && b.s < pick.to) : blocks).slice().sort((a, b) => b.s - a.s)
@@ -348,55 +346,8 @@ async function loadHosted() {
 	const from = body.computers.length === 1 ? '1 computer' : `${body.computers.length} computers`
 	show(merge(body.computers), `<span class="dot${stale ? ' old' : ''}"></span>Synced ${esc(ago(last))} from ${from}` +
 		(viewing ? ` · <a href="/review/#/person/id:${encodeURIComponent(viewing)}">review</a> · <a href="/review/#/people">all people</a>` : body.ban ? ' · <b>syncing is paused</b>' : stale ? ' · run <code>teardrop sync</code> to update' : ''))
-	if (!viewing) loadSubmissions().catch(() => {})
 	again(5 * 60000)
 }
-
-// loadSubmissions lists the visitor's own submissions and how each was decided.
-async function loadSubmissions() {
-	const { submissions } = await api('/api/submissions')
-	$('submissions-panel').hidden = !submissions.length
-	const when = (ms) => `${fmtDay.format(ms)}, ${hm.format(ms)}`
-	$('submissions').innerHTML = '<tr><th>Submitted</th><th>Project</th><th>Credited</th><th>Unwitnessed</th><th>Accepted</th><th>Final</th><th>Review</th><th>Notes</th></tr>' +
-		submissions.map((s) => {
-			const notes = [s.submitter_note && `<div><span class="muted">Yours:</span> ${esc(s.submitter_note)}</div>`, s.note && `<div><span class="muted">Reviewer:</span> ${esc(s.note)}</div>`].filter(Boolean).join('')
-			// How it was decided, colored only when the answer is a yes or a no.
-			const decided = { approved: ['Approved', ' good'], adjusted: ['Adjusted', ''], rejected: ['Rejected', ' bad'] }[s.state]
-			const state = s.imported
-				? '<span class="state">Imported</span>'
-				: decided
-					? `<span class="state${decided[1]}">${decided[0]}</span>${s.decided_at ? `<span class="when">${fmtShort.format(s.decided_at)}</span>` : ''}`
-					: '<span class="state note">Waiting</span>'
-			return `<tr><td>${when(s.received_at)}</td><td title="${esc(s.project_key)}">${esc(s.project_name)}</td><td>${dur(s.credited_seconds)}${s.capped_seconds ? `<div class="muted">${dur(s.capped_seconds)} over the cap</div>` : ''}</td><td>${dur(s.unwitnessed_seconds)}</td><td>${dur(s.accepted_seconds)}</td><td>${s.final_seconds == null ? '' : `<b>${dur(s.final_seconds)}</b>`}</td><td>${state}</td><td>${notes}</td></tr>`
-		}).join('')
-	labelCells()
-}
-
-let submitting = null
-function openSubmit(key, name) {
-	submitting = key
-	$('submit-title').textContent = `Submit ${name}`
-	$('submit-form').reset()
-	$('submit-msg').hidden = true
-	$('submit-go').disabled = false
-	$('submit-dialog').showModal()
-}
-$('submit-cancel').addEventListener('click', () => $('submit-dialog').close())
-$('submit-form').addEventListener('submit', async (e) => {
-	e.preventDefault()
-	$('submit-go').disabled = true
-	try {
-		const note = new FormData(e.target).get('note')
-		await api('/api/submissions', { method: 'POST', body: JSON.stringify({ project: submitting, note }) })
-		$('submit-dialog').close()
-		await loadSubmissions()
-		$('submissions-panel').scrollIntoView({ behavior: 'smooth', block: 'start' })
-	} catch (err) {
-		$('submit-msg').textContent = err.message
-		$('submit-msg').hidden = false
-		$('submit-go').disabled = false
-	}
-})
 
 // poll reads the live report that `teardrop dashboard` serves on this computer.
 async function poll() {
@@ -438,8 +389,6 @@ for (const b of document.querySelectorAll('#range button')) {
 // Clicking a day or week, or a project, narrows the page to it; clicking it
 // again, or its chip, widens it back.
 $('content').addEventListener('click', (e) => {
-	const submitting = e.target.closest('[data-submit]')
-	if (submitting) return openSubmit(submitting.dataset.submit, submitting.dataset.name)
 	const clear = e.target.closest('[data-clear]')?.dataset.clear
 	if (clear === 'project') only = null
 	else if (clear === 'pick') pick = null

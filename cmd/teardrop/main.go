@@ -10,7 +10,6 @@
 //	teardrop export   write a signed report to upload on the website
 //	teardrop login -server URL   connect this computer to your account on the website
 //	teardrop sync     send your records to your account on the website
-//	teardrop submit <project>   submit a project's hours, from the records the site holds
 //	teardrop status   show whether this computer is set up and sending
 //	teardrop doctor   check the setup and say how to fix what is wrong
 //	teardrop update   replace this teardrop with the latest release
@@ -40,8 +39,8 @@ import (
 // version is set by the release build.
 var version = "dev"
 
-// usage lists the commands people run. hook, relay, and export-records are
-// left out: tools and superadmins run them, and the docs cover them.
+// usage lists the commands people run. hook and relay are left out: tools
+// run them, and the docs cover them.
 const usage = `Usage: teardrop [flags]            show your AI coding timeline (-l keeps it updating live)
        teardrop setup              check which tools are found, install hooks, fix settings that lose history
        teardrop setup amp          set up one tool only: claude, codex, amp, or opencode
@@ -50,7 +49,6 @@ const usage = `Usage: teardrop [flags]            show your AI coding timeline (
        teardrop export             write a signed report to upload on the website, under Settings
        teardrop login -server URL  connect this computer to your account on your teardrop site
        teardrop sync               upload your signed counts (time, prompts, tokens, lines; no text) to your account on the website
-       teardrop submit <project>   submit a project's hours for review; the site uses the records it already has, nothing is uploaded
        teardrop status             show whether this computer is set up and sending
        teardrop doctor             check everything that decides whether your time counts, and say how to fix it
        teardrop update             download the latest teardrop and replace this one with it
@@ -88,9 +86,6 @@ func main() {
 		case "calibrate":
 			runCalibrate(os.Args[2:])
 			return
-		case "submit":
-			runSubmit(os.Args[2:])
-			return
 		case "login":
 			runLogin(os.Args[2:])
 			return
@@ -102,9 +97,6 @@ func main() {
 			return
 		case "status":
 			runStatus(os.Args[2:])
-			return
-		case "export-records":
-			runExportRecords(os.Args[2:])
 			return
 		case "help":
 			os.Args[1] = "-h"

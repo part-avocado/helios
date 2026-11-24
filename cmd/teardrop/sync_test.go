@@ -34,7 +34,7 @@ func TestSyncKeyGoesOnlyToItsServer(t *testing.T) {
 	}
 	srv, _ = serverURL("")
 	key, _ := syncKey("", srv)
-	if _, err := post(srv, key, "/api/v1/reports", nil); err != nil || got != "Bearer tdk_mine" {
+	if _, err := relayRequest(ts.Client(), "GET", srv+"/api/v1/whoami", key, nil, nil); err != nil || got != "Bearer tdk_mine" {
 		t.Fatalf("a later sync sent Authorization %q (%v), want the remembered key", got, err)
 	}
 
@@ -206,32 +206,5 @@ func TestSyncQueued(t *testing.T) {
 	}
 	if _, err := os.Stat(lock); err == nil {
 		t.Error("a failed sync left its lock behind")
-	}
-}
-
-func TestListSubmissions(t *testing.T) {
-	received := time.Date(2026, 11, 20, 15, 4, 0, 0, time.Local).UnixMilli()
-	decided := time.Date(2026, 11, 22, 9, 0, 0, 0, time.Local).UnixMilli()
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/submissions" || r.Header.Get("Authorization") != "Bearer tdk_mine" {
-			http.Error(w, "This server needs your sync key.", http.StatusUnauthorized)
-			return
-		}
-		fmt.Fprintf(w, `{"submissions":[
-			{"project_name":"game","received_at":%d,"credited_seconds":1800,"unwitnessed_seconds":0,"accepted_seconds":0,"capped_seconds":900,"state":"pending","decided_at":null,"note":null,"submitter_note":"The level editor."},
-			{"project_name":"site","received_at":%d,"credited_seconds":3600,"unwitnessed_seconds":1200,"accepted_seconds":600,"final_seconds":4200,"state":"approved","decided_at":%d,"note":"Commits match.","submitter_note":null}]}`, received, received, decided)
-	}))
-	defer ts.Close()
-	var out strings.Builder
-	if err := listSubmissions(ts.Client(), ts.URL, "tdk_mine", &out); err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{"game", "waiting for review", "site", "1h00m", "10m", "1h10m", "approved Nov 22", "game, Nov 20: 15m over the site's daily or weekly cap, not credited.", "game, Nov 20, your note: The level editor.", "site, Nov 20, the reviewer's note: Commits match."} {
-		if !strings.Contains(out.String(), want) {
-			t.Errorf("missing %q in:\n%s", want, &out)
-		}
-	}
-	if err := listSubmissions(ts.Client(), ts.URL, "tdk_other", &out); err == nil || !strings.Contains(err.Error(), "needs your sync key") {
-		t.Errorf("a refused key gave %v", err)
 	}
 }
