@@ -98,12 +98,16 @@ test('the hub loses no record while it writes a day', async () => {
 		const a = send(d5 + 1000, 'a')
 		for (let i = 0; i < 200 && !(await hub().reading()); i++) await new Promise((r) => setTimeout(r, 10))
 		const b = send(d5 + 2000, 'b')
-		for (let i = 0; i < 50 && (await hub().reading()) < 2; i++) await new Promise((r) => setTimeout(r, 10))
+		// The second waits on the first's read: it neither goes on without one nor starts its own.
+		const waited = await Promise.race([b.then(() => false), new Promise((r) => setTimeout(r, 500, true))])
+		const reads = await hub().reading()
 		await hub().releaseRead()
 		await a
 		await hub().flush()
 		await hub().releaseRead(true)
 		await b
+		assert.ok(waited, 'the second record waited for the read')
+		assert.equal(reads, 1, 'the two records shared one read')
 		await hub().flush()
 		assert.deepEqual(await inR2(d5), ['a', 'b', 'sealed'])
 	} finally {
