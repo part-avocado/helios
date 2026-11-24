@@ -104,9 +104,17 @@ func TestUnixToWindows(t *testing.T) {
 	}
 	if runtime.GOOS == "windows" {
 		home, _ := os.UserHomeDir()
-		want := filepath.Join(`C:\cygwin64\home`, filepath.Base(home), ".bashrc")
-		if p := shellProfiles(); !slices.Contains(p, filepath.Join(home, ".bashrc")) || !slices.Contains(p, want) {
-			t.Errorf("profiles on Windows: %v, want Git Bash's and Cygwin's ~/.bashrc", p)
+		for _, c := range []struct{ drive, user, cygwin string }{
+			{"D:", "ada", `D:\cygwin64\home\ada`},
+			// Without them, it is the usual drive and the profile folder's name.
+			{"", "", `C:\cygwin64\home\` + filepath.Base(home)},
+		} {
+			t.Setenv("SystemDrive", c.drive)
+			t.Setenv("USERNAME", c.user)
+			git, cygwin := filepath.Join(home, ".bashrc"), filepath.Join(c.cygwin, ".bashrc")
+			if p := shellProfiles(); !slices.Contains(p, git) || !slices.Contains(p, cygwin) {
+				t.Errorf("profiles on Windows with SystemDrive %q and USERNAME %q: %v, want %s and %s", c.drive, c.user, p, git, cygwin)
+			}
 		}
 	}
 }
