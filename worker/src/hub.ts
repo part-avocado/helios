@@ -172,7 +172,8 @@ export class UserHub extends DurableObject<Env> {
 			if (event === 'commit' && !rec.sha) continue
 			const kind = now - t <= SEAL ? 'recent' : 'old'
 			const day = dayOf(t, offset)
-			if (now - (Date.parse(day) + DAY - offset * 60_000) > SEAL) await this.load(userID, day)
+			// Until the day is loaded, not once: a flush can forget the day between a read ending and this going on.
+			if (now - (Date.parse(day) + DAY - offset * 60_000) > SEAL) for (let read; (read = this.load(userID, day)); ) await read
 			if (used(kind) >= caps[kind]) {
 				const midnight = Date.parse(today) + DAY
 				limited = {
@@ -206,6 +207,9 @@ export class UserHub extends DurableObject<Env> {
 	 * during the read reads it again rather than go on without them. Records
 	 * that arrive while it is read wait on the same read: one of their own
 	 * could return what R2 held before a flush wrote the first one there.
+	 * It returns nothing once the day is loaded, and the read to wait on until
+	 * then; a caller asks again after the read, as add does, since a flush may
+	 * have forgotten the day by the time the caller goes on.
 	 */
 	private load(userID: number, day: string) {
 		if (this.ctx.storage.sql.exec('SELECT 1 FROM loaded WHERE day = ?', day).toArray().length) return

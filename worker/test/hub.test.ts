@@ -9,7 +9,7 @@ import { createTestHarness, experimental_readRawConfig, unstable_splitSqlQuery }
 
 const DAY = 86400_000
 
-type Hub = { flush(): Promise<string[]>; holdWrites(): Promise<void>; writing(): Promise<boolean>; releaseWrites(): Promise<void>; failNextWrite(): Promise<void>; crash(): Promise<void>; holdReads(): Promise<void>; reading(): Promise<number>; releaseRead(all?: boolean): Promise<void> }
+type Hub = { flush(): Promise<string[]>; holdWrites(): Promise<void>; writing(): Promise<boolean>; releaseWrites(): Promise<void>; failNextWrite(): Promise<void>; crash(): Promise<void>; holdReads(): Promise<void>; reading(): Promise<number>; releaseRead(all?: boolean): Promise<void>; flushAsReadEnds(): Promise<string[]> }
 
 test('the hub loses no record while it writes a day', async () => {
 	// The deployed config, run with the test entry.
@@ -110,6 +110,21 @@ test('the hub loses no record while it writes a day', async () => {
 		assert.equal(reads, 1, 'the two records shared one read')
 		await hub().flush()
 		assert.deepEqual(await inR2(d5), ['a', 'b', 'sealed'])
+
+		// A flush can forget a sealed day between its read ending and the record
+		// that waited on the read going on. The record reads the day again,
+		// rather than write itself over what R2 has.
+		const d6 = Date.now() - 8 * DAY
+		await send(d6, 'sealed')
+		await hub().flush()
+		await hub().holdReads()
+		const c = send(d6 + 1000, 'c')
+		for (let i = 0; i < 200 && !(await hub().reading()); i++) await new Promise((r) => setTimeout(r, 10))
+		const wrote = await hub().flushAsReadEnds()
+		await c
+		assert.deepEqual(wrote, [], 'the flush ran before the waiting record went on')
+		await hub().flush()
+		assert.deepEqual(await inR2(d6), ['c', 'sealed'])
 	} finally {
 		await site.close()
 		rmSync(config, { force: true })

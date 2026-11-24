@@ -8,7 +8,7 @@ export class UserHub extends Hub {
 	private open = () => {}
 	private waiting = false
 	private failNext = false
-	private reads: (() => void)[] | null = null
+	private reads: { day: string; go: () => void }[] | null = null
 
 	/** holdWrites makes the next day writes wait, until releaseWrites. */
 	holdWrites() {
@@ -34,9 +34,28 @@ export class UserHub extends Hub {
 	/** releaseRead lets the oldest waiting read go on, or with all, every read, and stops holding them. */
 	releaseRead(all = false) {
 		if (all) {
-			for (const go of this.reads ?? []) go()
+			for (const read of this.reads ?? []) read.go()
 			this.reads = null
-		} else this.reads?.shift()?.()
+		} else this.reads?.shift()?.go()
+	}
+	/**
+	 * flushAsReadEnds lets every waiting read go on, stops holding them, and
+	 * flushes the moment the oldest one's day counts as loaded: before the
+	 * records that waited on that read go on. It returns the days the flush
+	 * wrote, which is none when it got in ahead of those records.
+	 */
+	async flushAsReadEnds() {
+		const reads = this.reads ?? []
+		this.reads = null
+		const day = reads[0]?.day
+		if (!day) throw new Error('no read is waiting')
+		for (const read of reads) read.go()
+		// A microtask at a time, so nothing but the read runs before the flush.
+		for (let i = 0; !this.ctx.storage.sql.exec('SELECT 1 FROM loaded WHERE day = ?', day).toArray().length; i++) {
+			if (i > 100) throw new Error('the read did not end')
+			await null
+		}
+		return this.flush()
 	}
 	failNextWrite() {
 		this.failNext = true
@@ -48,7 +67,7 @@ export class UserHub extends Hub {
 
 	protected override async readDay(user: number, day: string) {
 		const body = await super.readDay(user, day)
-		if (this.reads) await new Promise<void>((go) => this.reads!.push(go))
+		if (this.reads) await new Promise<void>((go) => this.reads!.push({ day, go }))
 		return body
 	}
 
