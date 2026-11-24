@@ -17,7 +17,7 @@ initTabs()
 document.addEventListener('click', async (e) => {
 	const btn = e.target.closest?.('.copy')
 	if (!btn) return
-	const text = btn.parentElement.querySelector('code').textContent
+	const text = btn.parentElement.querySelector('pre, code').textContent
 	try {
 		await navigator.clipboard.writeText(text)
 		btn.textContent = 'Copied'
@@ -148,4 +148,14 @@ if (search) {
 for (const menu of document.querySelectorAll('details.account')) {
 	document.addEventListener('click', (e) => menu.open && !menu.contains(e.target) && (menu.open = false))
 	menu.addEventListener('keydown', (e) => e.key === 'Escape' && ((menu.open = false), menu.querySelector('summary').focus()))
+}
+
+// Docs: each code block gets a Copy button, which the handler above serves.
+// This runs after the search has read the page, so no section holds the word "Copy".
+for (const pre of document.querySelectorAll('.docs article pre')) {
+	const box = document.createElement('div')
+	box.className = 'code'
+	pre.replaceWith(box)
+	box.append(pre)
+	box.insertAdjacentHTML('beforeend', '<button class="copy" type="button">Copy</button>')
 }

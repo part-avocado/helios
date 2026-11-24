@@ -2,12 +2,20 @@
 // from /api/public/v1/users/{handle}, which needs no sign-in.
 const handle = decodeURIComponent(location.pathname.replace(/^\/@/, '').replace(/\/+$/, ''))
 
-function notice(title, text) {
+// notice says why there is no profile to show. With retry it offers to ask
+// again, for a failure that may have passed.
+function notice(title, text, retry = false) {
 	$('notice').hidden = false
-	$('content').hidden = true
+	$('content').hidden = $('loading').hidden = true
 	$('notice-title').textContent = title
 	$('notice-text').textContent = text
+	$('notice-actions').hidden = !retry
 }
+$('notice-retry').addEventListener('click', () => {
+	$('notice').hidden = true
+	$('loading').hidden = false
+	load()
+})
 
 function render(p) {
 	document.title = `@${p.handle} - teardrop`
@@ -35,7 +43,7 @@ function render(p) {
 	$('heatmap').innerHTML = heatmapHTML(perDay, now)
 
 	// A public repository's latest commits link to the host, marked when GitHub has them.
-	const commits = (x) => !x.commits?.length ? '' : `<div class="fine muted">${x.commits.map((c) => `<a href="https://${esc(x.repo)}/commit/${esc(c.sha)}" rel="nofollow noopener"><code>${esc(c.sha.slice(0, 7))}</code></a>${c.found === true ? ' ✓' : c.found === false ? ' (not on GitHub)' : ''}`).join(', ')}${x.checked ? '' : ' - not checked yet'}</div>`
+	const commits = (x) => !x.commits?.length ? '' : `<div class="fine muted">${x.commits.map((c) => `<a href="https://${esc(x.repo)}/commit/${esc(c.sha)}" rel="nofollow noopener"><code>${esc(c.sha.slice(0, 7))}</code></a>${c.found === true ? ' ✓' : c.found === false ? ' (not on GitHub)' : ''}`).join(', ')}${x.checked ? '' : ' · not checked yet'}</div>`
 	const rows = p.projects.map((x) => `<tr><td>${x.repo ? `<a href="https://${esc(x.repo)}" rel="nofollow noopener">${esc(x.name)}</a>` : esc(x.name)}${commits(x)}</td><td>${dur(x.engaged_seconds)}</td></tr>`)
 	if (p.other_projects.count) {
 		const n = p.other_projects.count
@@ -43,7 +51,7 @@ function render(p) {
 	}
 	$('projects').innerHTML = '<tr><th>Project</th><th>Engaged</th></tr>' + (rows.join('') || '<tr><td colspan="2" class="muted">No projects yet.</td></tr>')
 	labelCells()
-	$('notice').hidden = true
+	$('notice').hidden = $('loading').hidden = true
 	$('content').hidden = false
 	// Start on the latest weeks, which is what the eye wants on a narrow screen. Only a shown element scrolls.
 	$('heatmap').scrollLeft = $('heatmap').scrollWidth
@@ -54,10 +62,10 @@ async function load() {
 	try {
 		res = await fetch(`/api/public/v1/users/${encodeURIComponent(handle)}`)
 	} catch {
-		return notice('Could not load this profile', 'Check your connection and reload the page.')
+		return notice('Could not load this profile', 'Check your connection, then try again.', true)
 	}
 	if (res.status === 404) return notice('No such profile', 'There is no public profile at this address. Its owner may have changed their handle or made it private.')
-	if (!res.ok) return notice('Could not load this profile', (await res.text()).trim())
+	if (!res.ok) return notice('Could not load this profile', (await res.text()).trim(), true)
 	render(await res.json())
 }
 

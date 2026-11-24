@@ -115,6 +115,7 @@ function render() {
 	$('s-today-hint').textContent = today ? 'keep going' : 'nothing yet today'
 	$('s-streak').textContent = `${streak} ${streak === 1 ? 'day' : 'days'}`
 	$('s-top').textContent = top?.name || '-'
+	$('s-top').title = top?.name || '' // in full, where the card cuts a long name short
 	$('s-top-hint').textContent = top ? dur(top.engaged) : ''
 	$('s-prompts').textContent = count(prompts)
 	$('s-prompts-hint').textContent = noise ? `${noise} skipped: ${why}` : 'none skipped'
@@ -145,12 +146,19 @@ function render() {
 
 	// With a day picked, list that day's blocks, even if it is outside the range above.
 	const listed = (pick ? scoped.filter((b) => b.s >= pick.from && b.s < pick.to) : blocks).slice().sort((a, b) => b.s - a.s)
-	$('blocks-title').textContent = pick ? `Work blocks - ${pick.label}` : 'Recent work blocks'
+	$('blocks-title').textContent = pick ? `Work blocks · ${pick.label}` : 'Recent work blocks'
 	$('blocks').innerHTML = '<tr><th>When</th><th>Project</th><th>Engaged</th><th>Span</th><th>Prompts</th><th>Tokens</th><th>Tools</th></tr>' +
 		(listed.slice(0, pick ? 100 : 25).map((b) =>
 			`<tr><td>${fmtDay.format(b.s)}, ${hm.format(b.s)}–${hm.format(b.e)}</td><td>${esc(b.project.name)}</td><td>${dur(b.engaged_seconds)}</td><td>${dur((b.e - b.s) / 1000)}</td><td>${b.prompts}</td><td>${count(b.tokens_in)}/${count(b.tokens_out)}</td><td>${b.tools.map((t) => `<span class="tag">${esc(t)}</span>`).join('')}</td></tr>`).join('') ||
 			`<tr><td colspan="7" class="muted">${pick ? 'No work blocks in this range.' : 'No activity in this range.'}</td></tr>`)
 	labelCells()
+	// A year with nothing in it says so, and what to do, instead of leaving a page of zeros to explain itself.
+	$('no-data').hidden = all.length > 0
+	if (!all.length) {
+		$('no-data').innerHTML = hosted
+			? 'Nothing recorded in the past year. Use Claude Code, Codex, or Amp as usual, and your time shows up here after the next sync.'
+			: 'teardrop found no Claude Code, Codex, or Amp sessions from the past year on this computer. Run <code>teardrop setup</code> to see where it looks.'
+	}
 }
 
 // renderChips shows what is picked, each with a way to clear it.
@@ -160,7 +168,7 @@ function renderChips(projects, scoped) {
 	if (pick) {
 		const inPick = scoped.filter((b) => b.s >= pick.from && b.s < pick.to)
 		const secs = inPick.reduce((n, b) => n + b.engaged_seconds, 0)
-		chips.push(`<button type="button" class="chip" data-clear="pick" title="Back to the whole range">${esc(pick.label)} - ${dur(secs)}${X}</button>`)
+		chips.push(`<button type="button" class="chip" data-clear="pick" title="Back to the whole range">${esc(pick.label)} · ${dur(secs)}${X}</button>`)
 		chips.push('<a class="link" href="#blocks-panel">See its work blocks</a>')
 	}
 	$('chips').hidden = !chips.length
@@ -252,11 +260,12 @@ async function verify(file) {
 }
 
 const verifiedNote = (p) =>
-	`<span class="tag" title="Signed by this account; any change to the numbers or times would break the key"><svg class="ico" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>verified</span> account ${esc(p.accountID)} - key valid until ${esc(new Date(p.expires_at).toLocaleDateString())}`
+	`<span class="tag ok" title="Signed by this account; any change to the numbers or times would break the key"><svg class="ico" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>verified</span> account ${esc(p.accountID)} · key valid until ${esc(new Date(p.expires_at).toLocaleDateString())}`
 
-// The page shows one of three things: stats, the setup steps, or a notice.
+// The page shows one of four things: stats, the setup steps, a notice, or,
+// until the first answer arrives, the shapes of the stats to come.
 function reveal(id) {
-	for (const part of ['content', 'setup', 'notice']) $(part).hidden = part !== id
+	for (const part of ['content', 'setup', 'notice', 'loading']) $(part).hidden = part !== id
 	$('range').hidden = id !== 'content'
 }
 
@@ -267,12 +276,19 @@ function show(rep, source) {
 	render()
 }
 
-function notice(title, html) {
+// notice says why there are no stats to show. With retry it offers to ask
+// again now, for a failure that may have passed.
+function notice(title, html, retry = false) {
 	reveal('notice')
 	$('status').textContent = ''
 	$('notice-title').textContent = title
 	$('notice-text').innerHTML = html
+	$('notice-actions').hidden = !retry
 }
+$('notice-retry').addEventListener('click', () => {
+	reveal('loading')
+	loadHosted()
+})
 
 // merge adds up the latest report of each of a person's computers.
 function merge(computers) {
@@ -323,7 +339,7 @@ async function loadHosted() {
 		}
 	} catch (e) {
 		if (report) $('status').textContent = 'Could not reach the server. Trying again.'
-		else notice(viewing ? 'Could not load these stats' : 'Could not load your stats', esc(e.message))
+		else notice(viewing ? 'Could not load these stats' : 'Could not load your stats', esc(e.message), true)
 		again(15000)
 		return
 	}
@@ -331,7 +347,7 @@ async function loadHosted() {
 	const stale = Date.now() - last > 3 * DAY
 	const from = body.computers.length === 1 ? '1 computer' : `${body.computers.length} computers`
 	show(merge(body.computers), `<span class="dot${stale ? ' old' : ''}"></span>Synced ${esc(ago(last))} from ${from}` +
-		(viewing ? ` - <a href="/review/#/person/id:${encodeURIComponent(viewing)}">review</a> - <a href="/review/#/people">all people</a>` : body.ban ? ' - <b>syncing is paused</b>' : stale ? ' - run <code>teardrop sync</code> to update' : ''))
+		(viewing ? ` · <a href="/review/#/person/id:${encodeURIComponent(viewing)}">review</a> · <a href="/review/#/people">all people</a>` : body.ban ? ' · <b>syncing is paused</b>' : stale ? ' · run <code>teardrop sync</code> to update' : ''))
 	if (!viewing) loadSubmissions().catch(() => {})
 	again(5 * 60000)
 }
@@ -344,8 +360,13 @@ async function loadSubmissions() {
 	$('submissions').innerHTML = '<tr><th>Submitted</th><th>Project</th><th>Credited</th><th>Unwitnessed</th><th>Accepted</th><th>Final</th><th>Review</th><th>Notes</th></tr>' +
 		submissions.map((s) => {
 			const notes = [s.submitter_note && `<div><span class="muted">Yours:</span> ${esc(s.submitter_note)}</div>`, s.note && `<div><span class="muted">Reviewer:</span> ${esc(s.note)}</div>`].filter(Boolean).join('')
-			const decided = { approved: 'Approved', adjusted: 'Adjusted', rejected: 'Rejected' }[s.state]
-			const state = s.imported ? 'Imported' : decided ? `${decided}${s.decided_at ? ' ' + fmtShort.format(s.decided_at) : ''}` : 'Waiting'
+			// How it was decided, colored only when the answer is a yes or a no.
+			const decided = { approved: ['Approved', ' good'], adjusted: ['Adjusted', ''], rejected: ['Rejected', ' bad'] }[s.state]
+			const state = s.imported
+				? '<span class="state">Imported</span>'
+				: decided
+					? `<span class="state${decided[1]}">${decided[0]}</span>${s.decided_at ? `<span class="when">${fmtShort.format(s.decided_at)}</span>` : ''}`
+					: '<span class="state note">Waiting</span>'
 			return `<tr><td>${when(s.received_at)}</td><td title="${esc(s.project_key)}">${esc(s.project_name)}</td><td>${dur(s.credited_seconds)}${s.capped_seconds ? `<div class="muted">${dur(s.capped_seconds)} over the cap</div>` : ''}</td><td>${dur(s.unwitnessed_seconds)}</td><td>${dur(s.accepted_seconds)}</td><td>${s.final_seconds == null ? '' : `<b>${dur(s.final_seconds)}</b>`}</td><td>${state}</td><td>${notes}</td></tr>`
 		}).join('')
 	labelCells()
@@ -398,9 +419,11 @@ async function poll() {
 	try {
 		const p = await verify(body)
 		live = true
-		show(p.report, `<span class="dot live"></span>Live from this computer - updated ${new Date().toLocaleTimeString()} - ${verifiedNote(p)}`)
+		show(p.report, `<span class="dot live"></span>Live from this computer · updated ${new Date().toLocaleTimeString()} · ${verifiedNote(p)}`)
 	} catch (e) {
-		$('status').textContent = e.message
+		// Stats already on the page stay, with what went wrong beside the title.
+		if (report) $('status').textContent = e.message
+		else notice('Could not show your stats', esc(e.message))
 	}
 	setTimeout(poll, 30000)
 }
