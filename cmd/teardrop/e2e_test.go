@@ -290,12 +290,17 @@ func TestE2E(t *testing.T) {
 	if plugin, _ := os.ReadFile(filepath.Join(openCode, "plugins", "teardrop.ts")); !bytes.Contains(plugin, []byte("const teardrop = "+string(lit))) {
 		t.Errorf("setup opencode did not write a plugin running %s", exe)
 	}
-	zshrc := filepath.Join(home, ".zshrc")
+	// The PATH line install.sh added. On Windows it runs in Git Bash, which
+	// writes .bashrc, and names the folder its own way, /c/Users/....
+	rc, dir := ".zshrc", filepath.Dir(exe)
+	if runtime.GOOS == "windows" {
+		rc, dir = ".bashrc", "/"+strings.ToLower(dir[:1])+filepath.ToSlash(dir[2:])
+	}
 	mine := "alias g=git\n"
-	os.WriteFile(zshrc, []byte(mine+installerMark+`export PATH="`+filepath.Dir(exe)+`:$PATH"`+"\n"), 0o644)
+	os.WriteFile(filepath.Join(home, rc), []byte(mine+installerMark+`export PATH="`+dir+`:$PATH"`+"\n"), 0o644)
 	out := run("", "uninstall", "-yes")
-	if b, _ := os.ReadFile(zshrc); string(b) != mine {
-		t.Errorf("uninstall left .zshrc as %q", b)
+	if b, _ := os.ReadFile(filepath.Join(home, rc)); string(b) != mine {
+		t.Errorf("uninstall left %s as %q", rc, b)
 	}
 	if settings, _ = os.ReadFile(filepath.Join(claude, "settings.json")); strings.Contains(string(settings), "hook claude-code") {
 		t.Errorf("uninstall left teardrop's hooks:\n%s", settings)
