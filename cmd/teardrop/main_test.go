@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -12,6 +13,16 @@ import (
 
 	"github.com/part-avocado/teardrop/internal/timeline"
 )
+
+// TestMain runs the tests outside any repository a shell or git hook named,
+// so the git repositories they make are their own, and git never writes to
+// that one.
+func TestMain(m *testing.M) {
+	for _, v := range []string{"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY"} {
+		os.Unsetenv(v)
+	}
+	os.Exit(m.Run())
+}
 
 // Every command main dispatches is in the help, except the ones tools and
 // superadmins run, so the help can't go stale when a command is added.
