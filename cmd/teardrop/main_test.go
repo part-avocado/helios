@@ -112,8 +112,6 @@ func TestFolderKey(t *testing.T) {
 			t.Errorf("remote %q: key %q, name %q", remote, p.Key, p.Name)
 		}
 	}
-	// A relayed event carries that key, which is used as it is, case and all,
-	// and a remote git takes as ~/repos/x.git is the same folder.
 	// A remote of the home folder itself is named home, not after the account;
 	// one that climbs out of home names no folder of this computer's.
 	if p := nameProject("", "~/"); p.Key != "home" || p.Name != "home" {
@@ -122,6 +120,8 @@ func TestFolderKey(t *testing.T) {
 	if p := nameProject("", "~/../x"); strings.Contains(p.Key, filepath.ToSlash(filepath.Dir(home))) || strings.HasPrefix(p.Key, "/") {
 		t.Errorf("remote ~/../x became %q, which names a folder outside home", p.Key)
 	}
+	// A relayed event carries that key, which is used as it is, case and all,
+	// and a remote git takes as ~/repos/x.git is the same folder.
 	for _, remote := range []string{"~/Repos/X", "~/Repos/X.git"} {
 		if p := nameProject("", remote); p.Key != "~/Repos/X" || p.Name != "X" {
 			t.Errorf("remote %q became %q, %q", remote, p.Key, p.Name)

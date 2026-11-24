@@ -109,10 +109,15 @@ func runUninstall(args []string) {
 func shellProfiles() []string {
 	home, _ := os.UserHomeDir()
 	if runtime.GOOS == "windows" {
-		// install.sh also runs in Git Bash, whose home is this one, and in
-		// Cygwin and MSYS2, whose homes are under their own roots.
+		drive, user := os.Getenv("SystemDrive"), os.Getenv("USERNAME")
+		if drive == "" {
+			drive = "C:"
+		}
+		if user == "" {
+			user = filepath.Base(home)
+		}
 		var out []string
-		for _, h := range []string{home, `C:\cygwin64\home\` + filepath.Base(home), `C:\cygwin\home\` + filepath.Base(home), `C:\msys64\home\` + filepath.Base(home)} {
+		for _, h := range windowsHomes(home, drive, user) {
 			out = append(out, filepath.Join(h, ".bashrc"), filepath.Join(h, ".bash_profile"))
 		}
 		return out
@@ -204,16 +209,25 @@ func sameDir(written, dir string) bool {
 	return err1 == nil && err2 == nil && a == b
 }
 
+// windowsHomes lists the homes install.sh may have run in on Windows: Git
+// Bash's, which is the profile folder, and those of Cygwin and MSYS2, which
+// install on the system drive and name the home after the account.
+func windowsHomes(home, drive, user string) []string {
+	return []string{home, drive + `\cygwin64\home\` + user, drive + `\cygwin\home\` + user, drive + `\msys64\home\` + user}
+}
+
 // unixToWindows turns a folder a Unix shell on Windows wrote into profile
 // into the Windows folder it is: /c/Users/ada/bin, as Git Bash writes it, is
-// C:\Users\ada\bin; /home/ada/bin, in a profile under a Cygwin or MSYS2 root
+// C:\Users\ada\bin, and so is /cygdrive/c/Users/ada/bin, as Cygwin writes it;
+// /home/ada/bin or /usr/local/bin, in a profile under a Cygwin or MSYS2 root
 // such as C:\cygwin64\home\ada, is under that root. Anything else is left
 // as it is.
 func unixToWindows(written, profile string) string {
+	written = strings.TrimPrefix(written, "/cygdrive")
 	if len(written) > 2 && written[0] == '/' && written[2] == '/' && written[1] != '/' {
 		return strings.ToUpper(written[1:2]) + ":" + strings.ReplaceAll(written[2:], "/", `\`)
 	}
-	if i := strings.Index(strings.ToLower(profile), `\home\`); strings.HasPrefix(written, "/home/") && i > 0 {
+	if i := strings.Index(strings.ToLower(profile), `\home\`); strings.HasPrefix(written, "/") && !strings.HasPrefix(written, "//") && i > 0 {
 		return profile[:i] + strings.ReplaceAll(written, "/", `\`)
 	}
 	return written

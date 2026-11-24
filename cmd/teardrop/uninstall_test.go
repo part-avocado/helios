@@ -75,12 +75,23 @@ func TestUnixToWindows(t *testing.T) {
 		{"/c/Users/ada/bin", `C:\Users\ada\.bashrc`, `C:\Users\ada\bin`},
 		{"/home/ada/.local/bin", `C:\cygwin64\home\ada\.bashrc`, `C:\cygwin64\home\ada\.local\bin`},
 		{"/home/ada/.local/bin", `C:\msys64\home\ada\.bash_profile`, `C:\msys64\home\ada\.local\bin`},
+		// Cygwin names drives under /cygdrive, and its other folders are under its root.
+		{"/cygdrive/d/tools", `C:\cygwin64\home\ada\.bashrc`, `D:\tools`},
+		{"/usr/local/bin", `C:\cygwin64\home\ada\.bashrc`, `C:\cygwin64\usr\local\bin`},
 		// Git Bash's own /home is somewhere else, so such a line isn't read as a Windows folder.
 		{"/home/ada/bin", `C:\Users\ada\.bashrc`, "/home/ada/bin"},
 		{`C:\Users\ada\bin`, `C:\Users\ada\.bashrc`, `C:\Users\ada\bin`},
 	} {
 		if got := unixToWindows(c.written, c.profile); got != c.want {
 			t.Errorf("unixToWindows(%q, %q) = %q, want %q", c.written, c.profile, got, c.want)
+		}
+	}
+	// Cygwin and MSYS2 live on the system drive and name their homes after the
+	// account, which needn't be the profile folder's name.
+	homes := windowsHomes(`D:\Users\ada.CORP`, "D:", "ada")
+	for _, want := range []string{`D:\Users\ada.CORP`, `D:\cygwin64\home\ada`, `D:\cygwin\home\ada`, `D:\msys64\home\ada`} {
+		if !slices.Contains(homes, want) {
+			t.Errorf("windowsHomes: %v, want %s", homes, want)
 		}
 	}
 	if runtime.GOOS == "windows" {
