@@ -6,16 +6,17 @@ export { default } from '../src/index.ts'
 export class UserHub extends Hub {
 	private gate: Promise<void> | null = null
 	private open = () => {}
-	private waiting = false
+	private waiting = 0
 	private failNext = false
+	private failRead = false
 	private reads: { day: string; go: () => void }[] | null = null
+	private held = ''
 
 	/** holdWrites makes the next day writes wait, until releaseWrites. */
 	holdWrites() {
 		this.gate = new Promise((r) => (this.open = r))
-		this.waiting = false
 	}
-	/** writing says whether a write is waiting at the hold. */
+	/** writing counts the writes waiting at the hold. */
 	writing() {
 		return this.waiting
 	}
@@ -23,9 +24,10 @@ export class UserHub extends Hub {
 		this.gate = null
 		this.open()
 	}
-	/** holdReads makes reads of sealed days wait once they have what R2 held, until releaseRead lets the oldest go on. */
-	holdReads() {
+	/** holdReads makes reads of the sealed day t is on wait once they have what R2 held, until releaseRead lets the oldest go on. */
+	holdReads(t: number) {
 		this.reads = []
+		this.held = new Date(t).toISOString().slice(0, 10)
 	}
 	/** reading counts the reads waiting at the hold. */
 	reading() {
@@ -60,14 +62,28 @@ export class UserHub extends Hub {
 	failNextWrite() {
 		this.failNext = true
 	}
+	failNextRead() {
+		this.failRead = true
+	}
+	/** alarmAt says when the hub's next flush is due, or null; clearAlarm cancels it. */
+	alarmAt() {
+		return this.ctx.storage.getAlarm()
+	}
+	clearAlarm() {
+		return this.ctx.storage.deleteAlarm()
+	}
 	/** crash resets the hub, as a deploy or a restart does, whatever it is in the middle of. */
 	crash() {
 		this.ctx.abort('reset by the test')
 	}
 
 	protected override async readDay(user: number, day: string) {
+		if (this.failRead) {
+			this.failRead = false
+			throw new Error('R2 is down')
+		}
 		const body = await super.readDay(user, day)
-		if (this.reads) await new Promise<void>((go) => this.reads!.push({ day, go }))
+		if (this.reads && day === this.held) await new Promise<void>((go) => this.reads!.push({ day, go }))
 		return body
 	}
 
@@ -77,8 +93,9 @@ export class UserHub extends Hub {
 			throw new Error('R2 is down')
 		}
 		if (this.gate) {
-			this.waiting = true
+			this.waiting++
 			await this.gate
+			this.waiting--
 		}
 		return super.writeDay(user, day, lines)
 	}

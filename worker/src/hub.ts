@@ -172,8 +172,13 @@ export class UserHub extends DurableObject<Env> {
 			if (event === 'commit' && !rec.sha) continue
 			const kind = now - t <= SEAL ? 'recent' : 'old'
 			const day = dayOf(t, offset)
-			// Until the day is loaded, not once: a flush can forget the day between a read ending and this going on.
-			if (now - (Date.parse(day) + DAY - offset * 60_000) > SEAL) for (let read; (read = this.load(userID, day)); ) await read
+			// A sealed day is read back first, and so are the sealed days either
+			// side of it: sent again under another offset, the record may be in one
+			// of them. They are read at once, and asked again until all three are
+			// loaded together: a flush can forget a day between a read ending and
+			// this going on.
+			const sealed = [-DAY, 0, DAY].map((near) => dayOf(Date.parse(day) + near, 0)).filter((d) => now - (Date.parse(d) + DAY - offset * 60_000) > SEAL)
+			for (let read; (read = sealed.map((d) => this.load(userID, d)).find(Boolean)); ) await read
 			if (used(kind) >= caps[kind]) {
 				const midnight = Date.parse(today) + DAY
 				limited = {
@@ -182,17 +187,21 @@ export class UserHub extends DurableObject<Env> {
 				}
 				break
 			}
-			// A turn's usage, from its transcript, is sent again as the turn grows, and the latest counts.
+			// A turn's usage, from its transcript, is sent again as the turn grows,
+			// and the latest counts. It stays in the day it is in, should the
+			// offset have moved since, so that day's copy is the one replaced.
+			const at = event === 'usage' ? String(sql.exec('SELECT day FROM recs WHERE computer = ? AND tool = ? AND session = ? AND event = ? AND t = ?', computer, tool, session, event, t).toArray()[0]?.day ?? day) : day
 			const done = sql.exec(`INSERT OR ${event === 'usage' ? 'REPLACE' : 'IGNORE'} INTO recs (computer, tool, session, event, t, arrived, day, rec) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-				computer, tool, session, event, t, now, day, JSON.stringify({ ...rec, computer, event, offset }))
+				computer, tool, session, event, t, now, at, JSON.stringify({ ...rec, computer, event, offset }))
 			if (done.rowsWritten) {
-				sql.exec('INSERT OR IGNORE INTO dirty (day) VALUES (?)', day)
-				this.marks.set(day, (this.marks.get(day) ?? 0) + 1)
+				sql.exec('INSERT OR IGNORE INTO dirty (day) VALUES (?)', at)
+				this.marks.set(at, (this.marks.get(at) ?? 0) + 1)
 				kept.push(rec)
 				sql.exec(`INSERT INTO meta (k, v) VALUES (?, '1') ON CONFLICT (k) DO UPDATE SET v = CAST(v AS INTEGER) + 1`, `${kind}:${today}`)
+				// Set at the first kept, not after the batch, which may fail partway on a read.
+				if (kept.length === 1 && (await this.ctx.storage.getAlarm()) == null) await this.ctx.storage.setAlarm(now + FLUSH)
 			}
 		}
-		if (kept.length && (await this.ctx.storage.getAlarm()) == null) await this.ctx.storage.setAlarm(now + FLUSH)
 		// Open dashboards hear of it at once; a send never waits on the socket.
 		if (kept.length) this.broadcast()
 		return { stored: kept.length, future, records: kept, ...(limited ? { limited } : {}) }
