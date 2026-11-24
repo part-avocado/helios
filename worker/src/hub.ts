@@ -197,19 +197,28 @@ export class UserHub extends DurableObject<Env> {
 		return { stored: kept.length, future, records: kept, ...(limited ? { limited } : {}) }
 	}
 
-	/** load reads a sealed day's records back from R2 into the working copy, once. */
+	/**
+	 * load reads a sealed day's records back from R2 into the working copy, once.
+	 * The day counts as loaded only after its records are in, so a hub reset
+	 * during the read, or a second record waiting on the same read, reads it
+	 * again rather than go on without them.
+	 */
 	private async load(userID: number, day: string) {
 		const sql = this.ctx.storage.sql
 		if (sql.exec('SELECT 1 FROM loaded WHERE day = ?', day).toArray().length) return
-		sql.exec('INSERT INTO loaded (day) VALUES (?)', day)
-		const obj = await this.env.REPORTS.get(dayKey(userID, day))
-		if (!obj) return
-		const body = await new Response(obj.body.pipeThrough(new DecompressionStream('gzip'))).text()
-		for (const line of body.split('\n')) {
+		const body = await this.readDay(userID, day)
+		for (const line of (body ?? '').split('\n')) {
 			if (!line) continue
 			const r = JSON.parse(line) as Rec & { computer: string; event: string }
 			sql.exec(`INSERT OR IGNORE INTO recs (computer, tool, session, event, t, arrived, day, rec) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, r.computer, r.tool, r.session, r.event, r.t, r.arrived, day, line)
 		}
+		sql.exec('INSERT OR IGNORE INTO loaded (day) VALUES (?)', day)
+	}
+
+	/** readDay reads a day's records from R2, or null. The tests hold it open, in test/hub-entry.ts. */
+	protected async readDay(userID: number, day: string): Promise<string | null> {
+		const obj = await this.env.REPORTS.get(dayKey(userID, day))
+		return obj ? new Response(obj.body.pipeThrough(new DecompressionStream('gzip'))).text() : null
 	}
 
 	async alarm() {

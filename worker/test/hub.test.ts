@@ -71,6 +71,21 @@ test('the hub loses no record while it writes a day', async () => {
 		await cut
 		await hub().flush()
 		assert.deepEqual(await inR2(d3), ['interrupted'])
+
+		// A sealed day is read back from R2 before a late record joins it. A
+		// reset during that read reads it again, rather than write the late
+		// record over what R2 had.
+		const d4 = Date.now() - 6 * DAY
+		await send(d4, 'sealed')
+		await hub().flush()
+		await hub().holdWrites()
+		const late = send(d4 + 1000, 'late, cut off').catch(() => {})
+		await atHold()
+		await hub().crash().catch(() => {})
+		await late
+		await send(d4 + 2000, 'late')
+		await hub().flush()
+		assert.deepEqual(await inR2(d4), ['late', 'sealed'])
 	} finally {
 		await site.close()
 		rmSync(config, { force: true })

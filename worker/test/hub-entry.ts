@@ -9,7 +9,7 @@ export class UserHub extends Hub {
 	private waiting = false
 	private failNext = false
 
-	/** holdWrites makes the next day writes wait, until releaseWrites. */
+	/** holdWrites makes the next day writes, and reads of sealed days, wait, until releaseWrites. */
 	holdWrites() {
 		this.gate = new Promise((r) => (this.open = r))
 		this.waiting = false
@@ -28,6 +28,14 @@ export class UserHub extends Hub {
 	/** crash resets the hub, as a deploy or a restart does, whatever it is in the middle of. */
 	crash() {
 		this.ctx.abort('reset by the test')
+	}
+
+	protected override async readDay(user: number, day: string) {
+		if (this.gate) {
+			this.waiting = true
+			await this.gate
+		}
+		return super.readDay(user, day)
 	}
 
 	protected override async writeDay(user: number, day: string, lines: string[]) {
