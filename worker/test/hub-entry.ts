@@ -72,6 +72,11 @@ export class UserHub extends Hub {
 	clearAlarm() {
 		return this.ctx.storage.deleteAlarm()
 	}
+	/** fireAlarm does what the alarm does when it goes off: it is due no more, and the hub flushes. */
+	async fireAlarm() {
+		await this.ctx.storage.deleteAlarm()
+		await this.alarm()
+	}
 	/** crash resets the hub, as a deploy or a restart does, whatever it is in the middle of. */
 	crash() {
 		this.ctx.abort('reset by the test')

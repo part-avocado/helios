@@ -178,7 +178,7 @@ export class UserHub extends DurableObject<Env> {
 			// loaded together: a flush can forget a day between a read ending and
 			// this going on.
 			const sealed = [-DAY, 0, DAY].map((near) => dayOf(Date.parse(day) + near, 0)).filter((d) => now - (Date.parse(d) + DAY - offset * 60_000) > SEAL)
-			for (let read; (read = sealed.map((d) => this.load(userID, d)).find(Boolean)); ) await read
+			for (let reads; (reads = sealed.map((d) => this.load(userID, d)).filter(Boolean)).length; ) await Promise.all(reads)
 			if (used(kind) >= caps[kind]) {
 				const midnight = Date.parse(today) + DAY
 				limited = {
@@ -188,20 +188,23 @@ export class UserHub extends DurableObject<Env> {
 				break
 			}
 			// A turn's usage, from its transcript, is sent again as the turn grows,
-			// and the latest counts. It stays in the day it is in, should the
-			// offset have moved since, so that day's copy is the one replaced.
-			const at = event === 'usage' ? String(sql.exec('SELECT day FROM recs WHERE computer = ? AND tool = ? AND session = ? AND event = ? AND t = ?', computer, tool, session, event, t).toArray()[0]?.day ?? day) : day
+			// and the latest counts. It stays in the day it is in, and at the
+			// offset that day is counted at, should the offset have moved since.
+			const was = event === 'usage' ? sql.exec(`SELECT day, rec ->> 'offset' AS offset FROM recs WHERE computer = ? AND tool = ? AND session = ? AND event = ? AND t = ?`, computer, tool, session, event, t).toArray()[0] : undefined
+			const at = was ? String(was.day) : day
 			const done = sql.exec(`INSERT OR ${event === 'usage' ? 'REPLACE' : 'IGNORE'} INTO recs (computer, tool, session, event, t, arrived, day, rec) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-				computer, tool, session, event, t, now, at, JSON.stringify({ ...rec, computer, event, offset }))
+				computer, tool, session, event, t, now, at, JSON.stringify({ ...rec, computer, event, offset: was ? Number(was.offset ?? offset) : offset }))
 			if (done.rowsWritten) {
 				sql.exec('INSERT OR IGNORE INTO dirty (day) VALUES (?)', at)
 				this.marks.set(at, (this.marks.get(at) ?? 0) + 1)
 				kept.push(rec)
 				sql.exec(`INSERT INTO meta (k, v) VALUES (?, '1') ON CONFLICT (k) DO UPDATE SET v = CAST(v AS INTEGER) + 1`, `${kind}:${today}`)
-				// Set at the first kept, not after the batch, which may fail partway on a read.
+				// Set at the first kept, not only after the batch, which may fail partway on a read.
 				if (kept.length === 1 && (await this.ctx.storage.getAlarm()) == null) await this.ctx.storage.setAlarm(now + FLUSH)
 			}
 		}
+		// And after it: the alarm may have gone off while the batch waited on a read.
+		if (kept.length && (await this.ctx.storage.getAlarm()) == null) await this.ctx.storage.setAlarm(Date.now() + FLUSH)
 		// Open dashboards hear of it at once; a send never waits on the socket.
 		if (kept.length) this.broadcast()
 		return { stored: kept.length, future, records: kept, ...(limited ? { limited } : {}) }

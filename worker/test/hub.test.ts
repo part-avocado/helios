@@ -9,7 +9,7 @@ import { createTestHarness, experimental_readRawConfig, unstable_splitSqlQuery }
 
 const DAY = 86400_000
 
-type Hub = { flush(): Promise<string[]>; holdWrites(): Promise<void>; writing(): Promise<number>; releaseWrites(): Promise<void>; failNextWrite(): Promise<void>; crash(): Promise<void>; holdReads(t: number): Promise<void>; reading(): Promise<number>; releaseRead(all?: boolean): Promise<void>; flushAsReadEnds(): Promise<string[]>; failNextRead(): Promise<void>; alarmAt(): Promise<number | null>; clearAlarm(): Promise<void> }
+type Hub = { flush(): Promise<string[]>; holdWrites(): Promise<void>; writing(): Promise<number>; releaseWrites(): Promise<void>; failNextWrite(): Promise<void>; crash(): Promise<void>; holdReads(t: number): Promise<void>; reading(): Promise<number>; releaseRead(all?: boolean): Promise<void>; flushAsReadEnds(): Promise<string[]>; failNextRead(): Promise<void>; alarmAt(): Promise<number | null>; clearAlarm(): Promise<void>; fireAlarm(): Promise<void> }
 
 test('the hub loses no record while it writes a day', async () => {
 	// The deployed config, run with the test entry.
@@ -28,8 +28,8 @@ test('the hub loses no record while it writes a day', async () => {
 		const id = (await env.DB.prepare('SELECT id FROM users WHERE slack_id = ?').bind('UDEV').first<{ id: number }>())!.id
 		const hub = () => env.HUB.get(env.HUB.idFromName(String(id)))
 		// Records go in one batch, at a UTC offset in minutes.
-		const post = (records: { t: number; session: string; event?: string }[], offset = 0) =>
-			site.fetch('/api/v1/events', { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'X-Teardrop-UTC-Offset': String(offset) }, body: records.map(({ t, session, event }) => JSON.stringify({ t: new Date(t).toISOString(), tool: 'cursor', event: event ?? 'turn_end', session, project: 'p', in: 1 })).join('\n') })
+		const post = (records: { t: number; session: string; event?: string; in?: number }[], offset = 0) =>
+			site.fetch('/api/v1/events', { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'X-Teardrop-UTC-Offset': String(offset) }, body: records.map(({ t, session, event, in: tokens }) => JSON.stringify({ t: new Date(t).toISOString(), tool: 'cursor', event: event ?? 'turn_end', session, project: 'p', in: tokens ?? 1 })).join('\n') })
 		const send = async (t: number, session: string, offset = 0, event?: string) => {
 			const res = await post([{ t, session, event }], offset)
 			assert.equal(res.status, 200)
@@ -46,9 +46,14 @@ test('the hub loses no record while it writes a day', async () => {
 			assert.ok(await hub().writing(), 'the write reached the hold')
 		}
 
+		// Records go at noon UTC, so one sent a second or two later is on the same day.
+		const midnight = Math.floor(Date.now() / DAY) * DAY
+		const noon = midnight + DAY / 2
+		const dayOn = (t: number) => new Date(t).toISOString().slice(0, 10)
+
 		// A record that arrives while its day is being written is written by the
 		// next flush, even for a day old enough that a flush forgets it after.
-		const d1 = Date.now() - 9 * DAY
+		const d1 = noon - 9 * DAY
 		await send(d1, 'before')
 		await hub().holdWrites()
 		const flushing = hub().flush()
@@ -60,7 +65,7 @@ test('the hub loses no record while it writes a day', async () => {
 		assert.deepEqual(await inR2(d1), ['before', 'during'])
 
 		// A write that fails leaves its day to the next flush.
-		const d2 = Date.now() - 4 * DAY
+		const d2 = noon - 4 * DAY
 		await send(d2, 'failed once')
 		await hub().failNextWrite()
 		await assert.rejects(hub().flush())
@@ -68,7 +73,7 @@ test('the hub loses no record while it writes a day', async () => {
 		assert.deepEqual(await inR2(d2), ['failed once'])
 
 		// A hub reset in the middle of a write, as a deploy resets it, writes the day once it is back.
-		const d3 = Date.now() - 5 * DAY
+		const d3 = noon - 5 * DAY
 		await send(d3, 'interrupted')
 		await hub().holdWrites()
 		const cut = hub().flush().catch(() => {})
@@ -81,7 +86,7 @@ test('the hub loses no record while it writes a day', async () => {
 		// A sealed day is read back from R2 before a late record joins it. A
 		// reset during that read reads it again, rather than write the late
 		// record over what R2 had.
-		const d4 = Date.now() - 6 * DAY
+		const d4 = noon - 6 * DAY
 		await send(d4, 'sealed')
 		await hub().flush()
 		await hub().holdReads(d4)
@@ -96,7 +101,7 @@ test('the hub loses no record while it writes a day', async () => {
 
 		// Two late records for one sealed day share its read, so a flush between
 		// them can't leave the second with what R2 held before the first.
-		const d5 = Date.now() - 7 * DAY
+		const d5 = noon - 7 * DAY
 		await send(d5, 'sealed')
 		await hub().flush()
 		await hub().holdReads(d5)
@@ -119,7 +124,7 @@ test('the hub loses no record while it writes a day', async () => {
 		// A flush can forget a sealed day between its read ending and the record
 		// that waited on the read going on. The record reads the day again,
 		// rather than write itself over what R2 has.
-		const d6 = Date.now() - 8 * DAY
+		const d6 = noon - 8 * DAY
 		await send(d6, 'sealed')
 		await hub().flush()
 		await hub().holdReads(d6)
@@ -133,7 +138,7 @@ test('the hub loses no record while it writes a day', async () => {
 
 		// Flushes run one at a time: a second waits for the first's write, rather
 		// than race it with the day's newer copy.
-		const d7 = Date.now() - 10 * DAY
+		const d7 = noon - 10 * DAY
 		await send(d7, 'first')
 		await hub().holdWrites()
 		const one = hub().flush()
@@ -149,20 +154,30 @@ test('the hub loses no record while it writes a day', async () => {
 
 		// A record sent again under another UTC offset, after its day was sealed
 		// and forgotten, is the record R2 already has, not one for the day before.
-		const midnight = Math.floor(Date.now() / DAY) * DAY
 		const d8 = midnight - 14 * DAY + 30 * 60_000
 		assert.equal(await send(d8, 'moved'), 1)
 		await hub().flush()
 		assert.equal(await send(d8, 'moved', -60), 0, 'the record is a repeat')
 		await hub().flush()
 		assert.deepEqual([await inR2(d8 - DAY), await inR2(d8)], [[], ['moved']])
-
-		// So is a turn's usage, which replaces what it had, in the day it is in.
-		const d9 = midnight - DAY + 30 * 60_000
-		await send(d9, 'usage', 0, 'usage')
-		await send(d9, 'usage', -60, 'usage')
+		// And the other way, to the day after.
+		const d8b = midnight - 16 * DAY - 30 * 60_000
+		assert.equal(await send(d8b, 'moved on'), 1)
 		await hub().flush()
+		assert.equal(await send(d8b, 'moved on', 60), 0, 'the record is a repeat the other way too')
+		await hub().flush()
+		assert.deepEqual([await inR2(d8b), await inR2(d8b + DAY)], [['moved on'], []])
+
+		// So is a turn's usage, which replaces what it had, in the day it is in,
+		// and still counts in that day's totals.
+		const d9 = midnight - DAY + 30 * 60_000
+		assert.equal((await (await post([{ t: d9, session: 'usage', event: 'usage', in: 1 }])).json() as { records: number }).records, 1)
+		await hub().flush()
+		assert.equal((await (await post([{ t: d9, session: 'usage', event: 'usage', in: 5 }], -60)).json() as { records: number }).records, 1)
+		assert.deepEqual(await hub().flush(), [dayOn(d9)], 'the day the usage is in is the one written')
 		assert.deepEqual([await inR2(d9 - DAY), await inR2(d9)], [[], ['usage']])
+		const tokens = await env.DB.prepare(`SELECT tokens_in AS n FROM prompt_days WHERE user_id = ? AND computer_id = '' AND day = ?`).bind(id, dayOn(d9)).first<{ n: number }>()
+		assert.equal(tokens?.n, 5, "the usage counts in its day's totals")
 
 		// A batch that fails partway still has the records it kept flushed.
 		await hub().flush()
@@ -171,6 +186,19 @@ test('the hub loses no record while it writes a day', async () => {
 		const failed = await post([{ t: Date.now() - 60_000, session: 'kept' }, { t: Date.now() - 20 * DAY, session: 'unread' }])
 		assert.equal(failed.status, 500)
 		assert.ok((await hub().alarmAt()) != null, 'a flush is due for the record kept')
+
+		// A record kept after the alarm went off, while the batch waited on a
+		// read, has a flush due as well.
+		await send(Date.now() - 120_000, 'alarm set')
+		const old = noon - 25 * DAY
+		await hub().holdReads(old)
+		const batch = post([{ t: Date.now() - 90_000, session: 'before the alarm' }, { t: old, session: 'after the alarm' }])
+		for (let i = 0; i < 200 && !(await hub().reading()); i++) await new Promise((r) => setTimeout(r, 10))
+		assert.equal(await hub().reading(), 1, 'the read reached the hold')
+		await hub().fireAlarm()
+		await hub().releaseRead(true)
+		assert.equal((await (await batch).json() as { records: number }).records, 2)
+		assert.ok((await hub().alarmAt()) != null, 'a flush is due for the record kept after the alarm')
 	} finally {
 		await site.close()
 		rmSync(config, { force: true })
