@@ -218,12 +218,17 @@ func windowsHomes(home, drive, user string) []string {
 
 // unixToWindows turns a folder a Unix shell on Windows wrote into profile
 // into the Windows folder it is: /c/Users/ada/bin, as Git Bash writes it, is
-// C:\Users\ada\bin, and so is /cygdrive/c/Users/ada/bin, as Cygwin writes it;
-// /home/ada/bin or /usr/local/bin, in a profile under a Cygwin or MSYS2 root
-// such as C:\cygwin64\home\ada, is under that root. Anything else is left
-// as it is.
+// C:\Users\ada\bin, and so is /cygdrive/c/Users/ada/bin, as Cygwin writes it,
+// where /cygdrive/c alone is C:\; /home/ada/bin or /usr/local/bin, in a
+// profile under a Cygwin or MSYS2 root such as C:\cygwin64\home\ada, is under
+// that root. Anything else is left as it is.
 func unixToWindows(written, profile string) string {
-	written = strings.TrimPrefix(written, "/cygdrive")
+	// Cygwin's /cygdrive/c is Git Bash's /c/: one letter, then a slash or the end.
+	if rest, ok := strings.CutPrefix(written, "/cygdrive/"); ok && rest != "" && (len(rest) == 1 || rest[1] == '/') {
+		if c := rest[0] | 0x20; c >= 'a' && c <= 'z' {
+			written = "/" + rest[:1] + "/" + strings.TrimPrefix(rest[1:], "/")
+		}
+	}
 	if len(written) > 2 && written[0] == '/' && written[2] == '/' && written[1] != '/' {
 		return strings.ToUpper(written[1:2]) + ":" + strings.ReplaceAll(written[2:], "/", `\`)
 	}

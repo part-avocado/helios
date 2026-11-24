@@ -78,6 +78,14 @@ func TestUnixToWindows(t *testing.T) {
 		// Cygwin names drives under /cygdrive, and its other folders are under its root.
 		{"/cygdrive/d/tools", `C:\cygwin64\home\ada\.bashrc`, `D:\tools`},
 		{"/usr/local/bin", `C:\cygwin64\home\ada\.bashrc`, `C:\cygwin64\usr\local\bin`},
+		// A drive is /cygdrive, a slash, and one letter; the drive alone is its root.
+		{"/cygdrive/c", `C:\cygwin64\home\ada\.bashrc`, `C:\`},
+		{"/cygdrive/c/", `C:\cygwin64\home\ada\.bashrc`, `C:\`},
+		{"/cygdrive", `C:\cygwin64\home\ada\.bashrc`, `C:\cygwin64\cygdrive`},
+		{"/cygdrivex/y/z", `C:\cygwin64\home\ada\.bashrc`, `C:\cygwin64\cygdrivex\y\z`},
+		{"/cygdrive/cc/x", `C:\cygwin64\home\ada\.bashrc`, `C:\cygwin64\cygdrive\cc\x`},
+		{"/cygdrive/1/x", `C:\cygwin64\home\ada\.bashrc`, `C:\cygwin64\cygdrive\1\x`},
+		{"/cygdrivex/y/z", `C:\Users\ada\.bashrc`, "/cygdrivex/y/z"},
 		// Git Bash's own /home is somewhere else, so such a line isn't read as a Windows folder.
 		{"/home/ada/bin", `C:\Users\ada\.bashrc`, "/home/ada/bin"},
 		{`C:\Users\ada\bin`, `C:\Users\ada\.bashrc`, `C:\Users\ada\bin`},
