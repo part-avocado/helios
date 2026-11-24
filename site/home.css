@@ -41,7 +41,7 @@ main p a { text-decoration: underline; text-underline-offset: 3px; }
 
 /* What counts */
 .band { padding: 80px 0; background: var(--panel); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-.band h2 { max-width: 16em; color: var(--accent); }
+.band h2 { max-width: 16em; }
 .band .lead { max-width: 34em; margin-top: 16px; font-size: 18px; }
 .cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 40px; }
 .card { padding: 22px 24px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); }
@@ -59,13 +59,11 @@ main p a { text-decoration: underline; text-underline-offset: 3px; }
 .faq .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 36px 48px; margin-top: 32px; }
 .faq p { margin-top: 6px; color: var(--muted); }
 
-/* Closing band */
-.close { padding: 72px 0; background: var(--accent); color: var(--on-accent); text-align: center; }
-.close p { margin-top: 12px; font-size: 18px; }
+/* Closing band: the one thing to do next, as the page's primary button */
+.close { padding: 72px 0; background: var(--panel); border-top: 1px solid var(--line); text-align: center; }
+.close p { margin-top: 12px; font-size: 18px; color: var(--muted); }
 .close .actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 28px; }
-.close .btn { height: 48px; padding: 0 24px; border-color: var(--bg); background: var(--bg); font-size: 16px; }
-.close .btn.plain { border-color: var(--on-accent); background: none; color: var(--on-accent); }
-footer { border-top: 0; }
+.close .btn { height: 46px; padding: 0 22px; font-size: 16px; }
 
 @media (max-width: 860px) {
 	.hero { padding: 40px 0 56px; }

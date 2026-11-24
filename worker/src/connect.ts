@@ -120,9 +120,9 @@ export async function connect(request: Request, env: Env): Promise<Response> {
 function codePage(status: number, error: string): Response {
 	return page(status, 'Connect a computer', `
 		<p class="muted">Type the code <code>teardrop login</code> shows in your terminal.</p>
-		${error ? `<p class="msg bad">${esc(error)}</p>` : ''}
+		${error ? `<p class="msg bad" role="alert">${esc(error).replace(/`([^`]+)`/g, '<code>$1</code>')}</p>` : ''}
 		<form method="post" action="/connect">
-			<input name="user_code" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX" maxlength="12" required autofocus>
+			<input name="user_code" aria-label="The code from your terminal" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX" maxlength="12" required autofocus>
 			<button class="btn primary">Continue</button>
 		</form>
 		<p class="fine muted">Only type a code from your own terminal. If someone sent you a code, don’t: it would give them your account.</p>`)

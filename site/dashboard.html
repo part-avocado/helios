@@ -48,9 +48,10 @@
 		<button class="btn small" type="button" id="profile-note-ok">Got it</button>
 	</div>
 	<div class="dash-head">
-		<h1 id="title">Your stats</h1>
-		<span class="status" id="status"></span>
-		<span class="status" id="live-now" aria-live="polite" hidden></span>
+		<div class="dash-title">
+			<h1 id="title">Your stats</h1>
+			<p class="status-line"><span class="status" id="status"></span><span class="status" id="live-now" aria-live="polite" hidden></span></p>
+		</div>
 		<div class="seg" id="range" role="group" aria-label="Time range" hidden>
 			<button data-days="7">7 days</button>
 			<button data-days="30" aria-pressed="true">30 days</button>
@@ -71,11 +72,30 @@
 	<div id="notice" class="empty" hidden>
 		<h2 id="notice-title"></h2>
 		<p class="muted" id="notice-text"></p>
+		<p class="actions" id="notice-actions" hidden><button class="btn" type="button" id="notice-retry">Try again</button></p>
+	</div>
+
+	<!-- Until the first answer arrives: the page's own shapes, so nothing jumps when the stats do. -->
+	<div id="loading" class="loading" role="status" aria-label="Loading your stats">
+		<div class="stats six">
+			<div class="stat"><span class="skeleton label"></span><span class="skeleton value"></span><span class="skeleton hint"></span></div>
+			<div class="stat"><span class="skeleton label"></span><span class="skeleton value"></span><span class="skeleton hint"></span></div>
+			<div class="stat"><span class="skeleton label"></span><span class="skeleton value"></span><span class="skeleton hint"></span></div>
+			<div class="stat"><span class="skeleton label"></span><span class="skeleton value"></span><span class="skeleton hint"></span></div>
+			<div class="stat"><span class="skeleton label"></span><span class="skeleton value"></span><span class="skeleton hint"></span></div>
+			<div class="stat"><span class="skeleton label"></span><span class="skeleton value"></span><span class="skeleton hint"></span></div>
+		</div>
+		<div class="panels">
+			<div class="panel wide"><span class="skeleton chart"></span></div>
+			<div class="panel"><span class="skeleton chart"></span></div>
+			<div class="panel"><span class="skeleton chart"></span></div>
+		</div>
 	</div>
 
 	<div id="content" hidden>
 		<div class="chips" id="chips" hidden></div>
-		<div class="stats">
+		<p class="note-bar" id="no-data" hidden></p>
+		<div class="stats six">
 			<div class="stat"><div class="label">Engaged</div><div class="value" id="s-total">-</div><div class="hint" id="s-total-hint"></div></div>
 			<div class="stat"><div class="label">Today</div><div class="value" id="s-today">-</div><div class="hint" id="s-today-hint"></div></div>
 			<div class="stat"><div class="label">Streak</div><div class="value" id="s-streak">-</div><div class="hint">days in a row with activity</div></div>

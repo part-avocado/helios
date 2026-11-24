@@ -54,7 +54,7 @@
 		<section class="pane" id="setup" hidden>
 			<h2>Set up a computer</h2>
 			<p class="muted">Do this on each computer you code on. They all add up on your dashboard.</p>
-			<div id="setup-steps"></div>
+			<div id="setup-steps"><span class="skeleton block"></span></div>
 			<h3>Sync keys</h3>
 			<p class="muted">Each computer you connect with <code>teardrop login</code> gets a sync key of its own, listed here by its computer ID. Revoke one, and that computer alone stops syncing. You can also make a key for a computer you set up by hand with <code>teardrop sync -key</code>.</p>
 			<form class="key-form" id="sync-key-form">
@@ -62,7 +62,7 @@
 				<button class="btn small primary">Make a sync key</button>
 			</form>
 			<p class="msg" id="sync-key-msg" role="status" hidden></p>
-			<div class="list" id="sync-keys"></div>
+			<div class="list" id="sync-keys"><div class="item"><div class="grow"><span class="skeleton"></span></div></div></div>
 			<h3>Account key</h3>
 			<p class="muted">Your account's own sync key is the one in the steps above, for Amp cloud threads. If it gets out, make a new one: the old one stops working, and the keys listed above keep theirs.</p>
 			<button class="btn small" id="new-key" type="button">Make a new account key</button>
@@ -78,22 +78,22 @@
 				<button class="btn small primary">Save handle</button>
 			</form>
 			<p class="muted fine">3 to 30 letters, digits, and hyphens. Your old address stops working when you change it.</p>
+			<p class="msg" id="profile-msg" role="status" hidden></p>
 			<div id="badge" hidden>
 				<h3>Badge</h3>
 				<p class="muted">Your hours as a badge for a README, linked to your profile. For one project, add <code>?project=</code> and a repository your profile names, such as <code>github.com/you/site</code>.</p>
 				<p><img id="badge-img" alt="Your badge" height="20"></p>
 				<div class="cmdbox"><div class="cmd plain"><code id="badge-md"></code><button class="copy" type="button">Copy</button></div></div>
 			</div>
-			<p class="msg" id="profile-msg" role="status" hidden></p>
 			<h3>Projects</h3>
 			<p class="muted">A repository on a public host, such as GitHub, is named on your profile unless you hide it. Any other project is only counted, as one of your other projects, unless you show its name.</p>
-			<div class="list" id="profile-projects"></div>
+			<div class="list" id="profile-projects"><div class="item"><div class="grow"><span class="skeleton"></span></div></div></div>
 		</section>
 
 		<section class="pane" id="computers" hidden>
 			<h2>Computers</h2>
 			<p class="muted">Every computer that syncs to your account, and when it last did.</p>
-			<div class="list" id="computer-list"></div>
+			<div class="list" id="computer-list"><div class="item"><div class="grow"><span class="skeleton"></span></div></div></div>
 			<p class="msg bad" id="computer-msg" role="alert" hidden></p>
 		</section>
 
@@ -130,7 +130,7 @@
 				<button class="btn small primary">Make a read key</button>
 			</form>
 			<p class="msg" id="api-msg" role="status" hidden></p>
-			<div class="list" id="api-keys"></div>
+			<div class="list" id="api-keys"><div class="item"><div class="grow"><span class="skeleton"></span></div></div></div>
 			<h3>Using a key</h3>
 			<p class="muted">Send it as a bearer token. Any site may call these from the browser.</p>
 			<div class="cmdbox"><div class="cmd"><code id="api-example"></code><button class="copy" type="button">Copy</button></div></div>
@@ -148,10 +148,10 @@
 			<h2>Account</h2>
 			<p class="muted">You sign in with Hack Club Auth, so your name and Slack ID come from there. They update each time you sign in.</p>
 			<dl class="facts">
-				<div><dt>Name</dt><dd id="me-name">-</dd></div>
-				<div><dt>Slack ID</dt><dd id="me-slack">-</dd></div>
-				<div><dt>Member since</dt><dd id="me-since">-</dd></div>
-				<div><dt>Role</dt><dd id="me-role">-</dd></div>
+				<div><dt>Name</dt><dd id="me-name"><span class="skeleton"></span></dd></div>
+				<div><dt>Slack ID</dt><dd id="me-slack"><span class="skeleton"></span></dd></div>
+				<div><dt>Member since</dt><dd id="me-since"><span class="skeleton"></span></dd></div>
+				<div><dt>Role</dt><dd id="me-role"><span class="skeleton"></span></dd></div>
 			</dl>
 			<form method="post" action="/logout"><button class="btn small">Sign out</button></form>
 			<h3>Delete your account</h3>
@@ -182,6 +182,11 @@
 	<p>Copy it now and keep it somewhere safe. It is not shown again. If you lose it, revoke it and make another.</p>
 	<div class="box"><div class="cmd plain"><code id="api-key-value"></code><button class="copy" type="button">Copy</button></div></div>
 	<form method="dialog" class="actions"><button class="btn primary small">Done</button></form>
+</dialog>
+<dialog class="modal" id="confirm-dialog" aria-labelledby="confirm-title">
+	<h2 id="confirm-title"></h2>
+	<p id="confirm-text"></p>
+	<form method="dialog" class="actions"><button class="btn small" value="no">Cancel</button><button class="btn small danger fill" id="confirm-go" value="yes"></button></form>
 </dialog>
 <script src="site.js"></script>
 <script src="account.js"></script>

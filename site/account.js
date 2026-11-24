@@ -56,7 +56,7 @@ function liveFeed(path, wsPath, onState) {
 
 // liveText says what a live state shows, as HTML.
 function liveText(s, withProject) {
-	const today = s.today && s.today.witnessed_seconds ? ` - ${dur(s.today.witnessed_seconds)} witnessed today` : ''
+	const today = s.today && s.today.witnessed_seconds ? ` · ${dur(s.today.witnessed_seconds)} witnessed today` : ''
 	if (!s.working) return today ? `Today: ${today.slice(3)}` : ''
 	const where = withProject && s.working.project ? ` in <b>${esc(s.working.project.split('/').pop())}</b>` : ''
 	return `<span class="dot live"></span><span>Working now${where} with ${esc(s.working.tool)}${today}</span>`
@@ -156,7 +156,7 @@ function renderSetup(el, key) {
 					<p>Cloud time is counted in the cloud and reaches your dashboard when Amp finishes a turn or you stop it. No computer needs to be on.</p></div>
 			</div>
 		</div></li>
-		<li><div>
+		<li class="alt"><div>
 			<h3>Or let your agent do it</h3>
 			<p>Paste this into Amp or Claude Code and it runs the steps above for you. It answers setup's questions in advance, since an agent can't.</p>
 			<div class="prompt"><code>${esc(prompt)}</code><button class="copy" type="button">Copy</button></div>

@@ -42,19 +42,19 @@ var version = "dev"
 
 // usage lists the commands people run. hook, relay, and export-records are
 // left out: tools and superadmins run them, and the docs cover them.
-const usage = `Usage: teardrop [flags]        show your AI coding timeline (-l keeps it updating live)
-       teardrop setup           check which tools are found, install hooks, fix settings that lose history
-       teardrop setup amp       set up one tool only: claude, codex, amp, or opencode
-       teardrop dashboard       open a live dashboard of your stats in the browser
-       teardrop calibrate       show how the time model's caps treat your logs; uploads nothing
-       teardrop export          write a signed report to upload on the website, under Settings
+const usage = `Usage: teardrop [flags]            show your AI coding timeline (-l keeps it updating live)
+       teardrop setup              check which tools are found, install hooks, fix settings that lose history
+       teardrop setup amp          set up one tool only: claude, codex, amp, or opencode
+       teardrop dashboard          open a live dashboard of your stats in the browser
+       teardrop calibrate          show how the time model's caps treat your logs; uploads nothing
+       teardrop export             write a signed report to upload on the website, under Settings
        teardrop login -server URL  connect this computer to your account on your teardrop site
-       teardrop sync            upload your signed counts (time, prompts, tokens, lines; no text) to your account on the website
-       teardrop submit <project>  submit a project's hours for review; the site uses the records it already has, nothing is uploaded
-       teardrop status          show whether this computer is set up and sending
-       teardrop doctor          check everything that decides whether your time counts, and say how to fix it
-       teardrop update          download the latest teardrop and replace this one with it
-       teardrop uninstall       remove teardrop's hooks, plugin, and PATH line, then this binary
+       teardrop sync               upload your signed counts (time, prompts, tokens, lines; no text) to your account on the website
+       teardrop submit <project>   submit a project's hours for review; the site uses the records it already has, nothing is uploaded
+       teardrop status             show whether this computer is set up and sending
+       teardrop doctor             check everything that decides whether your time counts, and say how to fix it
+       teardrop update             download the latest teardrop and replace this one with it
+       teardrop uninstall          remove teardrop's hooks, plugin, and PATH line, then this binary
 
 `
 

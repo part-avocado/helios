@@ -19,6 +19,37 @@ function say(el, text, ok) {
 	el.hidden = false
 }
 
+// ask puts a question in a popup and answers whether the visitor agreed.
+// Cancel has the focus, and Escape is a no. danger marks an action that
+// can't be undone.
+function ask(title, text, action, danger = true) {
+	const dialog = $('confirm-dialog')
+	$('confirm-title').textContent = title
+	$('confirm-text').textContent = text
+	$('confirm-go').textContent = action
+	$('confirm-go').className = 'btn small ' + (danger ? 'danger fill' : 'primary')
+	dialog.returnValue = 'no'
+	dialog.showModal()
+	return new Promise((done) => dialog.addEventListener('close', () => done(dialog.returnValue === 'yes'), { once: true }))
+}
+
+// during keeps a button from being pressed again while its request is on the way.
+async function during(button, work) {
+	button.disabled = true
+	button.setAttribute('aria-busy', 'true')
+	try {
+		return await work()
+	} finally {
+		button.disabled = false
+		button.removeAttribute('aria-busy')
+	}
+}
+
+// unloaded says so in each place that was still waiting for what could not be loaded.
+function unloaded(...ids) {
+	for (const id of ids) for (const el of $(id).querySelectorAll('.skeleton')) el.replaceWith('Could not load this.')
+}
+
 // The API only takes changes from this site's own pages, which the browser
 // vouches for with the Origin header it adds to these requests.
 const change = (path, method, body) => api(path, { method, body })
@@ -26,7 +57,7 @@ const change = (path, method, body) => api(path, { method, body })
 function listComputers(computers) {
 	$('computer-list').innerHTML = computers.map((c) => `<div class="item">
 			<div class="grow">${c.cloud ? 'Amp cloud threads ' : ''}<code>${esc(c.id)}</code>
-				<div class="sub">Synced ${esc(ago(c.synced_at))} - ${dur(c.engaged_seconds)} in the past year${c.teardrop_version ? ` - teardrop ${esc(c.teardrop_version)}` : ''}</div></div>
+				<div class="sub">Synced ${esc(ago(c.synced_at))} · ${dur(c.engaged_seconds)} in the past year${c.teardrop_version ? ` · teardrop ${esc(c.teardrop_version)}` : ''}</div></div>
 			<button class="btn small danger" type="button" data-remove="${esc(c.id)}">Remove</button>
 		</div>`).join('') ||
 		'<div class="item"><div class="grow muted">No computers yet. <a href="#setup">Set one up</a> and it appears here after its first sync.</div></div>'
@@ -44,7 +75,7 @@ async function load() {
 }
 
 $('new-key').addEventListener('click', async () => {
-	if (!confirm('Make a new account key? The old one stops working wherever you put it by hand, such as Amp cloud threads. Computers with keys of their own keep syncing.')) return
+	if (!(await ask('Make a new account key?', 'The old one stops working wherever you put it by hand, such as Amp cloud threads. Computers with keys of their own keep syncing.', 'Make a new key'))) return
 	try {
 		const key = (await change('/api/key', 'POST')).api_key
 		renderSetup($('setup-steps'), key)
@@ -71,7 +102,7 @@ function showProfile(p) {
 	$('badge-md').textContent = `[![teardrop](${badge})](${url})`
 	$('profile-projects').innerHTML = p.projects.map((x) => `<div class="item">
 			<div class="grow"><b>${esc(x.name)}</b>
-				<div class="sub">${x.repo ? esc(x.repo) : 'A folder on your computer'} - ${dur(x.engaged_seconds)}</div></div>
+				<div class="sub">${x.repo ? esc(x.repo) : 'A folder on your computer'} · ${dur(x.engaged_seconds)}</div></div>
 			<label class="check"><input type="checkbox" data-project="${esc(x.key)}"${x.shown ? ' checked' : ''}> Name it</label>
 		</div>`).join('') || '<div class="item"><div class="grow muted">No projects yet. They appear here after your first sync.</div></div>'
 }
@@ -82,12 +113,15 @@ const saveProfile = async (changes, done) => {
 		else $('profile-msg').hidden = true
 	} catch (e) {
 		say($('profile-msg'), e.message, false)
+		// Back to what is saved, except a handle that was refused, which stays to be corrected.
+		const typed = $('handle').value
 		showProfile(await api('/api/profile'))
+		if ('handle' in changes) $('handle').value = typed
 	}
 }
 $('handle-form').addEventListener('submit', (e) => {
 	e.preventDefault()
-	saveProfile({ handle: $('handle').value }, 'Handle saved. Your profile has moved to the new address.')
+	during(e.target.querySelector('button'), () => saveProfile({ handle: $('handle').value }, 'Handle saved. Your profile has moved to the new address.'))
 })
 $('profile-public').addEventListener('change', (e) => saveProfile({ public: e.target.checked }, e.target.checked ? 'Your profile is public.' : 'Your profile is private. Its address now says there is no such profile.'))
 $('profile-projects').addEventListener('change', (e) => {
@@ -100,14 +134,14 @@ async function listSyncKeys() {
 	const { keys } = await api('/api/sync-keys')
 	$('sync-keys').innerHTML = keys.map((k) => `<div class="item">
 			<div class="grow">${/^td-[0-9a-f]{12}$/.test(k.name) ? `Computer <code>${esc(k.name)}</code>` : `<b>${esc(k.name)}</b>`} <code>${esc(k.hint)}…</code>
-				<div class="sub">Made ${esc(ago(k.created_at))} - ${k.last_used_at ? `last used ${esc(ago(k.last_used_at))}` : 'never used'}</div></div>
+				<div class="sub">Made ${esc(ago(k.created_at))} · ${k.last_used_at ? `last used ${esc(ago(k.last_used_at))}` : 'never used'}</div></div>
 			<button class="btn small danger" type="button" data-revoke="${k.id}" data-name="${esc(k.name)}">Revoke</button>
 		</div>`).join('') || '<div class="item"><div class="grow muted">No other sync keys. Each computer you connect with teardrop login adds one.</div></div>'
 }
 $('sync-key-form').addEventListener('submit', async (e) => {
 	e.preventDefault()
 	try {
-		const made = await change('/api/sync-keys', 'POST', JSON.stringify({ name: e.target.name.value }))
+		const made = await during(e.target.querySelector('button'), () => change('/api/sync-keys', 'POST', JSON.stringify({ name: e.target.name.value })))
 		e.target.reset()
 		$('sync-key-msg').hidden = true
 		$('sync-key-connect').textContent = `teardrop sync -server ${location.origin} -key ${made.key}`
@@ -119,7 +153,7 @@ $('sync-key-form').addEventListener('submit', async (e) => {
 })
 $('sync-keys').addEventListener('click', async (e) => {
 	const d = e.target.closest('[data-revoke]')?.dataset
-	if (!d || !confirm(`Revoke the sync key "${d.name}"? Whatever uses it stops syncing at once.`)) return
+	if (!d || !(await ask('Revoke this sync key?', `Whatever uses "${d.name}" stops syncing at once.`, 'Revoke'))) return
 	try {
 		await change('/api/sync-keys/' + d.revoke, 'DELETE')
 		await listSyncKeys()
@@ -133,7 +167,7 @@ async function listKeys() {
 	const { keys } = await api('/api/keys')
 	$('api-keys').innerHTML = keys.map((k) => `<div class="item">
 			<div class="grow"><b>${esc(k.name)}</b> <code>${esc(k.hint)}…</code>
-				<div class="sub">${k.site ? `Signed in at ${esc(k.site)}, ` : 'Made '}${esc(ago(k.created_at))} - ${k.last_used_at ? `last used ${esc(ago(k.last_used_at))}` : 'never used'}</div></div>
+				<div class="sub">${k.site ? `Signed in at ${esc(k.site)}, ` : 'Made '}${esc(ago(k.created_at))} · ${k.last_used_at ? `last used ${esc(ago(k.last_used_at))}` : 'never used'}</div></div>
 			<button class="btn small danger" type="button" data-revoke="${k.id}" data-name="${esc(k.name)}">Revoke</button>
 		</div>`).join('') || '<div class="item"><div class="grow muted">You have no read keys.</div></div>'
 }
@@ -141,7 +175,7 @@ $('api-example').textContent = `curl -H "Authorization: Bearer $KEY" ${location.
 $('api-form').addEventListener('submit', async (e) => {
 	e.preventDefault()
 	try {
-		const made = await change('/api/keys', 'POST', JSON.stringify({ name: e.target.name.value }))
+		const made = await during(e.target.querySelector('button'), () => change('/api/keys', 'POST', JSON.stringify({ name: e.target.name.value })))
 		e.target.reset()
 		$('api-msg').hidden = true
 		$('api-key-value').textContent = made.key
@@ -153,7 +187,7 @@ $('api-form').addEventListener('submit', async (e) => {
 })
 $('api-keys').addEventListener('click', async (e) => {
 	const d = e.target.closest('[data-revoke]')?.dataset
-	if (!d || !confirm(`Revoke the read key "${d.name}"? Whatever uses it stops working at once.`)) return
+	if (!d || !(await ask('Revoke this read key?', `Whatever uses "${d.name}" stops working at once.`, 'Revoke'))) return
 	try {
 		await change('/api/keys/' + d.revoke, 'DELETE')
 		await listKeys()
@@ -164,7 +198,7 @@ $('api-keys').addEventListener('click', async (e) => {
 
 $('computer-list').addEventListener('click', async (e) => {
 	const id = e.target.closest('[data-remove]')?.dataset.remove
-	if (!id || !confirm(`Remove ${id} and its hours from your account? It comes back if it syncs again.`)) return
+	if (!id || !(await ask('Remove this computer?', `${id} and its hours leave your account. It comes back if it syncs again.`, 'Remove'))) return
 	try {
 		await change('/api/computers/' + encodeURIComponent(id), 'DELETE')
 		listComputers((await api('/api/me')).computers)
@@ -198,9 +232,9 @@ drop.addEventListener('drop', (e) => {
 })
 
 $('delete-confirm').addEventListener('input', () => ($('delete-account').disabled = $('delete-confirm').value.trim().toLowerCase() !== 'delete'))
-$('delete-account').addEventListener('click', async () => {
+$('delete-account').addEventListener('click', async (e) => {
 	try {
-		await change('/api/account', 'DELETE')
+		await during(e.currentTarget, () => change('/api/account', 'DELETE'))
 		location.href = '/'
 	} catch (e) {
 		say($('delete-msg'), e.message, false)
@@ -209,9 +243,9 @@ $('delete-account').addEventListener('click', async () => {
 
 // Without an account behind this copy of the site, there is nothing to set.
 if ('hosted' in document.documentElement.dataset) {
-	load().catch((e) => say($('key-msg'), e.message, false))
-	listKeys().catch((e) => say($('api-msg'), e.message, false))
-	listSyncKeys().catch((e) => say($('sync-key-msg'), e.message, false))
-	api('/api/profile').then(showProfile, (e) => say($('profile-msg'), e.message, false))
+	load().catch((e) => (say($('key-msg'), e.message, false), unloaded('setup-steps', 'computer-list', 'account')))
+	listKeys().catch((e) => (say($('api-msg'), e.message, false), unloaded('api-keys')))
+	listSyncKeys().catch((e) => (say($('sync-key-msg'), e.message, false), unloaded('sync-keys')))
+	api('/api/profile').then(showProfile, (e) => (say($('profile-msg'), e.message, false), unloaded('profile-projects')))
 }
 else location.replace('dashboard.html')

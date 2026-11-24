@@ -52,6 +52,17 @@
 .docs article h2 { font: 600 26px/1.2 var(--sans); letter-spacing: -0.02em; margin: 64px 0 14px; padding-top: 28px; border-top: 1px solid var(--line); scroll-margin-top: 88px; }
 .docs article h3 { font-size: 17px; font-weight: 600; margin: 28px 0 8px; scroll-margin-top: 88px; }
 .docs article pre { background: var(--term-bg); color: var(--term-text); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; overflow-x: auto; font-size: 13px; }
+/* site.js wraps each code block and gives it a Copy button, which shows under the pointer or the keyboard. */
+.docs .code { position: relative; margin: 13px 0; }
+.docs .code pre { margin: 0; }
+.docs .code .copy { position: absolute; top: 9px; right: 9px; border-color: color-mix(in srgb, var(--term-text) 24%, var(--term-bg)); background: color-mix(in srgb, var(--term-text) 12%, var(--term-bg)); color: var(--term-text); opacity: 0; transition: opacity 0.12s; }
+.docs .code:hover .copy, .docs .code .copy:focus-visible { opacity: 1; }
+/* With no pointer to hover with, the button always shows, beside the code as on a command to copy, so the code never runs under it. */
+@media (hover: none) {
+	.docs .code { display: flex; align-items: flex-start; gap: 8px; padding: 9px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--term-bg); }
+	.docs .code pre { flex: 1; min-width: 0; padding: 6px 16px 6px 8px; border: 0; border-radius: 0; background: none; mask-image: linear-gradient(to left, transparent, #000 16px); }
+	.docs .code .copy { position: static; opacity: 1; }
+}
 .docs table { width: 100%; border-collapse: separate; border-spacing: 0; margin: 14px 0 22px; font-size: 15px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
 .docs th, .docs td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .docs tr:last-child td { border-bottom: 0; }
@@ -64,6 +75,9 @@
 	.doc-toc > summary { display: list-item; padding: 4px 2px; font-weight: 600; color: var(--text); cursor: pointer; }
 	.doc-toc[open] > summary { margin-bottom: 12px; }
 	.doc-search { margin-bottom: 10px; }
+	/* A phone has no Ctrl K to press. */
+	.doc-search kbd { display: none; }
+	.doc-search input { padding-right: 12px; }
 }
 @media (max-width: 640px) {
 	.docs td:first-child { overflow-wrap: anywhere; }
@@ -77,6 +91,15 @@
 .dash-head h1 { margin: 0; font: 700 clamp(28px, 3.4vw, 36px)/1.15 var(--sans); letter-spacing: -0.025em; }
 .status { font-size: 13px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; padding-bottom: 6px; }
 .status a { color: var(--text); text-decoration: underline; }
+/* The dashboard and profiles: the title with what is known about its data under it, and the range beside them. */
+.dash-title { flex: 1; min-width: min(100%, 300px); }
+.dash-title .status-line { display: flex; flex-wrap: wrap; gap: 2px 20px; min-height: 22px; margin: 8px 0 0; }
+.dash-title .status { display: block; padding-bottom: 0; }
+.dash-title .status .dot { display: inline-block; margin-right: 8px; vertical-align: 1px; }
+.dash-title .status > span:not(.dot):not(.tag) { display: inline; }
+/* A line that wraps hangs clear of its dot. */
+.dash-title .status:has(> .dot) { padding-left: 16px; text-indent: -16px; }
+.dash-head > .seg { align-self: flex-start; margin-top: 4px; }
 .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--good); }
 .dot.old { background: var(--warn); }
 .status .dot.live { animation: pulse 2s infinite; }
@@ -84,9 +107,14 @@
 @media (prefers-reduced-motion: reduce) { .dot.live { animation: none !important; } }
 .seg { display: inline-flex; margin-left: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 3px; }
 .seg button { background: none; border: 0; color: var(--muted); font: inherit; font-size: 14px; padding: 6px 14px; border-radius: 5px; cursor: pointer; }
-.seg button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); font-weight: 600; }
+.seg button:hover { color: var(--text); }
+/* The choice in effect is raised, not colored: color is kept for what the visitor can do next. */
+.seg button[aria-pressed="true"] { background: var(--panel-2); color: var(--text); font-weight: 600; box-shadow: inset 0 0 0 1px var(--line-2); }
 .stats { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); margin-bottom: 16px; }
 .stat { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px; }
+/* Six numbers read better as two rows of three than as one cramped row. */
+.stats.six { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 640px) { .stats.six { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; } }
 .stat .label { font-size: 13px; color: var(--muted); }
 .stat .value { font: 600 26px/1.2 var(--sans); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .stat .hint { font-size: 12px; color: var(--faint); margin-top: 2px; }
@@ -96,7 +124,8 @@
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px 22px; min-width: 0; }
 .panel h2 { font-size: 14px; font-weight: 600; margin: 0 0 16px; }
 .heatmap { overflow-x: auto; padding-bottom: 4px; }
-.heatmap svg { display: block; }
+/* The year fills the panel on a wide screen. On a narrow one it keeps its size (heatmapHTML sets its least width) and scrolls. */
+.heatmap svg { display: block; width: 100%; height: auto; max-width: 1100px; }
 .heatmap text { fill: var(--faint); font-size: 11px; }
 /* Five steps of engaged time, from none to three hours or more. */
 .heatmap rect.l0, .legend i.l0 { fill: var(--heat-0); background: var(--heat-0); }
@@ -149,7 +178,7 @@ a.link { font-size: 13px; }
 .chip svg { flex: none; opacity: 0.7; }
 
 /* Tooltip */
-.tip { position: fixed; left: 0; top: 0; z-index: 30; max-width: 260px; padding: 8px 11px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--panel-2); color: var(--text); font-size: 13px; line-height: 1.4; pointer-events: none; }
+.tip { position: fixed; left: 0; top: 0; z-index: 30; max-width: 260px; padding: 8px 11px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--panel-2); color: var(--text); font-size: 13px; line-height: 1.4; pointer-events: none; box-shadow: 0 6px 18px rgb(0 0 0 / 0.22); }
 .tip b { display: block; font-weight: 600; }
 .tip span { display: block; color: var(--muted); }
 .tip em { display: block; margin-top: 3px; font-style: normal; font-size: 12px; color: var(--accent); }
@@ -177,10 +206,37 @@ table.data th { color: var(--muted); font-weight: 500; font-size: 13px; }
 	.table-scroll.tall { background: linear-gradient(var(--panel) 30%, transparent) top / 100% 40px no-repeat local, linear-gradient(transparent, var(--panel) 70%) bottom / 100% 40px no-repeat local, radial-gradient(farthest-side at 50% 0, color-mix(in srgb, var(--text) 22%, transparent), transparent) top / 100% 20px no-repeat scroll, radial-gradient(farthest-side at 50% 100%, color-mix(in srgb, var(--text) 22%, transparent), transparent) bottom / 100% 20px no-repeat scroll; }
 }
 .empty { text-align: center; padding: 56px 24px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
-.empty h2 { margin-top: 0; font: 700 28px/1.2 var(--sans); letter-spacing: -0.02em; }
+.empty h2 { margin-top: 0; font: 700 28px/1.2 var(--sans); letter-spacing: -0.02em; text-wrap: balance; }
+.empty .actions { margin: 22px 0 0; }
+/* What stands in for stats that are still on their way: the page's own shapes, so nothing jumps when they arrive. */
+.skeleton { display: block; border-radius: 6px; background: var(--panel-2); }
+.skeleton.label { width: 40%; height: 12px; }
+.skeleton.value { width: 62%; height: 26px; margin-top: 12px; }
+.skeleton.hint { width: 80%; height: 10px; margin-top: 12px; }
+.skeleton.chart { height: 150px; }
+.skeleton.block { height: 280px; }
+.list .item .skeleton { width: min(260px, 60%); height: 14px; margin: 5px 0; }
+.facts dd .skeleton { width: 130px; height: 14px; margin: 5px 0; }
+.loading .stats { margin-bottom: 16px; }
+@media (prefers-reduced-motion: no-preference) { .skeleton { animation: breathe 1.4s ease-in-out infinite; } }
+@keyframes breathe { 50% { opacity: 0.45; } }
+/* A line above the stats, such as that nothing has been recorded yet. */
+.note-bar { margin: 0 0 16px; padding: 12px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); font-size: 14px; color: var(--muted); }
 .drop { display: block; padding: 28px; text-align: center; border: 1.5px dashed var(--line-2); border-radius: var(--radius); cursor: pointer; background: var(--bg); color: var(--muted); }
 .drop:hover, .drop.over { border-color: var(--accent); color: var(--text); }
-.tag { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 5px; background: var(--good-soft); color: var(--good); margin-left: 4px; }
+/* A tag names something, such as a tool. Green is kept for a tag that says something is right. */
+.tag { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 5px; background: var(--panel-2); color: var(--muted); margin-left: 4px; }
+.tag.ok { background: var(--good-soft); color: var(--good); }
+td > .tag:first-child { margin-left: 0; }
+/* Where something stands, such as a submission in review. It looks like the review app's badges. */
+.state { display: inline-block; padding: 1px 8px; border: 1px solid var(--line-2); border-radius: 5px; font-size: 12px; font-weight: 600; line-height: 1.6; color: var(--muted); white-space: nowrap; }
+.state.good { border-color: var(--good-line); background: var(--good-soft); color: var(--good); }
+.state.bad { border-color: var(--bad-line); background: var(--bad-soft); color: var(--bad); }
+.state.note { border-color: var(--accent-line); background: var(--accent-soft); color: var(--accent); }
+.state + .when { margin-left: 6px; font-size: 12px; color: var(--muted); }
+/* A submission's notes are sentences, so they wrap and read from the left. */
+#submissions th:last-child, #submissions td:last-child, #submissions th:nth-child(2), #submissions td:nth-child(2) { text-align: left; }
+#submissions td:last-child { min-width: 220px; white-space: normal; }
 .tag .ico { width: 12px; height: 12px; vertical-align: -2px; margin-right: 3px; }
 .fine { font-size: 13px; }
 .msg { margin: 14px 0 0; padding: 10px 14px; border-radius: 8px; font-size: 14px; text-align: left; }
@@ -191,6 +247,8 @@ table.data th { color: var(--muted); font-weight: 500; font-size: 13px; }
 .steps { list-style: none; margin: 0; padding: 0; counter-reset: step; display: grid; gap: 26px; text-align: left; }
 .steps > li { counter-increment: step; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 16px; }
 .steps > li::before { content: counter(step); display: grid; place-items: center; width: 28px; height: 28px; border-radius: 6px; background: var(--accent); color: var(--on-accent); font-size: 13px; font-weight: 700; }
+/* Another way to do all the steps above is not a step of its own. */
+.steps > li.alt::before { content: "or"; background: var(--panel-2); color: var(--muted); font-size: 12px; font-weight: 600; }
 .steps h3 { margin: 3px 0 4px; font-size: 16px; font-weight: 600; }
 .steps p { margin: 0 0 12px; font-size: 14px; color: var(--muted); }
 .steps p.fine { margin: 10px 0 0; }
@@ -226,11 +284,14 @@ table.data th { color: var(--muted); font-weight: 500; font-size: 13px; }
 .side a:hover { color: var(--text); text-decoration: none; }
 .side a[aria-current="page"] { color: var(--text); background: var(--panel-2); }
 .side svg, .back svg { flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-.pane { max-width: 760px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 30px 32px 32px; }
+/* A pane is opened by its address, settings.html#data. The margin keeps the browser from scrolling its title under the header bar: the page goes to its top instead. */
+.pane { max-width: 760px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 30px 32px 32px; scroll-margin-top: 100vh; }
 .pane h2 { margin: 0 0 6px; font: 600 24px/1.2 var(--sans); letter-spacing: -0.02em; }
-.pane > h3 { margin: 34px 0 4px; padding-top: 26px; border-top: 1px solid var(--line); font-size: 16px; font-weight: 600; }
+.pane > h3, #badge > h3 { margin: 34px 0 4px; padding-top: 26px; border-top: 1px solid var(--line); font-size: 16px; font-weight: 600; }
 .pane > .muted { margin: 0 0 22px; font-size: 15px; }
-.pane > h3 + .muted { margin-bottom: 14px; font-size: 14px; }
+.pane > h3 + .muted, #badge > h3 + .muted { margin: 0 0 14px; font-size: 14px; }
+#badge > p { margin: 0 0 12px; }
+#badge img { display: block; }
 .pane > .fine { margin: 22px 0 0; }
 .pane > h3.first { margin-top: 8px; padding-top: 0; border-top: 0; }
 .field { display: block; margin: 0 0 14px; font-size: 14px; color: var(--muted); }
@@ -250,7 +311,7 @@ table.data th { color: var(--muted); font-weight: 500; font-size: 13px; }
 .facts { margin: 0 0 22px; border: 1px solid var(--line); border-radius: var(--radius); }
 .facts div { display: flex; gap: 16px; padding: 12px 16px; border-bottom: 1px solid var(--line); font-size: 15px; }
 .facts div:last-child { border-bottom: 0; }
-.facts dt { width: 96px; flex: none; color: var(--muted); }
+.facts dt { width: 120px; flex: none; color: var(--muted); }
 .facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .dash > .fine { margin: 14px 4px 0; }
 @media (max-width: 760px) {
@@ -264,6 +325,8 @@ table.data th { color: var(--muted); font-weight: 500; font-size: 13px; }
 }
 @media (max-width: 520px) {
 	.dash { padding-top: 28px; }
+	.dash-head > .seg { display: flex; width: 100%; margin: 0; }
+	.dash-head > .seg button { flex: 1; }
 	.stat .value { font-size: 22px; white-space: normal; overflow-wrap: anywhere; }
 	.waiting { text-align: left; }
 }
@@ -274,7 +337,14 @@ table.data th { color: var(--muted); font-weight: 500; font-size: 13px; }
 .signin .card { padding: 40px 32px 30px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
 .signin img { width: 40px; height: 40px; }
 .signin h1 { margin: 12px 0 8px; font: 700 28px/1.15 var(--sans); letter-spacing: -0.02em; }
-.signin .card > .muted { margin: 0; }
+.signin .card > .muted { margin: 0; text-wrap: pretty; }
+/* The code a terminal shows, typed here: big, spaced, and in the letters the terminal uses. */
+.signin .card form { margin: 0; }
+.signin input:not([type="hidden"]) { display: block; width: 100%; height: 52px; margin: 24px 0 0; padding: 0 14px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--bg); color: var(--text); font: 500 22px var(--mono); letter-spacing: 0.14em; text-align: center; text-transform: uppercase; }
+.signin input::placeholder { color: var(--faint); opacity: 0.55; }
+.signin input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+.signin input + .btn { margin-top: 12px; }
+.signin .msg { margin-top: 18px; }
 .signin .btn { width: 100%; height: 46px; margin-top: 26px; }
 .signin .card > .fine { margin-top: 14px; }
 /* Sign in with teardrop: what another site will read, and Allow */
@@ -283,12 +353,14 @@ table.data th { color: var(--muted); font-weight: 500; font-size: 13px; }
 .authorize .grants li { padding: 4px 0 4px 22px; position: relative; }
 .authorize .grants li::before { content: ""; position: absolute; left: 2px; top: 11px; width: 10px; height: 6px; border: solid var(--accent); border-width: 0 0 2px 2px; transform: rotate(-45deg); }
 .authorize form .btn + .btn { margin-top: 10px; }
-.back { margin: 22px 0 0; font-size: 14px; }
+.back { margin: 22px 0 0; font-size: 14px; color: var(--muted); }
 .back a { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
 
 /* Settings, API: making a read key, and the calls it can make */
 .key-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin: 0 0 14px; }
 .key-form .field { margin: 0; }
+.key-form .btn { height: 40px; white-space: nowrap; } /* as tall as the field beside it */
+.key-form + .fine { margin: -4px 0 14px; }
 .key-form + .msg + .list, .key-form + .list { margin-bottom: 22px; }
 #api .cmdbox { margin-bottom: 14px; }
 table.api-calls th, table.api-calls td { text-align: left; }

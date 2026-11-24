@@ -36,7 +36,9 @@ function heatmapHTML(perDay, now, { clickable = false, selected = () => false } 
 	}
 	const labels = ['Mon', 'Wed', 'Fri'].map((t, i) => `<text x="0" y="${18 + (i * 2 + 1) * (cell + gap) + 10}">${t}</text>`).join('')
 	const w = 30 + (col + 1) * (cell + gap)
-	return `<svg width="${w}" height="${18 + 7 * (cell + gap)}" role="img" aria-label="Engaged time per day over the last year">${months}${labels}${rects}</svg>`
+	const h = 18 + 7 * (cell + gap)
+	// Drawn to fill its panel, and no smaller than its own size, below which its box scrolls.
+	return `<svg viewBox="0 0 ${w} ${h}" style="min-width:${w}px" role="img" aria-label="Engaged time per day over the last year">${months}${labels}${rects}</svg>`
 }
 
 // initTips shows the page's tooltip (#tip) over the elements with data-tip

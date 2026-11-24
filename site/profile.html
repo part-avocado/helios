@@ -39,14 +39,30 @@
 
 <main class="wrap dash">
 	<div class="dash-head">
-		<h1 id="title">Profile</h1>
-		<span class="status" id="status"></span>
-		<span class="status" id="live-now" aria-live="polite" hidden></span>
+		<div class="dash-title">
+			<h1 id="title">Profile</h1>
+			<p class="status-line"><span class="status" id="status"></span><span class="status" id="live-now" aria-live="polite" hidden></span></p>
+		</div>
 	</div>
 
 	<div id="notice" class="empty" hidden>
 		<h2 id="notice-title"></h2>
 		<p class="muted" id="notice-text"></p>
+		<p class="actions" id="notice-actions" hidden><button class="btn" type="button" id="notice-retry">Try again</button></p>
+	</div>
+
+	<!-- Until the profile arrives: the page's own shapes, so nothing jumps when it does. -->
+	<div id="loading" class="loading" role="status" aria-label="Loading this profile">
+		<div class="stats">
+			<div class="stat"><span class="skeleton label"></span><span class="skeleton value"></span><span class="skeleton hint"></span></div>
+			<div class="stat"><span class="skeleton label"></span><span class="skeleton value"></span><span class="skeleton hint"></span></div>
+			<div class="stat"><span class="skeleton label"></span><span class="skeleton value"></span><span class="skeleton hint"></span></div>
+			<div class="stat"><span class="skeleton label"></span><span class="skeleton value"></span><span class="skeleton hint"></span></div>
+		</div>
+		<div class="panels">
+			<div class="panel wide"><span class="skeleton chart"></span></div>
+			<div class="panel wide"><span class="skeleton chart"></span></div>
+		</div>
 	</div>
 
 	<div id="content" hidden>

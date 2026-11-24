@@ -104,5 +104,27 @@
 		// Keep a tenth of request logs, so logging stays cheap as people join.
 		"head_sampling_rate": 0.1,
 		"traces": { "enabled": true }
+	},
+	// Branch previews (`wrangler preview`, run by Workers Builds on every
+	// branch but main) inherit no bindings, so they are listed again here.
+	// Each preview gets its own UserHub storage, and logins are limited apart
+	// from production's. D1 and R2 are left out so a preview never reads or
+	// writes production's people and reports; pages that need them fail there.
+	"previews": {
+		"vars": {
+			"HCA_URL": "https://auth.hackclub.com",
+			"GITHUB_API": "https://api.github.com",
+			"MIN_VERSION": "",
+			"UPLOAD_BURST": "1000",
+			"RECENT_RECORDS_PER_DAY": "30000",
+			"OLD_RECORDS_PER_DAY": "1000000",
+			"DAILY_CAP_HOURS": "",
+			"WEEKLY_CAP_HOURS": "",
+			"DEV_LOGIN": ""
+		},
+		"ratelimits": [{ "name": "LOGINS", "namespace_id": "1002", "simple": { "limit": 10, "period": 60 } }],
+		"durable_objects": {
+			"bindings": [{ "name": "HUB", "class_name": "UserHub" }]
+		}
 	}
 }
