@@ -245,41 +245,31 @@ export class UserHub extends DurableObject<Env> {
 	 * the working copy of sealed days. It returns the days it wrote.
 	 */
 	async flush(): Promise<string[]> {
+		// One at a time: two at once could write a day's older copy over its newer one.
+		const run = this.flushes.then(() => this.writeDays())
+		this.flushes = run.catch(() => {})
+		return run
+	}
+
+	/** The flushes waiting in this hub, run one after another. */
+	private flushes: Promise<unknown> = Promise.resolve()
+
+	private async writeDays(): Promise<string[]> {
 		const sql = this.ctx.storage.sql
 		const user = Number(sql.exec(`SELECT v FROM meta WHERE k = 'user'`).toArray()[0]?.v)
 		const days = sql.exec('SELECT day FROM dirty ORDER BY day').toArray().map((r) => String(r.day))
 		if (!user) return []
 		for (const day of days) {
 			const lines = sql.exec('SELECT rec FROM recs WHERE day = ? ORDER BY t, computer, tool, session, event', day).toArray().map((r) => String(r.rec))
-			const body = lines.join('\n') + '\n'
-			const gzip = await new Response(new Blob([body]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer()
-			await this.env.REPORTS.put(dayKey(user, day), gzip)
-			const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(body)))].map((b) => b.toString(16).padStart(2, '0')).join('')
-			const recs = lines.map((l) => JSON.parse(l) as Rec & { computer: string; offset: number })
-			const offset = recs[0]?.offset ?? 0
-			const from = Date.parse(day) - offset * 60_000
-			const rows: [string, Rec[]][] = [['', recs]]
-			for (const c of new Set(recs.map((r) => r.computer))) rows.push([c, recs.filter((r) => r.computer === c)])
-			const now = Date.now()
-			await this.env.DB.batch(
-				rows.map(([computer, list]) => {
-					const s = totals(list, from, from + DAY)
-					const projects = Object.fromEntries(Object.entries(s.projects).map(([k, p]) => [k, [Math.round(p.witnessed / 1000), Math.round(p.unwitnessed / 1000), p.prompts]]))
-					// A computer's work blocks, for the dashboard and review graphs: [start, end, engaged s, prompts, in, out, added, removed, project, tools].
-					const day_blocks = computer ? blocks(list, from, from + DAY).map((b) => [b.start, b.end, Math.round(b.engaged / 1000), b.prompts, b.in, b.out, b.added, b.removed, b.project, b.tools.join(',')]) : []
-					return this.env.DB.prepare(
-						`INSERT INTO prompt_days (user_id, computer_id, day, witnessed_seconds, unwitnessed_seconds, prompts, tokens_in, tokens_out, lines_added, lines_removed, projects, sha256, rules, updated_at, blocks)
-						 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
-						 ON CONFLICT (user_id, computer_id, day) DO UPDATE SET witnessed_seconds = ?4, unwitnessed_seconds = ?5, prompts = ?6, tokens_in = ?7,
-							tokens_out = ?8, lines_added = ?9, lines_removed = ?10, projects = ?11, sha256 = ?12, rules = ?13, updated_at = ?14, blocks = ?15`,
-					).bind(user, computer, day, Math.round(s.witnessed / 1000), Math.round(s.unwitnessed / 1000), s.prompts, s.tokens_in, s.tokens_out, s.lines_added, s.lines_removed, JSON.stringify(projects), computer ? '' : hash, RULES, now, JSON.stringify(day_blocks))
-				}),
-			)
-			// Commits go to their project's row, for links and the GitHub check.
-			const commits = new Map<string, Commit[]>()
-			for (const r of recs) if (r.sha) commits.set(r.project, [...(commits.get(r.project) ?? []), { sha: r.sha, t: r.t, added: r.added ?? 0, removed: r.removed ?? 0, seen: r.arrived }])
-			for (const [project, list] of commits) await remember(this.env, user, project, list)
+			// Marked written as it is read, before any wait: a record that arrives
+			// while this writes the day marks it again, for the next flush.
 			sql.exec('DELETE FROM dirty WHERE day = ?', day)
+			try {
+				await this.writeDay(user, day, lines)
+			} catch (e) {
+				sql.exec('INSERT OR IGNORE INTO dirty (day) VALUES (?)', day)
+				throw e
+			}
 		}
 		// The computers the days came from show their new totals on the dashboard and in the review app.
 		const touched = new Set<string>()
@@ -290,6 +280,38 @@ export class UserHub extends DurableObject<Env> {
 		sql.exec('DELETE FROM recs WHERE day < ? AND day NOT IN (SELECT day FROM dirty)', sealed)
 		sql.exec('DELETE FROM loaded WHERE day NOT IN (SELECT DISTINCT day FROM recs)')
 		return days
+	}
+
+	/** writeDay writes one day's records to R2, and its totals and commits to D1. */
+	private async writeDay(user: number, day: string, lines: string[]) {
+		const body = lines.join('\n') + '\n'
+		const gzip = await new Response(new Blob([body]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer()
+		await this.env.REPORTS.put(dayKey(user, day), gzip)
+		const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(body)))].map((b) => b.toString(16).padStart(2, '0')).join('')
+		const recs = lines.map((l) => JSON.parse(l) as Rec & { computer: string; offset: number })
+		const offset = recs[0]?.offset ?? 0
+		const from = Date.parse(day) - offset * 60_000
+		const rows: [string, Rec[]][] = [['', recs]]
+		for (const c of new Set(recs.map((r) => r.computer))) rows.push([c, recs.filter((r) => r.computer === c)])
+		const now = Date.now()
+		await this.env.DB.batch(
+			rows.map(([computer, list]) => {
+				const s = totals(list, from, from + DAY)
+				const projects = Object.fromEntries(Object.entries(s.projects).map(([k, p]) => [k, [Math.round(p.witnessed / 1000), Math.round(p.unwitnessed / 1000), p.prompts]]))
+				// A computer's work blocks, for the dashboard and review graphs: [start, end, engaged s, prompts, in, out, added, removed, project, tools].
+				const day_blocks = computer ? blocks(list, from, from + DAY).map((b) => [b.start, b.end, Math.round(b.engaged / 1000), b.prompts, b.in, b.out, b.added, b.removed, b.project, b.tools.join(',')]) : []
+				return this.env.DB.prepare(
+					`INSERT INTO prompt_days (user_id, computer_id, day, witnessed_seconds, unwitnessed_seconds, prompts, tokens_in, tokens_out, lines_added, lines_removed, projects, sha256, rules, updated_at, blocks)
+					 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+					 ON CONFLICT (user_id, computer_id, day) DO UPDATE SET witnessed_seconds = ?4, unwitnessed_seconds = ?5, prompts = ?6, tokens_in = ?7,
+						tokens_out = ?8, lines_added = ?9, lines_removed = ?10, projects = ?11, sha256 = ?12, rules = ?13, updated_at = ?14, blocks = ?15`,
+				).bind(user, computer, day, Math.round(s.witnessed / 1000), Math.round(s.unwitnessed / 1000), s.prompts, s.tokens_in, s.tokens_out, s.lines_added, s.lines_removed, JSON.stringify(projects), computer ? '' : hash, RULES, now, JSON.stringify(day_blocks))
+			}),
+		)
+		// Commits go to their project's row, for links and the GitHub check.
+		const commits = new Map<string, Commit[]>()
+		for (const r of recs) if (r.sha) commits.set(r.project, [...(commits.get(r.project) ?? []), { sha: r.sha, t: r.t, added: r.added ?? 0, removed: r.removed ?? 0, seen: r.arrived }])
+		for (const [project, list] of commits) await remember(this.env, user, project, list)
 	}
 
 	/** records returns the working copy's records from one time on, for live views and submissions of recent days. */
