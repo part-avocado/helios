@@ -4,16 +4,17 @@
 import assert from 'node:assert/strict'
 import { readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { test } from 'node:test'
+import { fileURLToPath } from 'node:url'
 import { createTestHarness, experimental_readRawConfig, unstable_splitSqlQuery } from 'wrangler'
 
 const DAY = 86400_000
 
-type Hub = { flush(): Promise<string[]>; holdWrites(): Promise<void>; writing(): Promise<boolean>; releaseWrites(): Promise<void>; failNextWrite(): Promise<void>; crash(): Promise<void> }
+type Hub = { flush(): Promise<string[]>; holdWrites(): Promise<void>; writing(): Promise<boolean>; releaseWrites(): Promise<void>; failNextWrite(): Promise<void>; crash(): Promise<void>; holdReads(): Promise<void>; reading(): Promise<number>; releaseRead(all?: boolean): Promise<void> }
 
 test('the hub loses no record while it writes a day', async () => {
 	// The deployed config, run with the test entry.
 	const config = new URL('../.hubtest.wrangler.json', import.meta.url)
-	const { rawConfig } = experimental_readRawConfig({ config: new URL('../wrangler.jsonc', import.meta.url).pathname })
+	const { rawConfig } = experimental_readRawConfig({ config: fileURLToPath(new URL('../wrangler.jsonc', import.meta.url)) })
 	writeFileSync(config, JSON.stringify({ ...rawConfig, main: 'test/hub-entry.ts' }))
 	const site = createTestHarness({ workers: [{ configPath: config, vars: { DEV_LOGIN: 'UDEV' }, secrets: { SESSION_SECRET: 'x', HCA_CLIENT_ID: 'a', HCA_CLIENT_SECRET: 'b', ADMINS: '' } }] })
 	try {
@@ -78,14 +79,33 @@ test('the hub loses no record while it writes a day', async () => {
 		const d4 = Date.now() - 6 * DAY
 		await send(d4, 'sealed')
 		await hub().flush()
-		await hub().holdWrites()
+		await hub().holdReads()
 		const late = send(d4 + 1000, 'late, cut off').catch(() => {})
-		await atHold()
+		for (let i = 0; i < 200 && !(await hub().reading()); i++) await new Promise((r) => setTimeout(r, 10))
+		assert.equal(await hub().reading(), 1, 'the read reached the hold')
 		await hub().crash().catch(() => {})
 		await late
 		await send(d4 + 2000, 'late')
 		await hub().flush()
 		assert.deepEqual(await inR2(d4), ['late', 'sealed'])
+
+		// Two late records for one sealed day share its read, so a flush between
+		// them can't leave the second with what R2 held before the first.
+		const d5 = Date.now() - 7 * DAY
+		await send(d5, 'sealed')
+		await hub().flush()
+		await hub().holdReads()
+		const a = send(d5 + 1000, 'a')
+		for (let i = 0; i < 200 && !(await hub().reading()); i++) await new Promise((r) => setTimeout(r, 10))
+		const b = send(d5 + 2000, 'b')
+		for (let i = 0; i < 50 && (await hub().reading()) < 2; i++) await new Promise((r) => setTimeout(r, 10))
+		await hub().releaseRead()
+		await a
+		await hub().flush()
+		await hub().releaseRead(true)
+		await b
+		await hub().flush()
+		assert.deepEqual(await inR2(d5), ['a', 'b', 'sealed'])
 	} finally {
 		await site.close()
 		rmSync(config, { force: true })

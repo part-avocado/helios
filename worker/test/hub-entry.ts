@@ -8,8 +8,9 @@ export class UserHub extends Hub {
 	private open = () => {}
 	private waiting = false
 	private failNext = false
+	private reads: (() => void)[] | null = null
 
-	/** holdWrites makes the next day writes, and reads of sealed days, wait, until releaseWrites. */
+	/** holdWrites makes the next day writes wait, until releaseWrites. */
 	holdWrites() {
 		this.gate = new Promise((r) => (this.open = r))
 		this.waiting = false
@@ -22,6 +23,21 @@ export class UserHub extends Hub {
 		this.gate = null
 		this.open()
 	}
+	/** holdReads makes reads of sealed days wait once they have what R2 held, until releaseRead lets the oldest go on. */
+	holdReads() {
+		this.reads = []
+	}
+	/** reading counts the reads waiting at the hold. */
+	reading() {
+		return this.reads?.length ?? 0
+	}
+	/** releaseRead lets the oldest waiting read go on, or with all, every read, and stops holding them. */
+	releaseRead(all = false) {
+		if (all) {
+			for (const go of this.reads ?? []) go()
+			this.reads = null
+		} else this.reads?.shift()?.()
+	}
 	failNextWrite() {
 		this.failNext = true
 	}
@@ -31,11 +47,9 @@ export class UserHub extends Hub {
 	}
 
 	protected override async readDay(user: number, day: string) {
-		if (this.gate) {
-			this.waiting = true
-			await this.gate
-		}
-		return super.readDay(user, day)
+		const body = await super.readDay(user, day)
+		if (this.reads) await new Promise<void>((go) => this.reads!.push(go))
+		return body
 	}
 
 	protected override async writeDay(user: number, day: string, lines: string[]) {

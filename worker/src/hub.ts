@@ -200,12 +200,22 @@ export class UserHub extends DurableObject<Env> {
 	/**
 	 * load reads a sealed day's records back from R2 into the working copy, once.
 	 * The day counts as loaded only after its records are in, so a hub reset
-	 * during the read, or a second record waiting on the same read, reads it
-	 * again rather than go on without them.
+	 * during the read reads it again rather than go on without them. Records
+	 * that arrive while it is read wait on the same read: one of their own
+	 * could return what R2 held before a flush wrote the first one there.
 	 */
-	private async load(userID: number, day: string) {
+	private loading = new Map<string, Promise<void>>()
+	private load(userID: number, day: string) {
+		if (this.ctx.storage.sql.exec('SELECT 1 FROM loaded WHERE day = ?', day).toArray().length) return
+		let reading = this.loading.get(day)
+		if (!reading) {
+			reading = this.read(userID, day).finally(() => this.loading.delete(day))
+			this.loading.set(day, reading)
+		}
+		return reading
+	}
+	private async read(userID: number, day: string) {
 		const sql = this.ctx.storage.sql
-		if (sql.exec('SELECT 1 FROM loaded WHERE day = ?', day).toArray().length) return
 		const body = await this.readDay(userID, day)
 		for (const line of (body ?? '').split('\n')) {
 			if (!line) continue
