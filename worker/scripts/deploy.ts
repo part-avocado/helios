@@ -12,7 +12,7 @@ const info = spawnSync('npx', ['wrangler', 'd1', 'info', 'teardrop'], { encoding
 // other failure, such as no network, stops here rather than deploy first.
 const exists = info.status === 0
 if (!exists && !/Couldn't find a D1 DB/.test(`${info.stdout}${info.stderr}`)) {
-	process.stderr.write(`${info.stdout ?? ''}${info.stderr ?? ''}`)
+	process.stderr.write(`${info.stdout ?? ''}${info.stderr ?? ''}${info.error ? `Could not run npx: ${info.error.message}\n` : ''}`)
 	console.error('Could not tell whether the D1 database exists, so nothing was deployed. Fix the error above and run npm run deploy again.')
 	process.exit(1)
 }
