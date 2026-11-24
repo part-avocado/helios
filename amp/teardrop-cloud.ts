@@ -10,7 +10,7 @@ import { mkdir, readdir, rename, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
 export const description =
-	'Counts time in Amp cloud threads toward your teardrop hours. Sends when you prompt and when Amp finishes, with its token counts and never the prompt text, to your teardrop site. Needs TEARDROP_SERVER and TEARDROP_KEY.'
+	'Counts time in Amp cloud threads toward your teardrop hours. Sends when you prompt and when Amp finishes, with its token and line counts and never the prompt text or code, to your teardrop site. Needs TEARDROP_SERVER and TEARDROP_KEY.'
 
 const releases = 'https://github.com/part-avocado/teardrop/releases'
 /** The first release whose `teardrop hook amp -relay` sends events to a site. */
@@ -124,6 +124,30 @@ function tokens(messages: readonly unknown[] = []) {
 	return { tokens_in, tokens_out }
 }
 
+/**
+ * The edits Amp's file tools made in one turn, for teardrop to count the
+ * lines added and removed: each edit's old and new text, and the lines of
+ * each patch. Only calls that finished count. The text goes no further than
+ * teardrop on this machine, which keeps only the counts.
+ */
+function edits(amp: PluginAPI, messages: readonly unknown[] = []) {
+	const out = { edits: [] as { old_string: string; new_string: string }[], lines_added: 0, lines_removed: 0 }
+	const str = (v: unknown) => (typeof v === 'string' ? v : '')
+	for (const { call, result } of amp.helpers.toolCallsInMessages(messages as Parameters<typeof amp.helpers.toolCallsInMessages>[0])) {
+		if (result?.status !== 'done') continue
+		const input = call.input ?? {}
+		if (call.tool === 'edit_file') out.edits.push({ old_string: str(input.old_str), new_string: str(input.new_str) })
+		else if (call.tool === 'create_file') out.edits.push({ old_string: '', new_string: str(input.content) })
+		else if (call.tool === 'apply_patch') {
+			for (const line of str(input.patch || input.input).split('\n')) {
+				if (line.startsWith('+') && !line.startsWith('+++')) out.lines_added++
+				else if (line.startsWith('-') && !line.startsWith('---')) out.lines_removed++
+			}
+		}
+	}
+	return out
+}
+
 export default function (amp: PluginAPI) {
 	// On a person's own computer, the plugin `teardrop setup` writes records
 	// threads in the local journal. This one is for Amp's cloud only.
@@ -188,9 +212,10 @@ export default function (amp: PluginAPI) {
 
 	// Events wait here, in memory only, while teardrop downloads: a fresh orb
 	// has none. Each carries its own time, so waiting doesn't move it.
-	let waiting: { session_id: string; cwd: string; hook_event_name: string; prompt: string; time: string; tokens_in?: number; tokens_out?: number }[] = []
+	type Used = Partial<ReturnType<typeof tokens> & ReturnType<typeof edits>>
+	let waiting: ({ session_id: string; cwd: string; hook_event_name: string; prompt: string; time: string } & Used)[] = []
 	let sending = Promise.resolve()
-	const record = (event: string, threadID: string, prompt = '', used: { tokens_in?: number; tokens_out?: number } = {}) => {
+	const record = (event: string, threadID: string, prompt = '', used: Used = {}) => {
 		waiting.push({ session_id: threadID, cwd: root, hook_event_name: event, prompt, time: new Date().toISOString(), ...used })
 		sending = sending.then(async () => {
 			const bin = await find()
@@ -213,6 +238,7 @@ export default function (amp: PluginAPI) {
 		await record('agent.start', e.thread.id, e.message)
 		return {}
 	})
-	// A turn that was stopped ends here too, with the tokens it used until then.
-	amp.on('agent.end', (e) => record('agent.end', e.thread.id, '', tokens(e.messages)))
+	// A turn that was stopped ends here too, with the tokens it used and the edits it made until then.
+	// teardrop also sends the commits in the thread's repository when a turn ends.
+	amp.on('agent.end', (e) => record('agent.end', e.thread.id, '', { ...tokens(e.messages), ...edits(amp, e.messages) }))
 }

@@ -507,7 +507,7 @@ function projectPage(name, back, whole, here, query) {
 		<div class="act-facts">${[
 			['Engaged', dur(sum(B.engaged))],
 			['Blocks', num(bl.length)],
-			['Prompts', num(sum(B.prompts))],
+			['Prompts', `${num(sum(B.prompts))}<small>${compact(sum(B.tin))} tokens in, ${compact(sum(B.tout))} out</small>`],
 			['Lines', `+${compact(sum(B.added))} -${compact(sum(B.removed))}<small>${compact(sum(B.kept))} kept</small>`],
 			['Commits', `${num(commits.length)}<small>${!commits.length ? 'none reported' : p.commit_checks === false ? 'not checked on this site' : `${num(found)} found on the host${missing ? `, ${num(missing)} not` : ''}${shifted ? `, ${num(shifted)} dated differently` : ''}`}</small>`],
 			['Active', bl.length ? `${esc(longDate(bl[0][B.start]))}<small>to ${esc(longDate(bl.at(-1)[B.end]))}</small>` : '-'],

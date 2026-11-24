@@ -128,7 +128,10 @@ in its Secrets & Env Vars settings, `TEARDROP_SERVER` (your site) and
 `TEARDROP_KEY` (your sync key, which Amp asks you for privately). In a cloud
 thread the plugin downloads teardrop, checks its checksum, and runs
 `teardrop hook amp -relay`, which sends your site the same line the journal
-holds, without the prompt text. The site keeps these lines for a year. No
+holds, without the prompt text: when Amp finishes, with the turn's tokens and
+the lines its file edits added and removed. At the end of each turn it also
+sends your commits in the thread's repository, as `sync` does on a computer.
+The site keeps these lines for a year. No
 computer of yours is needed: when Amp finishes a turn or you stop it, the
 teardrop in that thread reads all of your cloud lines back, counts them, and
 syncs the result as one "Amp cloud threads" entry on your dashboard. Threads

@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"fmt"
 	"maps"
 	"os"
 	"os/exec"
@@ -133,17 +135,51 @@ func queueCommits(raws []sources.Raw, now time.Time) int {
 		p, root := resolve(r)
 		// A project named by a folder, its own or a remote's on this computer
 		// (keyed ~/repos/x or /srv/x), has no host to check against.
-		if p.Key == folderKey(root) || seen[root] || !strings.Contains(p.Key, "/") || strings.HasPrefix(p.Key, "/") || strings.HasPrefix(p.Key, "~/") {
+		if p.Key == folderKey(root) || seen[root] || !onHost(p.Key) {
 			continue
 		}
 		seen[root] = true
-		for _, c := range listCommits(root, since) {
-			ev := sources.JournalEvent{Time: c.Time, Tool: "git", Event: "commit", Session: c.Sha, Git: p.Key, Sha: c.Sha, Added: c.Added, Removed: c.Removed}
-			if queueRelay(localOutbox, ev) == nil {
-				n++
-			}
+		n += queueCommitsOf(localOutbox, root, p.Key, since)
+	}
+	os.WriteFile(stamp, nil, 0o600)
+	return n
+}
+
+// onHost reports whether a project key names a repository on a host, such as
+// github.com/kid/app, which the site can check commits against, rather than
+// a folder.
+func onHost(key string) bool {
+	return strings.Contains(key, "/") && !strings.HasPrefix(key, "/") && !strings.HasPrefix(key, "~/")
+}
+
+// queueCommitsOf puts a commit record in outbox for each of the person's
+// commits in the repository at root, keyed key, since t. It returns how many.
+func queueCommitsOf(outbox, root, key string, since time.Time) int {
+	n := 0
+	for _, c := range listCommits(root, since) {
+		ev := sources.JournalEvent{Time: c.Time, Tool: "git", Event: "commit", Session: c.Sha, Git: key, Sha: c.Sha, Added: c.Added, Removed: c.Removed}
+		if queueRelay(outbox, ev) == nil {
+			n++
 		}
 	}
+	return n
+}
+
+// queueRelayCommits does for a cloud thread what a sync does on a computer:
+// when a turn ends, it puts the person's commits in the thread's repository
+// since the last turn, or in the past year the first time, in the relay
+// outbox, so the site links them and checks them against the host. Each
+// repository keeps its own stamp, since one data folder can serve several.
+func queueRelayCommits(root, key string, now time.Time) int {
+	if root == "" || !onHost(key) {
+		return 0
+	}
+	stamp := filepath.Join(dataDir(), fmt.Sprintf("last-commits-%x", sha256.Sum256([]byte(root)))[:len("last-commits-")+12])
+	since := now.AddDate(-1, 0, 0)
+	if info, err := os.Stat(stamp); err == nil {
+		since = info.ModTime().Add(-time.Hour)
+	}
+	n := queueCommitsOf(relayOutbox, root, key, since)
 	os.WriteFile(stamp, nil, 0o600)
 	return n
 }

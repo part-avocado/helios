@@ -202,6 +202,17 @@ func TestQueueCommitsNeedsARemote(t *testing.T) {
 	if n := queueCommits(raws, time.Now()); n != 1 {
 		t.Errorf("queued %d commits once it has a remote, want 1", n)
 	}
+	// A cloud thread has no sync: its turn's end sends the commits to the relay outbox, keyed by the repository.
+	if n := queueRelayCommits(dir, "~/app", time.Now()); n != 0 {
+		t.Errorf("relayed %d commits of a folder key", n)
+	}
+	if n := queueRelayCommits(dir, "github.com/kid/app", time.Now()); n != 1 {
+		t.Fatalf("relayed %d commits, want 1", n)
+	}
+	b, _ := os.ReadFile(filepath.Join(dataDir(), relayOutbox))
+	if !strings.Contains(string(b), `"event":"commit"`) || !strings.Contains(string(b), `"git":"github.com/kid/app"`) {
+		t.Errorf("relay outbox: %s", b)
+	}
 }
 
 func TestCalibrate(t *testing.T) {
