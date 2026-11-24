@@ -160,16 +160,21 @@ export async function syncKeys(env: Env, user: User) {
 export async function createSyncKey(env: Env, user: User, name: string, replace = false) {
 	name = name.trim().slice(0, 60)
 	if (!name) throw new Refusal(400, 'Name the key after the computer or tool that will use it, so you can tell your keys apart.')
-	if (replace) await env.DB.prepare('DELETE FROM sync_keys WHERE user_id = ? AND name = ?').bind(user.id, name).run()
 	const key = newKey()
 	const hint = key.slice(0, 9)
-	// Counted in the same statement, so two made at once can't both pass the limit.
-	const row = await env.DB.prepare(
-		`INSERT INTO sync_keys (user_id, name, hash, hint, created_at) SELECT ?1, ?2, ?3, ?4, ?5
-		 WHERE (SELECT COUNT(*) FROM sync_keys WHERE user_id = ?1) < ${MAX_SYNC_KEYS} RETURNING id`,
-	)
-		.bind(user.id, name, await keyHash(key), hint, Date.now())
-		.first<{ id: number }>()
+	const hash = await keyHash(key)
+	// The limit is counted in the insert itself, so two made at once can't
+	// both pass it, and leaves out the key this one replaces. That one goes in
+	// the same batch, and only once the new one is in, so a computer that
+	// logs in again is never left with none.
+	const [made] = await env.DB.batch([
+		env.DB.prepare(
+			`INSERT INTO sync_keys (user_id, name, hash, hint, created_at) SELECT ?1, ?2, ?3, ?4, ?5
+			 WHERE (SELECT COUNT(*) FROM sync_keys WHERE user_id = ?1 AND (?6 = 0 OR name != ?2)) < ${MAX_SYNC_KEYS} RETURNING id`,
+		).bind(user.id, name, hash, hint, Date.now(), replace ? 1 : 0),
+		env.DB.prepare(`DELETE FROM sync_keys WHERE ?4 = 1 AND user_id = ?1 AND name = ?2 AND hash != ?3 AND EXISTS (SELECT 1 FROM sync_keys WHERE hash = ?3)`).bind(user.id, name, hash, replace ? 1 : 0),
+	])
+	const row = (made!.results as { id: number }[])[0]
 	if (!row) throw new Refusal(409, `You have ${MAX_SYNC_KEYS} sync keys, which is the most one person can have. Revoke one under Settings, then Setup.`)
 	return { id: row.id, name, hint, key }
 }

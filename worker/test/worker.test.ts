@@ -1775,6 +1775,12 @@ test('a person has several sync keys at once, and revoking one leaves the rest',
 	assert.equal((await call(`/api/sync-keys/${(await keys())[0]!.id}`, { method: 'DELETE', cookie, origin: SITE })).status, 200)
 	const done = (await (await call(`/api/v1/login/${login.code}`)).json()) as { status: string; key: string }
 	assert.deepEqual([done.status, await works(done.key)], ['done', true])
+	// Logging the same computer in again, at the limit, replaces its key: the old one stops, and the count stays.
+	const before = (await keys()).length
+	const again = (await (await server.fetch(SITE + '/api/v1/login', { method: 'POST', body: JSON.stringify({ computer: 'td-0123456789ab' }), headers: { 'CF-Connecting-IP': '203.0.113.51' } })).json()) as { code: string; user_code: string }
+	await server.fetch(SITE + '/connect', { method: 'POST', body: new URLSearchParams({ user_code: again.user_code, decision: 'allow' }).toString(), headers: { Cookie: cookie, Origin: SITE, 'Content-Type': 'application/x-www-form-urlencoded' } })
+	const replaced = (await (await call(`/api/v1/login/${again.code}`)).json()) as { status: string; key: string }
+	assert.deepEqual([replaced.status, await works(replaced.key), await works(done.key), (await keys()).length], ['done', true, false, before])
 	// Deleting the account stops every one.
 	assert.equal((await call('/api/account', { method: 'DELETE', cookie, origin: SITE })).status, 200)
 	assert.equal(await works(build.key), false)
