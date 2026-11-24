@@ -24,10 +24,10 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// Every command main dispatches is in the help, except the ones tools and
-// superadmins run, so the help can't go stale when a command is added.
+// Every command main dispatches is in the help, except the ones tools run,
+// so the help can't go stale when a command is added.
 func TestUsageListsEveryCommand(t *testing.T) {
-	hidden := map[string]bool{"hook": true, "relay": true, "export-records": true, "help": true, "version": true}
+	hidden := map[string]bool{"hook": true, "relay": true, "help": true, "version": true}
 	f, err := parser.ParseFile(token.NewFileSet(), "main.go", nil, 0)
 	if err != nil {
 		t.Fatal(err)

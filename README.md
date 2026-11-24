@@ -73,8 +73,8 @@ Syncs and exports carry a verification key: an Ed25519 signature by this
 install's account key over the numbers, the time it was made, and a 7-day
 expiry. The website refuses reports that were edited, have no key, or have
 expired. The account key lives on your machine, so a file alone can't prove its numbers
-are real. For hours that count, use `teardrop submit` (below): the site
-credits only time whose records reached it as it happened.
+are real. For hours that count, sync (below): the site marks as witnessed
+only time whose records reached it as it happened.
 
 **ENGAGED** counts the time you spend working with your AI tools: writing
 prompts, reading replies, and steering the agent. An agent left running on
@@ -151,7 +151,7 @@ LINES**, from Claude Code's Edit, MultiEdit, and Write calls and Codex's
 A session that looks busy but leaves nothing in git shows up here. Lines are
 matched by a hash; the code itself is not kept.
 
-## Accounts, sync, and submit
+## Accounts and sync
 
 On the website, sign in with Hack Club and open the dashboard. With nothing
 synced yet it shows the two commands that connect a computer; the second is
@@ -182,18 +182,12 @@ dashboard adds up every computer you
 connect. Settings lists them, makes a new key, and takes a
 `teardrop export` file from a computer that can't reach the site.
 
-`teardrop submit <project>` (with `-note` for the reviewers), or the Submit
-button on the dashboard, submits a project's hours. `teardrop submit -list`
-and the dashboard list your submissions and the reviewer's note once one is
-decided, without saying which reviewer decided.
-Nothing is uploaded: the site makes the submission from the per-prompt
-records your hooks already sent it. Only time whose records reached the site
-within 5 minutes of when they happened is credited ("witnessed"); time that
-arrived late, such as history from before the hooks were set up, is listed
-but not credited unless a neoadmin accepts it. A reviewer approves, adjusts,
-or rejects each submission, with a note the person reads; adjusting and
-accepting late time take a neoadmin. Submitting a project again is fine: time
-an earlier submission covered is never credited again, even if it was rejected.
+The site splits time in two: time whose records reached it within 5 minutes
+of when they happened is witnessed; time that arrived late, such as history
+from before the hooks were set up, is unwitnessed and kept apart. teardrop
+credits nothing itself. Programs that pay or credit hours read both, per
+project and per day, through the protected stats API (below), much like
+Hackatime's API, and decide what counts.
 
 Every account has a public profile at `/@handle`, which anyone can open
 without signing in: the handle, the month they joined, hours in the past
@@ -207,8 +201,7 @@ no key.
 
 Everything else on the website is visible to you and to reviewers: a reviewer
 sees your total for each project, and neoadmins and superadmins see
-everything you synced. Submissions hold no chat logs: they are made from the
-per-prompt records the site already has.
+everything you synced.
 
 ### The website, on Cloudflare
 
@@ -270,7 +263,7 @@ the work blocks in each computer's latest report.
 
 A ban has no length: it lasts until someone lifts it, and always has a
 reason, which only reviewers see. While it holds, the site takes nothing new
-from the person (syncs, uploads, cloud events, submissions). `teardrop sync`,
+from the person (syncs, uploads, cloud events). `teardrop sync`,
 their dashboard, and their settings say plainly that they are banned until a
 reviewer lifts it, but not why. They can still sign in and see what they had. The review
 app marks a banned person in red wherever they appear. A banned reviewer can't
@@ -285,6 +278,25 @@ only its hash.
 ```sh
 curl -H "Authorization: Bearer tdr_..." "https://<your-site>/api/review/person?slack=U012ABCDEF"
 ```
+
+#### Stats API
+
+Programs read people's time with a review key, instead of taking
+submissions:
+
+```sh
+curl -H "Authorization: Bearer tdr_..." "https://<your-site>/api/review/stats?slack=U012ABCDEF&start=2026-01-01&end=2026-03-31"
+```
+
+It answers with the person, their ban if any, and witnessed and unwitnessed
+seconds and prompts in total, per project, and per day, between `start` and
+`end` (days on their own clock, both included, both optional). `project`
+narrows it to names, separated by commas, and `flags=true` also reads the
+records behind it (at most 400 days) and lists what scripted, made-up records
+leave behind. A reviewer's key sees project names only; a neoadmin's also
+sees keys and may look people up by account number (`id`). The person's hub
+writes what it holds first, so the answer is up to the moment. What to
+credit is the program's call.
 
 The log stays when a person deletes their account; the reports kept in full go.
 Set a `GITHUB_TOKEN` secret to have the hourly cron check claimed commits
@@ -303,10 +315,7 @@ year sends (`OLD_RECORDS_PER_DAY`). Past a limit the site answers 429 with
 about ten times the heaviest honest use; records held back past 5 minutes
 arrive late and aren't credited, so lower them with care. A record claiming
 more than 200 million tokens or a million lines is cut to that and flagged
-for review. Set `DAILY_CAP_HOURS` and `WEEKLY_CAP_HOURS` to cap
-the witnessed hours submissions credit a person per day and per week (from
-Monday, in their time zone); time over a cap is never credited. Both are
-empty, meaning no cap, by default. `node scripts/cost-model.ts` prints what an account at every
+for review. `node scripts/cost-model.ts` prints what an account at every
 limit costs. `node scripts/loadtest.ts`, with `npx wrangler dev` running,
 sends records from 200 accounts at a heavy honest pace and one first sync of
 a year, prints latency percentiles, and exits 1 if any upload was refused. It
@@ -341,13 +350,6 @@ handles and the choice of which projects a profile names, and 0012 makes
 every ban last until lifted: timed bans that had run out are marked lifted,
 and ones still in force become permanent, keeping their old end in
 `was_until`.
-
-### Moving from the old review server
-
-The Go review server that took chat-log submissions is retired. Run
-`teardrop export-records -data <its data folder> > records.jsonl` and post the
-file to `/api/review/import` as a superadmin, so what it credited is never
-credited again.
 
 ### Hosting cost
 

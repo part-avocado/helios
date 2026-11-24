@@ -11,7 +11,6 @@ import type { User } from './auth.ts'
 import { type Commit, remember } from './git.ts'
 import { Refusal } from './http.ts'
 import { refreshRecordComputer } from './reports.ts'
-import { makeSubmission, type SubmissionRow } from './submissions.ts'
 import { blocks, type Clock, corrected, nextClock, RULES, type Rec, timed, totals, WATCH } from './timeline.ts'
 
 const FLUSH = 10 * 60_000
@@ -253,31 +252,6 @@ export class UserHub extends DurableObject<Env> {
 		await this.flush()
 	}
 
-	/** The submissions waiting in this hub, run one after another. */
-	private submits: Promise<unknown> = Promise.resolve()
-
-	/**
-	 * submit makes one of the person's submissions, after the ones already
-	 * waiting, so two at once can't both credit the same time or both fit
-	 * under a cap. Records keep arriving meanwhile: blocking them would hold
-	 * up every hook of the person's for as long as a big project takes. A
-	 * refusal is returned, since an error loses its status on the way back.
-	 */
-	async submit(user: User, body: Record<string, unknown>): Promise<{ row?: SubmissionRow; refused?: { status: number; message: string } }> {
-		const run = this.submits.then(async () => {
-			await this.flush()
-			try {
-				return { row: await makeSubmission(this.env, user, body) }
-			} catch (e) {
-				if (e instanceof Refusal) return { refused: { status: e.status, message: e.message } }
-				throw e
-			}
-		})
-		// One that fails doesn't stop the ones after it.
-		this.submits = run.catch(() => {})
-		return run
-	}
-
 	/**
 	 * flush writes every changed day to R2 and its totals to D1, then forgets
 	 * the working copy of sealed days. It returns the days it wrote.
@@ -354,7 +328,7 @@ export class UserHub extends DurableObject<Env> {
 		for (const [project, list] of commits) await remember(this.env, user, project, list)
 	}
 
-	/** records returns the working copy's records from one time on, for live views and submissions of recent days. */
+	/** records returns the working copy's records from one time on, for live views. */
 	async records(from: number): Promise<(Rec & { computer: string })[]> {
 		return this.ctx.storage.sql.exec('SELECT rec FROM recs WHERE t >= ? ORDER BY t', from).toArray().map((r) => JSON.parse(String(r.rec)))
 	}

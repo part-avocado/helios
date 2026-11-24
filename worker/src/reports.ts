@@ -74,7 +74,7 @@ async function store(env: Env, user: User, body: string, entry: Entry): Promise<
 	} catch {
 		throw refuse('it is not a signed teardrop report. Make one with: teardrop export -o stats.json')
 	}
-	if (p.kind) throw refuse('it is a project submission. Send those with: teardrop submit')
+	if (p.kind) throw refuse('it is a project submission from an old teardrop, and this site no longer takes submissions')
 	const publicKey = fromBase64Url(p.account ?? '')
 	const signature = fromBase64Url(signed.key)
 	const bytes = new TextEncoder().encode(signed.payload)

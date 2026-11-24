@@ -4,7 +4,9 @@
 import { Refusal } from './http.ts'
 import { archivedRows, archiveTotals, type Detail, dur, type Entry, findings, parseStored, remarks } from './log.ts'
 import { computers, personDays, personProjects, projectBlocks } from './reports.ts'
-import { type User } from './auth.ts'
+import { type Level, type User } from './auth.ts'
+import { dayKey } from './hub.ts'
+import { flags, type Rec } from './timeline.ts'
 import { access, bans, slackID } from './staff.ts'
 import { moved, projectCommits } from './git.ts'
 
@@ -203,4 +205,90 @@ export async function summary(env: Env, params: URLSearchParams) {
 		// Each project's work blocks, for the graphs, by name only too.
 		activity: activity.map(({ name, engaged_seconds, blocks, commits, commit_checks }) => ({ name, engaged_seconds, blocks, commits, commit_checks })),
 	}
+}
+
+/** The most days of records one stats call reads for its flags. */
+const FLAG_DAYS = 400
+
+const isDay = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s))
+/** A project's name: its key's last part, since the key can be a folder on their computer. */
+const projectName = (key: string) => key.split(/[\\/]/).filter(Boolean).pop() ?? key
+
+/**
+ * stats is what programs read through the protected API: one person's time
+ * from start to end (days on their own clock, both included), split into
+ * witnessed time, whose records reached the site within 5 minutes of the
+ * time they claim, and unwitnessed time, per project and per day. `project`
+ * narrows it to some projects, by name, or by key for neoadmins and above. A
+ * reviewer (level 2) sees project names only. With `flags=true` it also
+ * reads the records behind it and lists what a script that sends records
+ * live would leave behind. What to credit is the program's to decide.
+ */
+export async function stats(env: Env, level: Level, params: URLSearchParams) {
+	const who = await lookup(env, params, level < 2)
+	const start = params.get('start') || '0000-01-01'
+	const end = params.get('end') || '9999-12-31'
+	for (const [name, value] of [['start', start], ['end', end]] as const) {
+		if (!isDay(value)) throw new Refusal(400, `Give ${name} as a date, such as 2026-01-31.`)
+	}
+	if (start > end) throw new Refusal(400, 'start is after end.')
+	const wanted = new Set((params.get('project') ?? '').split(',').map((p) => p.trim()).filter(Boolean))
+	const picked = (key: string) => !wanted.size || wanted.has(projectName(key)) || (level < 2 && wanted.has(key))
+	// Records reach D1 within minutes; the person's hub writes what it holds first, so the answer is up to the moment.
+	await env.HUB.get(env.HUB.idFromName(String(who.id))).flush()
+	const [{ results: rows }, theirBans] = await Promise.all([
+		env.DB.prepare(`SELECT day, witnessed_seconds, unwitnessed_seconds, prompts, projects FROM prompt_days WHERE user_id = ? AND computer_id = '' AND day BETWEEN ? AND ? ORDER BY day`)
+			.bind(who.id, start, end)
+			.all<{ day: string; witnessed_seconds: number; unwitnessed_seconds: number; prompts: number; projects: string }>(),
+		who.slack_id ? bans(env, who.slack_id) : [],
+	])
+	const projects = new Map<string, { key: string; name: string; witnessed_seconds: number; unwitnessed_seconds: number; prompts: number; first_day: string; last_day: string }>()
+	const days: { date: string; witnessed_seconds: number; unwitnessed_seconds: number; prompts: number }[] = []
+	for (const row of rows) {
+		const theirs = Object.entries(JSON.parse(row.projects) as Record<string, [number, number, number]>).filter(([key]) => picked(key))
+		for (const [key, [witnessed, unwitnessed, prompts]] of theirs) {
+			const p = projects.get(key) ?? { key, name: projectName(key), witnessed_seconds: 0, unwitnessed_seconds: 0, prompts: 0, first_day: row.day, last_day: row.day }
+			p.witnessed_seconds += witnessed
+			p.unwitnessed_seconds += unwitnessed
+			p.prompts += prompts
+			p.last_day = row.day
+			projects.set(key, p)
+		}
+		// The day's own totals count time on two projects at once once; a narrowed day adds up its projects.
+		const sum = (i: number) => theirs.reduce((n, [, v]) => n + v[i]!, 0)
+		const day = wanted.size
+			? { date: row.day, witnessed_seconds: sum(0), unwitnessed_seconds: sum(1), prompts: sum(2) }
+			: { date: row.day, witnessed_seconds: row.witnessed_seconds, unwitnessed_seconds: row.unwitnessed_seconds, prompts: row.prompts }
+		if (day.witnessed_seconds || day.unwitnessed_seconds || day.prompts) days.push(day)
+	}
+	const ban = theirBans.find((b) => b.active)
+	const total = (k: 'witnessed_seconds' | 'unwitnessed_seconds' | 'prompts') => days.reduce((n, d) => n + d[k], 0)
+	return {
+		person: { slack_id: who.slack_id, name: who.name, created_at: who.created_at, deleted_at: who.deleted_at },
+		ban: ban ? { reason: ban.reason, at: ban.at } : null,
+		start: params.get('start') || null,
+		end: params.get('end') || null,
+		witnessed_seconds: total('witnessed_seconds'),
+		unwitnessed_seconds: total('unwitnessed_seconds'),
+		prompts: total('prompts'),
+		projects: [...projects.values()].sort((a, b) => b.witnessed_seconds - a.witnessed_seconds).map((p) => (level === 2 ? { ...p, key: undefined } : p)),
+		days,
+		...(params.get('flags') === 'true' ? { flags: await recordFlags(env, who.id, days, picked) } : {}),
+	}
+}
+
+/** recordFlags reads the records of the days given, of the projects picked, and flags them. */
+async function recordFlags(env: Env, userID: number, days: { date: string; witnessed_seconds: number }[], picked: (key: string) => boolean) {
+	if (days.length > FLAG_DAYS) throw new Refusal(400, `Flags read at most ${FLAG_DAYS} days of records, and this asks for ${days.length}. Narrow start and end.`)
+	const recs: (Rec & { event: string })[] = []
+	for (const d of days) {
+		const obj = await env.REPORTS.get(dayKey(userID, d.date))
+		if (!obj) continue
+		for (const line of (await new Response(obj.body.pipeThrough(new DecompressionStream('gzip'))).text()).split('\n')) {
+			if (!line) continue
+			const r = JSON.parse(line) as Rec & { event: string; project: string }
+			if (picked(r.project)) recs.push(r)
+		}
+	}
+	return flags(recs, days.map((d) => ({ day: d.date, witnessed_seconds: d.witnessed_seconds })))
 }

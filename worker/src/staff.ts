@@ -161,7 +161,7 @@ const inForce = (b: BanRow) => b.lifted_at == null
  * reason is for reviewers only, so it is left out.
  */
 export function banMessage(): string {
-	return 'This account is banned until a reviewer lifts the ban. Nothing new is taken from it: no syncs, uploads, cloud events, or submissions.'
+	return 'This account is banned until a reviewer lifts the ban. Nothing new is taken from it: no syncs, uploads, or cloud events.'
 }
 
 /** bans lists bans, newest first, each marked with whether it is in force: everyone's, or one person's. */

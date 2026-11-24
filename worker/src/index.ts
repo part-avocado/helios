@@ -9,12 +9,11 @@ import { json, jsonText, readText, redirect, Refusal } from './http.ts'
 import { checkGit } from './git.ts'
 import { connect, pollLogin, startLogin } from './connect.ts'
 import { relayRecords } from './records.ts'
-import { decide, importRecords, listSubmissions, ownSubmissions, submission, submit } from './submissions.ts'
 export { UserHub } from './hub.ts'
 import { ownProfile, updateProfile, visibleOwner } from './profile.ts'
 import { createUserKey, publicAPI, revokeUserKey, userKeys } from './public.ts'
 import { computerReportJSON, computers, deleteUser, keptReportJSON, MAX_REPORT_BYTES, removeComputer, reportsJSON, storeReport } from './reports.ts'
-import { fullLog, people, person, summary } from './review.ts'
+import { fullLog, people, person, stats, summary } from './review.ts'
 import { authorize } from './signin.ts'
 import { addReviewer, banMessage, bans, createKey, issueBan, keys, liftBan, need, removeReviewer, revokeKey, team } from './staff.ts'
 
@@ -130,12 +129,8 @@ async function route(request: Request, env: Env): Promise<Response> {
 	// teardrop v0.5.2 on a person's computer asks for cloud events to count
 	// there. It takes "not found" to mean there are none for it, which is so.
 	if (call === 'GET /api/v1/events') throw new Refusal(404, 'Cloud threads are counted in the cloud now.')
-	// A submission is made from the records the site holds; nothing is uploaded with it.
-	if (call === 'POST /api/v1/submissions') {
-		const user = await needKey(request, env, url)
-		return json(await submit(env, user, await jsonBody(request)))
-	}
-	if (call === 'GET /api/v1/submissions') return json({ submissions: await ownSubmissions(env, (await needKey(request, env, url)).id) })
+	// `teardrop submit` from before submissions were retired.
+	if (path === '/api/v1/submissions') throw new Refusal(410, 'teardrop no longer takes submissions. Your time is on your dashboard, and programs read it with the review API.')
 
 	// Signing in and out.
 	if (call === 'GET /auth/hca') return startSignIn(request, env)
@@ -206,12 +201,6 @@ async function route(request: Request, env: Env): Promise<Response> {
 			: null
 		if (!person) throw new Refusal(404, 'No such person.')
 		return jsonText(`{"person":${JSON.stringify(person)},"computers":${await reportsJSON(env, person.id)}}`)
-	}
-	// Their own submissions, and how each was decided.
-	if (call === 'GET /api/submissions') return json({ submissions: await ownSubmissions(env, user.id) })
-	if (call === 'POST /api/submissions') {
-		if (user.ban) throw new Refusal(403, banMessage())
-		return json(await submit(env, user, await jsonBody(request)))
 	}
 	if (call === 'POST /api/reports') {
 		if (user.ban) throw new Refusal(403, banMessage())
@@ -334,22 +323,8 @@ async function reviewAPI(request: Request, env: Env, url: URL): Promise<Response
 	}
 
 	if (call === 'GET /me') return json({ name: actor.name, slack_id: actor.slack_id, level, by_key: byKey })
-	// Submissions, which every level reviews; a reviewer sees project names only.
-	if (call === 'GET /submissions') return json({ submissions: await listSubmissions(env, level) })
-	// What the retired Go review server credited, from `teardrop export-records`.
-	if (call === 'POST /import') {
-		need(actor, 0)
-		return json(await importRecords(env, await readText(request, 16 << 20)))
-	}
-	if (request.method === 'GET' && path.startsWith('/submissions/')) return json(await submission(env, rest('/submissions/'), level))
-	// Every level decides; decide refuses what a reviewer may not do. The old
-	// accept route approves, accepting unwitnessed time, as before.
-	if (request.method === 'POST' && /^\/submissions\/[^/]+\/(decide|accept)$/.test(path)) {
-		const [, , id, verb] = path.split('/')
-		if (verb === 'accept') need(actor, 1)
-		await decide(env, actor, id!, verb === 'accept' ? { ...(await body()), action: 'approve' } : await body())
-		return json({})
-	}
+	// The protected API: a person's witnessed and unwitnessed time over a range of days, for programs that credit it. A reviewer sees project names only.
+	if (call === 'GET /stats') return json(await stats(env, level, url.searchParams))
 	// A reviewer gets a person's totals per project. Those above get everything.
 	if (call === 'GET /person') return json(level === 2 ? await summary(env, url.searchParams) : await person(env, actor, url.searchParams))
 

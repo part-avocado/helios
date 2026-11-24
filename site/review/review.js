@@ -40,7 +40,7 @@ const LEVELS = ['Superadmin', 'Neoadmin', 'Reviewer']
 const CAN = [
 	'read every account, add and remove neoadmins and reviewers, and ban anyone but another superadmin',
 	'read every account, add and remove reviewers, and ban members and reviewers',
-	'look a person up by Slack ID, read their total and work-block timeline for each project, and approve or reject waiting submissions',
+	'look a person up by Slack ID, read their total and work-block timeline for each project',
 ]
 // Who is signed in: {name, slack_id, level}.
 let me = null
@@ -436,21 +436,13 @@ function projectCards(projects, base, c) {
 
 // ---- Crops: a stretch of time in the address, ?from=…&to=…
 //
-// Person and project pages crop to whole days (YYYY-MM-DD), a submission to
-// minutes (YYYY-MM-DDTHH:MM), in the reviewer's time zone. Both ends are
-// included, and either may be left open.
-const isMinute = (s) => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(s ?? '')
-const localMinute = (ms) => {
-	const d = new Date(ms)
-	return `${localDay(ms)}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
+// Person and project pages crop to whole days (YYYY-MM-DD), in the
+// reviewer's time zone. Both ends are included, and either may be left open.
 function readCrop(query, kind) {
 	const q = new URLSearchParams(query)
-	const ok = kind === 'date' ? isDay : isMinute
-	let from = ok(q.get('from')) ? q.get('from') : '', to = ok(q.get('to')) ? q.get('to') : ''
+	let from = isDay(q.get('from')) ? q.get('from') : '', to = isDay(q.get('to')) ? q.get('to') : ''
 	if (from && to && from > to) [from, to] = [to, from]
-	const at = (v, end) => (kind === 'date' ? dayAt(v, end ? 1 : 0) : new Date(v).getTime() + (end ? 60_000 : 0))
-	const lo = from ? at(from, false) : -Infinity, hi = to ? at(to, true) : Infinity
+	const lo = from ? dayAt(from, 0) : -Infinity, hi = to ? dayAt(to, 1) : Infinity
 	const query2 = new URLSearchParams({ ...(from && { from }), ...(to && { to }) }).toString()
 	return { kind, from, to, lo, hi, cropped: Boolean(from || to), query: query2 ? '?' + query2 : '' }
 }
@@ -459,13 +451,12 @@ const cropBlocks = (p, c) => ({ ...p, blocks: p.blocks.filter((b) => b[B.end] > 
 // cropBar draws the crop's controls for a page whose data runs from first to
 // last, in the crop's own units. extra is more buttons; whole names the page.
 function cropBar(here, c, first, last, note, extra, whole) {
-	const unit = c.kind === 'date' ? 'days' : 'stretch of time'
 	return `<form class="rv-form pcrop" data-form="crop" data-here="${esc(here)}" data-kind="${c.kind}" data-first="${first}" data-last="${last}">
 		<label>From<input type="${c.kind}" name="from" value="${c.from}" min="${first}" max="${last}"></label>
 		<label>To<input type="${c.kind}" name="to" value="${c.to}" min="${first}" max="${last}"></label>
 		<div class="pcrop-btns">
-			<button class="btn small" type="button" data-crop="earlier" title="The same ${unit}, just before" aria-label="Earlier">◀</button>
-			<button class="btn small" type="button" data-crop="later" title="The same ${unit}, just after" aria-label="Later">▶</button>
+			<button class="btn small" type="button" data-crop="earlier" title="The same days, just before" aria-label="Earlier">◀</button>
+			<button class="btn small" type="button" data-crop="later" title="The same days, just after" aria-label="Later">▶</button>
 			${extra}
 			${c.cropped ? `<button class="btn small" type="button" data-crop="all">${whole}</button>` : ''}
 		</div>
@@ -956,7 +947,7 @@ function fullView(b) {
 				<button class="btn small" id="more" data-before="${b.more ?? ''}"${b.more ? '' : ' hidden'}>Show older entries</button>
 			</div>
 		</div>
-		<p class="muted fine">Each entry is one report from one of their computers. Details shows what the server noted about it, and Full report opens the report itself, exactly as it arrived, with every work block. Reports hold counts and times, not what was typed: the chats themselves arrive only with a project submission. Synced numbers come from the person's own computer, so they show activity and are not proof of it. A flag means a report can't be squared with the one before it: read it, then ask.</p>
+		<p class="muted fine">Each entry is one report from one of their computers. Details shows what the server noted about it, and Full report opens the report itself, exactly as it arrived, with every work block. Reports hold counts and times, not what was typed. Synced numbers come from the person's own computer, so they show activity and are not proof of it. A flag means a report can't be squared with the one before it: read it, then ask.</p>
 	</div>`
 }
 
@@ -1018,7 +1009,7 @@ async function banList() {
 	const now = bans.filter((b) => b.active)
 	const past = bans.filter((b) => !b.active)
 	return head('Bans', lookup()) + `<div class="panel">
-		<p class="muted">Every ban lasts until someone lifts it. While banned, nothing new is taken from the person: no syncs, uploads, cloud events, or submissions. They see that they are banned, but not the reason, which is for reviewers only. A banned reviewer can't review. To ban someone or lift a ban, open their account: look them up above, or choose them below. You can ban only people below your own level.</p>
+		<p class="muted">Every ban lasts until someone lifts it. While banned, nothing new is taken from the person: no syncs, uploads, or cloud events. They see that they are banned, but not the reason, which is for reviewers only. A banned reviewer can't review. To ban someone or lift a ban, open their account: look them up above, or choose them below. You can ban only people below your own level.</p>
 	</div>
 	<div class="panel">
 		<h2>In force</h2>
@@ -1028,123 +1019,13 @@ async function banList() {
 	</div>`
 }
 
-// ---- Submissions
-
-async function submissionList() {
-	const { submissions } = await api('/submissions')
-	const rows = submissions.map((x) => `<tr>
-		<td><a href="#/submission/${esc(x.id)}">${esc(x.project_name)}</a></td>
-		<td>${me.level < 2 ? `<a href="#/person/id:${x.user_id}">${esc(x.name)}</a>` : esc(x.handle ? '@' + x.handle : '')}</td>
-		<td>${esc(ago(x.received_at))}</td>
-		<td>${dur(x.witnessed_seconds)}</td><td>${dur(x.unwitnessed_seconds)}</td>
-		<td><b>${dur(x.final_seconds ?? x.credited_seconds)}</b></td>
-		<td>${x.imported ? 'imported' : esc(x.state)}</td></tr>`)
-	return head('Submissions') + `<div class="panel">
-		<p class="muted">A submission is made on the site from the records it already holds. Only time whose records reached the site within 5 minutes of when they happened is credited, less what earlier submissions of the project covered. Each one is approved, adjusted, or rejected, with a note the person reads. A reviewer can approve what was witnessed or reject a waiting submission; a neoadmin can also accept unwitnessed time, adjust what it credits, and decide again.</p>
-		<div class="table-scroll"><table class="data left stack">
-			<tr><th>Project</th><th>Person</th><th>Received</th><th>Witnessed</th><th>Unwitnessed</th><th>Credited</th><th>State</th></tr>
-			${rows.join('') || '<tr><td colspan="7" class="muted">No submissions yet.</td></tr>'}
-		</table></div>
-	</div>`
-}
-
-async function submissionPage(arg) {
-	const [id, query = ''] = arg.split('?')
-	const d = await api('/submissions/' + encodeURIComponent(id))
-	const s = d.submission
-	const all = d.records
-	const spans = [...d.witnessed, ...d.unwitnessed]
-	// A crop, to the minute, narrows the timeline and the records to its stretch.
-	const c = readCrop(query, 'datetime-local')
-	const moments = [...all.map((r) => r.t), ...spans.flat()]
-	const lowest = moments.length ? Math.min(...moments) : s.received_at, highest = moments.length ? Math.max(...moments) : s.received_at
-	const clip = (list) => list.map(([a, b]) => [Math.max(a, c.lo), Math.min(b, c.hi)]).filter(([a, b]) => b > a)
-	const witnessed = clip(d.witnessed), unwitnessed = clip(d.unwitnessed)
-	const recs = all.filter((r) => r.t >= c.lo && r.t < c.hi)
-	// Uncropped, the bar spans the counted time, so a lone record hours away,
-	// such as an old commit, doesn't squeeze the rest into a sliver. It is noted instead.
-	const t0 = c.cropped ? Math.max(c.lo, lowest) : spans.length ? Math.min(...spans.map(([a]) => a)) : recs[0]?.t ?? s.received_at
-	const t1 = Math.max(c.cropped ? Math.min(c.hi, highest) : spans.length ? Math.max(...spans.map(([, b]) => b)) : recs.at(-1)?.t ?? t0, t0 + 1)
-	const outside = c.cropped ? 0 : recs.filter((r) => r.t < t0 || r.t > t1).length
-	const secs = (list) => list.reduce((n, [a, b]) => n + (b - a) / 1000, 0)
-	const note = c.cropped
-		? `${plural(recs.length, 'record')} of ${num(all.length)}: ${dur(secs(witnessed))} witnessed, ${dur(secs(unwitnessed))} unwitnessed`
-		: 'The whole submission. Drag across the timeline to crop it.'
-	const crop = moments.length ? cropBar(`#/submission/${encodeURIComponent(id)}`, c, localMinute(lowest), localMinute(highest), note, '', 'Whole submission') : ''
-	const x = (t) => (((t - t0) / (t1 - t0)) * 100).toFixed(3)
-	const bars = (list, cls) => list.map(([a, b]) => `<span class="sub-span ${cls}" style="left:${x(a)}%;width:${Math.max(0.2, x(b) - x(a))}%"></span>`).join('')
-	const marks = recs.filter((r) => r.t >= t0 && r.t <= t1).map((r) => `<span class="sub-mark${r.human ? ' human' : ''}${r.late_ms > 300000 ? ' late' : ''}" style="left:${x(r.t)}%" title="${esc(exact(r.t))} ${esc(r.tool)} ${esc(r.event)}"></span>`).join('')
-	const late = (ms) => (ms <= 300000 ? `${Math.max(0, Math.round(ms / 1000))}s` : `<b>${dur(Math.round(ms / 1000))}</b>`)
-	const repoURL = me.level < 2 && /^github\.com\//.test(s.project_key ?? '') ? 'https://' + s.project_key : ''
-	const event = (r) => (r.sha ? `commit ${repoURL ? `<a href="${esc(repoURL)}/commit/${esc(r.sha)}" rel="nofollow noopener">` : ''}<code>${esc(r.sha.slice(0, 7))}</code>${repoURL ? '</a>' : ''}` : esc(r.event))
-	const rows = recs.map((r) => `<tr><td>${esc(exact(r.t))}</td><td>${late(r.late_ms)}</td><td>${esc(r.tool)}</td><td>${event(r)}</td><td>${esc(r.computer)}</td>
-		<td>${r.human ? `${r.real ?? 0}/${r.judged ?? 0} words${r.low ? ', low effort' : ''}` : ''}</td><td>${r.in || r.out ? `${num(r.in ?? 0)} / ${num(r.out ?? 0)}` : ''}</td><td>${r.added || r.removed ? `+${r.added ?? 0} −${r.removed ?? 0}` : ''}</td></tr>`)
-	const flags = d.flags.map((f) => `<li>${esc(f.text)}</li>`).join('')
-	const gaps = d.commit_gaps ?? []
-	// Deciding again starts from what was accepted for each gap. Adjusting can't credit accepted gap time.
-	const gapsAccepted = JSON.parse(s.gaps_accepted ?? '[]')
-	const most = s.credited_seconds + s.unwitnessed_seconds
-	return head(esc(s.project_name), `<span class="status">${esc(s.id)}</span>`) + `
-	<div class="panel">
-		<div class="sub-stats">
-			<div><span class="muted">Witnessed</span><b>${dur(s.witnessed_seconds)}</b></div>
-			<div><span class="muted">Unwitnessed</span><b>${dur(s.unwitnessed_seconds)}</b></div>
-			<div><span class="muted">In earlier submissions</span><b>${dur(s.earlier_overlap_seconds)}</b></div>
-			<div><span class="muted">Credited</span><b>${dur(s.credited_seconds)}</b></div>
-			${s.capped_seconds ? `<div><span class="muted">Over the cap</span><b>${dur(s.capped_seconds)}</b></div>` : ''}
-			<div><span class="muted">Accepted by hand</span><b>${dur(s.accepted_seconds + (s.gap_seconds ?? 0))}</b></div>
-			${s.final_seconds != null ? `<div><span class="muted">Final</span><b>${dur(s.final_seconds)}</b></div>` : ''}
-			<div><span class="muted">Prompts</span><b>${num(s.prompts)}</b></div>
-		</div>
-		${me.level < 2 ? `<p class="muted">By <a href="#/person/id:${s.user_id}">${esc(s.name)}</a>, ${esc(s.project_key)}, received ${esc(when(s.received_at))}.</p>` : `<p class="muted">Received ${esc(when(s.received_at))}.</p>`}
-		${s.submitter_note ? `<p>Their note: ${esc(s.submitter_note)}</p>` : ''}
-		${s.state !== 'pending' ? `<p><span class="status">${esc(s.state[0].toUpperCase() + s.state.slice(1))}</span>${me.level < 2 && s.decided_by ? ` by ${esc(s.decided_by)}` : ''}${s.decided_at ? `, ${esc(when(s.decided_at))}` : ''}${s.note ? `: ${esc(s.note)}` : ''}</p>` : ''}
-	</div>
-	${flags ? `<div class="panel"><h2>Look at first</h2><ul>${flags}</ul></div>` : ''}
-	${gaps.length ? `<div class="panel">
-		<h2>Gaps with commits <small>${plural(gaps.length, 'gap')}</small></h2>
-		<p class="muted">Time between credited stretches that holds commits GitHub has, dated as claimed: perhaps coding by hand between prompts. It earns nothing unless a neoadmin accepts it when approving, up to ${dur(2 * 3600)} a gap. A commit's time is set by its author, and anyone's public commits can be named, so check the account is theirs and weigh it with the rest.</p>
-		<div class="table-scroll"><table class="data left stack">
-			<tr><th>Gap</th><th>Length</th><th>Commits</th></tr>
-			${gaps.map((g, i) => `<tr><td>${i + 1}. ${esc(exact(g.start))} to ${esc(exact(g.end))}</td><td>${dur(Math.round((g.end - g.start) / 1000))}</td><td>${g.commits.map((c) => `${esc(exact(c.t))} ${c.sha ? (repoURL ? `<a href="${esc(repoURL)}/commit/${esc(c.sha)}" rel="nofollow noopener"><code>${esc(c.sha.slice(0, 7))}</code></a>` : `<code>${esc(c.sha.slice(0, 7))}</code>`) : ''} +${num(c.added)} −${num(c.removed)}${c.sha ? ` ${c.login ? `by <a href="https://github.com/${esc(c.login)}" rel="nofollow noopener" target="_blank">@${esc(c.login)}</a>` : '<span class="muted">by no linked account</span>'}` : ''}`).join('<br>')}</td></tr>`).join('')}
-		</table></div>
-	</div>` : ''}
-	<div class="panel">
-		<h2>Timeline</h2>
-		${crop}
-		<div class="sub-line" data-t0="${t0}" data-t1="${t1}" title="Drag across to crop to that stretch">${bars(unwitnessed, 'unwitnessed')}${bars(witnessed, 'witnessed')}${marks}</div>
-		<p class="muted fine">${esc(exact(t0))} to ${esc(exact(t1))}. Green is witnessed time, amber unwitnessed. Tall marks are prompts; red marks reached the site more than 5 minutes late.${outside ? ` ${plural(outside, 'record')} outside this stretch ${outside === 1 ? 'is' : 'are'} listed below but not drawn.` : ''}</p>
-	</div>
-	${!s.imported && (me.level < 2 || s.state === 'pending') ? `<div class="panel" data-area>
-		<h2>${s.state === 'pending' ? 'Decide' : 'Decide again'}</h2>
-		<form class="rv-form" data-form="decide" data-id="${esc(s.id)}">
-			${me.level < 2 ? `${s.unwitnessed_seconds > 0 ? `<label>Unwitnessed seconds to accept, if approved, at most ${num(s.unwitnessed_seconds)}<input name="accept" type="number" min="0" max="${s.unwitnessed_seconds}" value="${s.state === 'pending' ? 0 : s.accepted_seconds}"></label>` : ''}
-			${gaps.map((g, i) => `<label>Gap ${i + 1}, seconds to accept if approved, at most ${num(g.most)}<input name="gap-${i}" type="number" min="0" max="${g.most}" value="${gapsAccepted[i] ?? 0}"></label>`).join('')}
-			<label>Seconds in all, if adjusted, at most ${num(most)}<input name="total" type="number" min="0" max="${most}" value="${Math.min(s.final_seconds ?? s.credited_seconds, most)}"></label>` : ''}
-			<label class="grow">Why, for the person to read<input name="note" placeholder="Such as matching commits" required></label>
-			<div class="rv-actions">
-				<button class="btn primary" name="action" value="approve">Approve</button>
-				${me.level < 2 ? '<button class="btn" name="action" value="adjust">Adjust</button>' : ''}
-				<button class="btn danger" name="action" value="reject" formnovalidate>Reject</button>
-			</div>
-		</form>
-		<p class="muted fine">Approving credits what was witnessed${me.level < 2 ? ', plus any unwitnessed time and gaps with commits accepted. Adjusting sets what it credits in all' : ''}. Rejecting credits nothing; its time still counts as covered, so submitting again won't credit it.</p>
-		<p class="msg" hidden></p>
-	</div>` : ''}
-	<div class="panel">
-		<h2>Every record${c.cropped ? ` <small>${plural(recs.length, 'record')} in the crop, of ${num(all.length)}</small>` : ''}</h2>
-		<div class="table-scroll tall"><table class="data left stack">
-			<tr><th>When</th><th>Arrived after</th><th>Tool</th><th>Event</th><th>Computer</th><th>Prompt</th><th>Tokens in / out</th><th>Lines</th></tr>
-			${rows.join('')}
-		</table></div>
-	</div>`
-}
-
 // ---- API keys
 
 async function keyList() {
 	const { keys } = await api('/keys')
-	const all = [['GET /api/review/person?slack=U012ABCDEF', me.level === 2 ? "A person's total and work-block timeline for each project." : "Everything about a person: computers, projects, bans, and a page of their log. Also takes id, show, computer, and before."]]
+	const all = [
+		['GET /api/review/stats?slack=U012ABCDEF&start=…&end=…', `For programs that credit hours: a person's witnessed and unwitnessed time, in total, per project, and per day between two dates (both optional), and their ban.${me.level === 2 ? ' Project names only.' : ''} Also takes project and flags=true.`],
+		['GET /api/review/person?slack=U012ABCDEF', me.level === 2 ? "A person's total and work-block timeline for each project." : "Everything about a person: computers, projects, bans, and a page of their log. Also takes id, show, computer, and before."]]
 	if (me.level < 2) all.push(
 		['GET /api/review/people', 'Everyone with an account.'],
 		['GET /api/review/log?slack=…', "A person's whole log."],
@@ -1173,7 +1054,7 @@ async function keyList() {
 	<div class="panel">
 		<h2>Using a key</h2>
 		<p class="muted">Send it as a bearer token. Answers are JSON, and a refusal is plain text with its reason.</p>
-		<div class="cmdbox"><div class="cmd"><code>curl -H "Authorization: Bearer $KEY" "${esc(location.origin)}/api/review/person?slack=U012ABCDEF"</code><button class="copy" type="button">Copy</button></div></div>
+		<div class="cmdbox"><div class="cmd"><code>curl -H "Authorization: Bearer $KEY" "${esc(location.origin)}/api/review/stats?slack=U012ABCDEF&amp;start=2026-01-01&amp;end=2026-03-31"</code><button class="copy" type="button">Copy</button></div></div>
 		<div class="table-scroll"><table class="data left api">
 			<tr><th>Call</th><th>What it does</th></tr>
 			${all.map(([call, what]) => `<tr><td>${esc(call)}</td><td>${esc(what)}</td></tr>`).join('')}
@@ -1184,7 +1065,7 @@ async function keyList() {
 
 // ---- Getting around
 
-const ROUTES = { home, people, person, team, bans: banList, keys: keyList, submissions: submissionList, submission: submissionPage }
+const ROUTES = { home, people, person, team, bans: banList, keys: keyList }
 let turn = 0
 // What a page draws once it is on screen, such as a project's chart.
 let afterDraw = null
@@ -1195,9 +1076,9 @@ async function route() {
 	const mine = ++turn
 	const [name = '', ...rest] = location.hash.replace(/^#\/?/, '').split('/')
 	const arg = decodeURIComponent(rest.join('/'))
-	const page = !(name in ROUTES) || (name === 'people' && me.level === 2) || ((name === 'person' || name === 'submission') && !arg) ? 'home' : name
+	const page = !(name in ROUTES) || (name === 'people' && me.level === 2) || (name === 'person' && !arg) ? 'home' : name
 	// A person is under People for those who have the list, and under Home for a reviewer.
-	const marked = page === 'submission' ? 'submissions' : page !== 'person' ? page : me.level === 2 ? 'home' : 'people'
+	const marked = page !== 'person' ? page : me.level === 2 ? 'home' : 'people'
 	for (const a of document.querySelectorAll('.rv-nav a')) {
 		if (a.dataset.page === marked) a.setAttribute('aria-current', 'page')
 		else a.removeAttribute('aria-current')
@@ -1252,14 +1133,6 @@ view.addEventListener('submit', (e) => {
 	}
 	if (kind === 'add') act(form, () => send('POST', '/team', fields))
 	if (kind === 'ban') act(form, () => send('POST', '/bans', fields))
-	if (kind === 'decide') {
-		// A browser that doesn't say which button was pressed decides nothing.
-		const action = e.submitter?.value
-		if (!action) return say(form.closest('[data-area]').querySelector('.msg'), 'Press Approve, Adjust, or Reject.')
-		const seconds = action === 'approve' ? Number(fields.accept ?? 0) : action === 'adjust' ? Number(fields.total) : 0
-		const gaps = Object.keys(fields).filter((k) => k.startsWith('gap-')).sort((a, b) => a.slice(4) - b.slice(4)).map((k) => Number(fields[k] || 0))
-		act(form, () => send('POST', `/submissions/${encodeURIComponent(form.dataset.id)}/decide`, { action, seconds, gaps, note: fields.note }))
-	}
 	if (kind === 'key') {
 		act(form, async () => {
 			const made = await send('POST', '/keys', fields)
@@ -1292,12 +1165,6 @@ view.addEventListener('click', async (e) => {
 	if ('crop' in d) {
 		const form = btn.form, f = form.dataset
 		const from = form.elements.from.value || f.first, to = form.elements.to.value || f.last
-		if (f.kind !== 'date') {
-			const a = new Date(from).getTime(), b = new Date(to).getTime(), len = b - a + 60_000
-			if (d.crop === 'all') cropTo(form, '', '')
-			else cropTo(form, localMinute(a + (d.crop === 'earlier' ? -len : len)), localMinute(b + (d.crop === 'earlier' ? -len : len)))
-			return
-		}
 		const len = Math.round((dayAt(to) - dayAt(from)) / DAY_MS) + 1
 		const shift = (k) => cropTo(form, localDay(dayAt(from, k)), localDay(dayAt(to, k)))
 		if (d.crop === 'earlier') shift(-len)
@@ -1343,36 +1210,6 @@ function cropTo(form, from, to) {
 	keepScroll = true
 	location.replace(form.dataset.here + (q.size ? '?' + q : ''))
 }
-view.addEventListener('pointerdown', (e) => {
-	const line = e.target.closest('.sub-line')
-	const form = document.querySelector('[data-form="crop"]')
-	if (!line || !form || e.button) return
-	const box = line.getBoundingClientRect()
-	const at = (x) => Math.min(1, Math.max(0, (x - box.left) / box.width))
-	const start = at(e.clientX)
-	const sel = document.createElement('span')
-	sel.className = 'sub-sel'
-	line.append(sel)
-	line.setPointerCapture(e.pointerId)
-	const show = (x) => {
-		const a = Math.min(start, at(x)), b = Math.max(start, at(x))
-		sel.style.left = `${a * 100}%`
-		sel.style.width = `${(b - a) * 100}%`
-		return [a, b]
-	}
-	show(e.clientX)
-	const move = (m) => show(m.clientX)
-	line.addEventListener('pointermove', move)
-	line.addEventListener('pointerup', (u) => {
-		line.removeEventListener('pointermove', move)
-		const [a, b] = show(u.clientX)
-		sel.remove()
-		// A click, not a drag, crops nothing.
-		if ((b - a) * box.width < 4) return
-		const t0 = Number(line.dataset.t0), t1 = Number(line.dataset.t1)
-		cropTo(form, localMinute(t0 + a * (t1 - t0)), localMinute(t0 + b * (t1 - t0)))
-	}, { once: true })
-})
 view.addEventListener('change', (e) => {
 	const form = e.target.closest('[data-form="crop"]')
 	if (form) cropTo(form, form.elements.from.value, form.elements.to.value)
@@ -1395,12 +1232,6 @@ view.addEventListener('input', (e) => {
 	if (form) find(form)
 })
 view.addEventListener('keydown', (e) => {
-	// Enter in the decide form would press its first button, Approve, whatever
-	// was typed for Adjust. A decision takes a button pressed on purpose.
-	if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.closest('[data-form="decide"]')) {
-		e.preventDefault()
-		return say(e.target.closest('[data-area]').querySelector('.msg'), 'Press Approve, Adjust, or Reject.')
-	}
 	const form = e.target.closest?.('[data-form="find"]')
 	const box = form?.querySelector('.rv-found')
 	if (!box) return

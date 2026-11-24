@@ -228,15 +228,6 @@ table.data th { color: var(--muted); font-weight: 500; font-size: 13px; }
 .tag { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 5px; background: var(--panel-2); color: var(--muted); margin-left: 4px; }
 .tag.ok { background: var(--good-soft); color: var(--good); }
 td > .tag:first-child { margin-left: 0; }
-/* Where something stands, such as a submission in review. It looks like the review app's badges. */
-.state { display: inline-block; padding: 1px 8px; border: 1px solid var(--line-2); border-radius: 5px; font-size: 12px; font-weight: 600; line-height: 1.6; color: var(--muted); white-space: nowrap; }
-.state.good { border-color: var(--good-line); background: var(--good-soft); color: var(--good); }
-.state.bad { border-color: var(--bad-line); background: var(--bad-soft); color: var(--bad); }
-.state.note { border-color: var(--accent-line); background: var(--accent-soft); color: var(--accent); }
-.state + .when { margin-left: 6px; font-size: 12px; color: var(--muted); }
-/* A submission's notes are sentences, so they wrap and read from the left. */
-#submissions th:last-child, #submissions td:last-child, #submissions th:nth-child(2), #submissions td:nth-child(2) { text-align: left; }
-#submissions td:last-child { min-width: 220px; white-space: normal; }
 .tag .ico { width: 12px; height: 12px; vertical-align: -2px; margin-right: 3px; }
 .fine { font-size: 13px; }
 .msg { margin: 14px 0 0; padding: 10px 14px; border-radius: 8px; font-size: 14px; text-align: left; }
