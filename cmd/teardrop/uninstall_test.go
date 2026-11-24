@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"testing"
 )
 
@@ -67,16 +68,26 @@ func TestRemoveInstallerLines(t *testing.T) {
 	}
 }
 
-// Git Bash's install.sh writes the folder its own way, /c/Users/ada/bin.
-func TestSameDirGitBash(t *testing.T) {
-	if runtime.GOOS != "windows" {
-		t.Skip("Git Bash paths are Windows paths")
+// Git Bash, Cygwin and MSYS2 write the folder as their shell sees it:
+// /c/Users/ada/bin, or /home/ada/bin under the install's own root.
+func TestUnixToWindows(t *testing.T) {
+	for _, c := range []struct{ written, profile, want string }{
+		{"/c/Users/ada/bin", `C:\Users\ada\.bashrc`, `C:\Users\ada\bin`},
+		{"/home/ada/.local/bin", `C:\cygwin64\home\ada\.bashrc`, `C:\cygwin64\home\ada\.local\bin`},
+		{"/home/ada/.local/bin", `C:\msys64\home\ada\.bash_profile`, `C:\msys64\home\ada\.local\bin`},
+		// Git Bash's own /home is somewhere else, so such a line isn't read as a Windows folder.
+		{"/home/ada/bin", `C:\Users\ada\.bashrc`, "/home/ada/bin"},
+		{`C:\Users\ada\bin`, `C:\Users\ada\.bashrc`, `C:\Users\ada\bin`},
+	} {
+		if got := unixToWindows(c.written, c.profile); got != c.want {
+			t.Errorf("unixToWindows(%q, %q) = %q, want %q", c.written, c.profile, got, c.want)
+		}
 	}
-	if !sameDir("/c/Users/ada/bin", `C:\Users\ada\bin`) || sameDir("/c/Users/ada/bin2", `C:\Users\ada\bin`) {
-		t.Error("a Git Bash line for the folder doesn't match, or another folder's does")
-	}
-	home, _ := os.UserHomeDir()
-	if p := shellProfiles(); len(p) == 0 || p[0] != filepath.Join(home, ".bashrc") {
-		t.Errorf("profiles on Windows: %v, want Git Bash's ~/.bashrc", p)
+	if runtime.GOOS == "windows" {
+		home, _ := os.UserHomeDir()
+		want := filepath.Join(`C:\cygwin64\home`, filepath.Base(home), ".bashrc")
+		if p := shellProfiles(); !slices.Contains(p, filepath.Join(home, ".bashrc")) || !slices.Contains(p, want) {
+			t.Errorf("profiles on Windows: %v, want Git Bash's and Cygwin's ~/.bashrc", p)
+		}
 	}
 }

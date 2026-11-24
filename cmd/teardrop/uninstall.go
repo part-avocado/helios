@@ -109,8 +109,13 @@ func runUninstall(args []string) {
 func shellProfiles() []string {
 	home, _ := os.UserHomeDir()
 	if runtime.GOOS == "windows" {
-		// Git Bash, where install.sh also runs.
-		return []string{filepath.Join(home, ".bashrc"), filepath.Join(home, ".bash_profile")}
+		// install.sh also runs in Git Bash, whose home is this one, and in
+		// Cygwin and MSYS2, whose homes are under their own roots.
+		var out []string
+		for _, h := range []string{home, `C:\cygwin64\home\` + filepath.Base(home), `C:\cygwin\home\` + filepath.Base(home), `C:\msys64\home\` + filepath.Base(home)} {
+			out = append(out, filepath.Join(h, ".bashrc"), filepath.Join(h, ".bash_profile"))
+		}
+		return out
 	}
 	zdot := os.Getenv("ZDOTDIR")
 	if zdot == "" {
@@ -152,7 +157,11 @@ func removeInstallerLines(path, dir string) (bool, error) {
 		if n := strings.IndexByte(line, '\n'); n >= 0 {
 			line = line[:n+1]
 		}
-		if !sameDir(installerDir(line), dir) {
+		written := installerDir(line)
+		if runtime.GOOS == "windows" {
+			written = unixToWindows(written, path)
+		}
+		if !sameDir(written, dir) {
 			from = end // another install's line; leave it
 			continue
 		}
@@ -187,16 +196,27 @@ func sameDir(written, dir string) bool {
 	if written == "" {
 		return false
 	}
-	// Git Bash writes C:\Users\ada\bin as /c/Users/ada/bin.
-	if runtime.GOOS == "windows" && len(written) > 2 && written[0] == '/' && written[2] == '/' {
-		written = strings.ToUpper(written[1:2]) + ":" + filepath.FromSlash(written[2:])
-	}
 	if filepath.Clean(written) == filepath.Clean(dir) {
 		return true
 	}
 	a, err1 := filepath.EvalSymlinks(written)
 	b, err2 := filepath.EvalSymlinks(dir)
 	return err1 == nil && err2 == nil && a == b
+}
+
+// unixToWindows turns a folder a Unix shell on Windows wrote into profile
+// into the Windows folder it is: /c/Users/ada/bin, as Git Bash writes it, is
+// C:\Users\ada\bin; /home/ada/bin, in a profile under a Cygwin or MSYS2 root
+// such as C:\cygwin64\home\ada, is under that root. Anything else is left
+// as it is.
+func unixToWindows(written, profile string) string {
+	if len(written) > 2 && written[0] == '/' && written[2] == '/' && written[1] != '/' {
+		return strings.ToUpper(written[1:2]) + ":" + strings.ReplaceAll(written[2:], "/", `\`)
+	}
+	if i := strings.Index(strings.ToLower(profile), `\home\`); strings.HasPrefix(written, "/home/") && i > 0 {
+		return profile[:i] + strings.ReplaceAll(written, "/", `\`)
+	}
+	return written
 }
 
 // removeWindowsPath takes dir out of the user's Path, where install.ps1 put it.

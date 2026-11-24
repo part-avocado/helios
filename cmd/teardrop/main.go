@@ -25,6 +25,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -387,7 +388,9 @@ func resolveProject(cwd, gitURL string) (timeline.Project, string) {
 // nameProject names the project in the folder root by its git remote, when it has one.
 func nameProject(root, gitURL string) timeline.Project {
 	if dir, ok := localRemote(gitURL); ok {
-		return timeline.Project{Key: folderKey(dir), Name: filepath.Base(dir)}
+		// Named after its key, so the home folder itself is "home", not the account.
+		key := folderKey(dir)
+		return timeline.Project{Key: key, Name: path.Base(filepath.ToSlash(key))}
 	}
 	if gitURL != "" {
 		key := normalizeRemote(gitURL)
@@ -423,6 +426,10 @@ func localRemote(u string) (string, bool) {
 	u = strings.TrimSpace(u)
 	// ~/repos/x.git, which git takes, and a relayed event's key, already keyed from its computer's home.
 	if rest, ok := strings.CutPrefix(u, "~/"); ok {
+		// One that climbs out of home names no folder under it; it is keyed as written.
+		if r := path.Clean(filepath.ToSlash(rest)); r == ".." || strings.HasPrefix(r, "../") {
+			return "", false
+		}
 		home, _ := os.UserHomeDir()
 		if home == "" {
 			return strings.TrimSuffix(u, ".git"), true
