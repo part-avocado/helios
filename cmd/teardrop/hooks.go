@@ -194,6 +194,10 @@ func runHook(args []string) {
 		if err := queueRelay(relayOutbox, ev); err != nil {
 			fmt.Fprintln(os.Stderr, "teardrop hook:", err)
 		}
+		// There is no sync in the cloud to send commits, so the turn's end does.
+		if ended {
+			queueRelayCommits(ev.Cwd, ev.Git, time.Now())
+		}
 		relaySoon(ended)
 		return
 	}

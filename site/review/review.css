@@ -216,7 +216,7 @@ table.people tr.is-banned td:first-child { box-shadow: inset 3px 0 0 var(--bad);
 .act-pick button:hover { border-color: var(--line-2); color: var(--text); }
 .act-pick button[aria-selected="true"] { border-color: var(--accent-line); background: var(--accent-soft); color: var(--text); }
 .act-facts { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 1px; margin-bottom: 16px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--line); }
-.act-facts > div { display: grid; gap: 2px; padding: 10px 14px; background: var(--panel); }
+.act-facts > div { display: grid; align-content: start; gap: 2px; padding: 10px 14px; background: var(--panel); }
 .act-facts span { font-size: 12px; color: var(--muted); }
 .act-facts b { font-size: 17px; font-variant-numeric: tabular-nums; }
 .act-facts small { display: block; font-size: 12px; font-weight: 400; color: var(--faint); }
