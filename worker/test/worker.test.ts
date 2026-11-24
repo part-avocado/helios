@@ -274,10 +274,13 @@ test('an account past its upload limits is told to wait, and its records are kep
 		// Older records have their own count: four of these five are kept before it is reached.
 		const day = 86400_000
 		await refused(await post([0, 1, 2, 3, 4].map((i) => line(now - 3 * day + i, 10 + i))), /4 older records today/, 86400)
-		// Uploads: five at once, then one a second. This is the fourth; the sixth is refused.
-		assert.equal((await post([])).status, 200)
-		assert.equal((await post([])).status, 200)
-		await refused(await post([]), /too many uploads at once/, 2)
+		// Uploads: five at once, then one a second, so of six sent at once one is
+		// refused, however long the batches above took.
+		const burst = await Promise.all([0, 1, 2, 3, 4, 5].map(() => post([])))
+		assert.deepEqual(burst.filter((r) => r.status !== 200 && r.status !== 429).map((r) => r.status), [])
+		const over = burst.find((r) => r.status === 429)
+		assert.ok(over, 'one of six uploads at once is refused')
+		await refused(over, /too many uploads at once/, 2)
 
 		const id = (await env.DB.prepare('SELECT id FROM users WHERE slack_id = ?').bind('UDEV').first<{ id: number }>())!.id
 		let text = ''
