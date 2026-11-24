@@ -30,7 +30,12 @@ import (
 const secretPrompt = "please refactor the parser module and explain every change carefully marmalade"
 
 func TestE2E(t *testing.T) {
-	root := t.TempDir()
+	// Resolved, as setup resolves the binary it installs: macOS's temp folder
+	// is under a symlink, and Windows's has a short 8.3 name.
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	exe := filepath.Join(root, "bin", "teardrop")
 	if runtime.GOOS == "windows" {
 		exe += ".exe"
