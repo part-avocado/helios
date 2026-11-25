@@ -9,7 +9,6 @@
 | `teardrop doctor` | Check everything that decides whether your time counts (this binary, the site and key, the clock, each tool's hooks, records waiting to send, the last background error, and updates) and say how to fix each problem. Exits 1 when something needs fixing. It never prints your key. |
 | `teardrop update` | Download the latest teardrop, check it against the release's checksums, replace this one with it, and run setup again. `-check` only says whether a newer version is out; `teardrop update v0.5.0` installs that version, even if it is older. `-auto on` or `-auto off` turns installing new releases by itself on or off. |
 | `teardrop dashboard` | Open the live dashboard on localhost. |
-| `teardrop calibrate` | Show how the time model's caps treat your logs (`-since 30d`). Uploads nothing. |
 | `teardrop hook -check <tool>` | Print the record a hook payload on stdin would make, and write nothing. |
 | `teardrop export` | Write a signed report to upload under Settings on the website (`-o file`, `-since`, default 365d). |
 | `teardrop login` | Connect this computer by typing a code on the site instead of copying the key (`-server URL` once; `-no-open` prints the address instead of opening a browser). |

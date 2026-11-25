@@ -64,7 +64,6 @@
 	<a href="#account">Your account</a>
 	<a href="#profile">Public profile</a>
 	<a href="#verification-keys">Verification keys</a>
-	<a href="#what-counts">What counts</a>
 	<a href="#tokens">Tokens</a>
 	<div class="group">Editors &amp; agents</div>
 	<a href="#claude-code">Claude Code</a>
@@ -151,7 +150,7 @@
 		<tr><td>ENGAGED</td><td>Time you were plausibly involved. This is the number that matters.</td></tr>
 		<tr><td>SPAN / SESSION TIME</td><td>Wall-clock time from first to last activity, for comparison.</td></tr>
 		<tr><td>PROMPTS</td><td>Prompts you sent that counted.</td></tr>
-		<tr><td>SKIPPED</td><td>Prompts that earned no time. Under the table, the report says how many each check below skipped.</td></tr>
+		<tr><td>SKIPPED</td><td>Prompts that earned no time.</td></tr>
 		<tr><td>TOKENS IN/OUT</td><td>Tokens the model read (cached ones included) and wrote.</td></tr>
 		<tr><td>TOOLS</td><td>Which AI tools you used in that block.</td></tr>
 	</table>
@@ -167,20 +166,20 @@
 		<li>Run the command the dashboard shows, then type the code your terminal prints on the site. That connects this computer to your account; do the same on each computer you code on.</li>
 		<li>Keep working. The page fills in as soon as the first sync arrives, and teardrop syncs again each time a reply finishes in Claude Code or Amp, or you stop one. Run <code>teardrop sync</code> to update it right away.</li>
 	</ol>
-	<p>The <a href="projects.html">Projects</a> page, linked at the top of the site, lists every project you've worked on; open one to see that project on its own.</p>
+	<p>The <a href="projects.html">Projects</a> page lists every project you've worked on; open one to see that project on its own. A project's page also has its settings: <strong>Public</strong>, whether your <a href="#profile">public profile</a> names it, and the GitHub repositories linked to it, which you can add or remove.</p>
 	<p><a href="settings.html">Settings</a> has the rest:</p>
 	<table>
 		<tr><th>Pane</th><th>What it's for</th></tr>
-		<tr><td>Setup</td><td>What to run to connect another computer; your sync keys, one per computer, each of which you can revoke alone; and a button to make a new account key, for Amp cloud threads, if it gets out.</td></tr>
+		<tr><td>Setup</td><td>What to run to connect another computer, and your sync keys. A sync key only uploads stats: each computer gets its own, and Amp cloud threads get one named "Amp cloud". Revoke one and only it stops working.</td></tr>
 		<tr><td>Computers</td><td>Each computer that syncs to you and when it last did. Remove one to drop its hours.</td></tr>
 		<tr><td>Data</td><td>Upload a stats file from a computer that can't reach the website (make it with <code>teardrop export -o stats.json</code>, and upload it within 7 days), or download a copy of everything the site holds about you.</td></tr>
 		<tr><td>Account</td><td>Your name, Slack ID, and member-since date from Hack Club Auth, sign out, and deleting your account. Deleting removes every computer and all of your stats from the site.</td></tr>
 	</table>
-	<p>You can sign out from the menu at the top right of any page. A computer syncs to one account. To move it to another, remove it under Computers first.</p>
+	<p>You can sign out from the sidebar, or on a narrow window from the menu at the top right. A computer syncs to one account. To move it to another, remove it under Computers first.</p>
 	<h3>On your computer, without an account</h3>
 	<p>Run <code>teardrop dashboard</code> to open the same charts with live data from this computer, refreshed every 30 seconds. It runs on <code>localhost</code> only and refuses requests from other sites, so your stats never leave your computer.</p>
 	<h3 id="profile">Your public profile</h3>
-	<p>Every account has a public profile at <code>/@handle</code>, which anyone can open without signing in. It shows your handle, the month you joined, your hours in the past year, a year of days, and your projects. It never shows your name, your Slack ID, or a folder on your computer. A project that is a repository on a public host, such as <code>github.com/you/site</code>, is named and linked; any other project is only counted, as one of your other projects. Under Settings, Profile, you can change your handle, hide or name each project, or make the profile private. Settings, Profile also has a badge of your hours to paste into a README, linked to your profile. A private profile, like a banned or deleted account, answers "no such profile", so its address doesn't say that the account exists.</p>
+	<p>Every account has a public profile at <code>/@handle</code>, which anyone can open without signing in. It shows your handle, the month you joined, your hours in the past year, a year of days, and your projects. It never shows your name, your Slack ID, or a folder on your computer. A project that is a repository on a public host, such as <code>github.com/you/site</code>, is public by default, named and linked to its repositories; any other project is only counted, as one of your other projects, until you make it public. Turn <strong>Public</strong> on or off on each project's page. Under Settings, Profile, you can change your handle or make the whole profile private. Settings, Profile also has a badge of your hours to paste into a README, linked to your profile. A private profile, like a banned or deleted account, answers "no such profile", so its address doesn't say that the account exists.</p>
 	<p>Each account starts with a neutral handle, such as <code>u-3f9a0c12b4d1</code>, never one made from your name. When you change it, the old address stops working.</p>
 	<h3 id="verification-keys">Verification keys</h3>
 	<p>Every sync and export carries a verification key: an Ed25519 signature, made by your account, over the report's numbers, the time it was made, and the time it expires. Change one minute of engaged time, the account, or a date, and the key no longer matches. The website refuses a report that:</p>
@@ -190,18 +189,7 @@
 		<li>claims to be made in the future, or contains activity after the time it was made.</li>
 	</ul>
 	<p>Each computer's key is created the first time it syncs or exports and kept in teardrop's data folder as <code>account.key</code>. Settings lists your computers by the ID of that key, such as <code>td-4283292a8f76</code>.</p>
-	<div class="callout warning"><p class="callout-title"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"/></svg>Warning</p><p>Verification proves a file wasn't edited after <code>teardrop export</code> made it. Because the account key lives on your computer, a file alone can't prove the numbers are real. For hours that count, <a href="#server">sync</a>: the site marks as witnessed only time whose records reached it as it happened.</p></div>
-
-	<h2 id="what-counts">What counts</h2>
-	<p>teardrop counts the time you spend working with your AI tools: writing prompts, reading replies, and steering the agent. An agent left running on its own doesn't earn time, and parallel sessions on one project count once. Prompts that don't reflect real work aren't counted; they're listed as <strong>SKIPPED</strong>, with how many each of these checks skipped:</p>
-	<ul>
-		<li><strong>Keyboard mashing.</strong> A prompt where more than half the words look typed at random rather than written: no vowels, one key held down, a few keys over and over, or letters in an order no language uses. Words in any language count as writing, with or without their accents, and so do code and file names.</li>
-		<li><strong>Repeats.</strong> Asking for nearly the same thing a third time within your last 5 prompts. The first two asks count.</li>
-		<li><strong>Steering only.</strong> A third prompt in a row that only steers, such as "continue", "yes", "fix it", or "still broken". The first two count, and any prompt that asks for something new starts over.</li>
-	</ul>
-	<p>The report says how many prompts each check skipped, not which prompts.</p>
-	<p>The rules, applied to each session's prompts and agent output in time order: before a prompt, the last 5 minutes of the gap count (reading the reply, writing the prompt); while the agent works, the gap counts for up to 5 minutes after your last prompt: the first 3 minutes in full and the next 2 at half, so a prompt that starts a long agent run earns 4 minutes at most. Work blocks closer than 15 minutes are shown as one. Time between prompts beyond those caps isn't counted, and commits earn no time by themselves. Reviewers see your commits, and whether GitHub has them as you claim, beside your time. Your site stamps each day's totals with the version of these rules (currently 2), and keeps every record, so a day can be counted again if the rules change.</p>
-	<p><code>teardrop calibrate</code> shows how the caps treat your own logs: how long your gaps before prompts and before agent output are, how many run past the caps, and your engaged total under other caps. It reads only your computer's logs and uploads nothing. Two things differ between your site and the local count: time on two computers at once counts once on your site, and a Claude Code reply you interrupt runs no hook, so its end reaches your site late and up to 4 minutes of it is unwitnessed.</p>
+	<div class="callout warning"><p class="callout-title"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"/></svg>Warning</p><p>Verification proves a file wasn't edited after <code>teardrop export</code> made it. Because the account key lives on your computer, a file alone can't prove the numbers are real. For hours that count, <a href="#server">sync</a>.</p></div>
 
 	<h2 id="tokens">Tokens</h2>
 	<p>Token counts come from the usage records Claude Code and Codex save with each response. A Claude Code response that's written several times, or copied into a resumed session, counts once. Codex counts are taken from the increase in its running totals. Amp counts come from the usage Amp hands the teardrop plugin when a turn ends, so they start with teardrop v0.6.0: Amp turns recorded before that show no tokens.</p>
@@ -220,7 +208,7 @@
 	<p>Threads you start in the Amp app or on ampcode.com run in Amp's cloud, not on your computer, so that plugin can't see them. A second plugin, <a href="https://github.com/part-avocado/teardrop/blob/main/amp/teardrop-cloud.ts"><code>teardrop-cloud.ts</code></a>, counts them. It goes in your personal Amp plugins, which Amp loads in every cloud thread.</p>
 	<ol>
 		<li>On your teardrop site, open Settings, Setup, and choose Amp under “Check your tools”.</li>
-		<li>Paste the prompt shown there into any Amp thread. Amp adds the plugin and two values to its Secrets &amp; Env Vars settings: <code>TEARDROP_SERVER</code>, your site's address, and <code>TEARDROP_KEY</code>, your sync key. Amp asks you for the key in a private dialog, so it stays out of the thread.</li>
+		<li>Paste the prompt shown there into any Amp thread. Amp adds the plugin and two values to its Secrets &amp; Env Vars settings: <code>TEARDROP_SERVER</code>, your site's address, and <code>TEARDROP_KEY</code>, a sync key. Make it with <strong>Make a key for Amp</strong> under the prompt; it shows once, and is listed under your sync keys as "Amp cloud". Amp asks you for the key in a private dialog, so it stays out of the thread.</li>
 	</ol>
 	<p>In a cloud thread, the plugin downloads teardrop, checks it against the release's checksum, and runs it when you send a prompt and when Amp finishes. Each run sends your site one line: the time, thread, folder, repository, and the prompt's word counts and fingerprint, never its text. When Amp finishes, the line also holds the tokens the turn used and the lines its file edits added and removed, never the code. Your site keeps these lines for a year. At the end of each turn teardrop also sends your commits in the thread's repository, as <code>teardrop sync</code> does on a computer, so they show in the review app's graphs and can be checked against GitHub.</p>
 	<p>No computer of yours is needed. When Amp finishes a turn or you stop it, the teardrop in that thread reads all of your cloud lines back from your site, counts them with the same rules as everything else, and syncs the result. Threads that ran side by side are counted together, so their overlap counts once. Your cloud threads show up as one entry under Settings, Computers, named “Amp cloud threads”.</p>
@@ -245,7 +233,7 @@
 		<tr><td><code>prompt</code></td><td>For <code>prompt</code>: scored for effort and repeats on the computer, then thrown away. Its text is never stored or sent.</td></tr>
 		<tr><td><code>tokens_in</code>, <code>tokens_out</code>, <code>lines_added</code>, <code>lines_removed</code></td><td>Optional, on <code>turn_end</code> or <code>edit</code>.</td></tr>
 	</table>
-	<p>teardrop always exits 0 and prints nothing, so it never gets in the tool's way. It writes the event to the local journal, and, once the computer is connected, sends it to your site as it happens. Your site credits only time whose records reached it within 5 minutes of when they happened. <code>teardrop hook -check &lt;tool&gt;</code> prints the record a payload would make and writes nothing, for testing an adapter.</p>
+	<p>teardrop always exits 0 and prints nothing, so it never gets in the tool's way. It writes the event to the local journal, and, once the computer is connected, sends it to your site as it happens. <code>teardrop hook -check &lt;tool&gt;</code> prints the record a payload would make and writes nothing, for testing an adapter.</p>
 	<p>For a tool with a hooks file in Claude Code's shape, point its prompt and stop hooks at <code>teardrop hook mytool</code>. For a tool with plugins, run the same command from the plugin, as teardrop's own Amp plugin does with <code>teardrop hook amp</code>.</p>
 
 	<h2 id="lines">Lines of code</h2>
@@ -262,7 +250,6 @@
 		<tr><td><code>teardrop doctor</code></td><td>Check everything that decides whether your time counts (this binary, the site and key, the clock, each tool's hooks, records waiting to send, the last background error, and updates) and say how to fix each problem. Exits 1 when something needs fixing. It never prints your key.</td></tr>
 		<tr><td><code>teardrop update</code></td><td>Download the latest teardrop, check it against the release's checksums, replace this one with it, and run setup again. <code>-check</code> only says whether a newer version is out; <code>teardrop update v0.5.0</code> installs that version, even if it is older. <code>-auto on</code> or <code>-auto off</code> turns installing new releases by itself on or off.</td></tr>
 		<tr><td><code>teardrop dashboard</code></td><td>Open the live dashboard on localhost.</td></tr>
-		<tr><td><code>teardrop calibrate</code></td><td>Show how the time model's caps treat your logs (<code>-since 30d</code>). Uploads nothing.</td></tr>
 		<tr><td><code>teardrop hook -check &lt;tool&gt;</code></td><td>Print the record a hook payload on stdin would make, and write nothing.</td></tr>
 		<tr><td><code>teardrop export</code></td><td>Write a signed report to upload under Settings on the website (<code>-o file</code>, <code>-since</code>, default 365d).</td></tr>
 		<tr><td><code>teardrop login</code></td><td>Connect this computer by typing a code on the site instead of copying the key (<code>-server URL</code> once; <code>-no-open</code> prints the address instead of opening a browser).</td></tr>
@@ -294,12 +281,11 @@
 	</table>
 
 	<h2 id="server">Sync</h2>
-	<p><code>teardrop sync</code> sends your account records: one per prompt and turn end, with its time, word counts, tokens, and lines, never its text. The first sync sends the past year; later ones send only what changed. Turns your hooks already sent count as witnessed; turns from transcripts that no hook saw reach the site late and are shown but not credited. The first time, connect the computer:</p>
+	<p><code>teardrop sync</code> sends your account records: one per prompt and turn end, with its time, word counts, tokens, and lines, never its text. The first sync sends the past year; later ones send only what changed. The first time, connect the computer:</p>
 	<pre><code>teardrop login -server https://your-site</code></pre>
 	<p>It prints a code such as <code>BCDF-GHJK</code> and opens the site's connect page; sign in, type the code, and check that the computer ID it shows matches the one in your terminal. teardrop then saves a sync key of this computer's own and syncs. Each computer gets its own key, listed under Settings, Setup, by its computer ID, so you can revoke one without touching the rest. A code lasts 10 minutes and works once. It has to be typed rather than followed from a link, so nobody can send you a link that connects their computer to your account. Never type a code someone sent you: the page says when and from where each code was asked for, and allowing one gives that computer a sync key to your account. On a computer with no browser, make a sync key for it under <a href="settings.html">Settings</a>, Setup, and run <code>teardrop sync -server https://your-site -key tdk_…</code> there.</p>
 	<p>teardrop remembers the server and the key, so later it's just <code>teardrop sync</code>, and hooks sync in the background when a reply finishes or you stop one. Amp reports a stopped reply at once; Claude Code runs no hook then, so that sync happens at your next prompt or when the session closes. Codex syncs through its <code>notify</code> program when a turn ends. The key only sends records; it can't read or change your account or settings. If the server answers that it needs your sync key, run <code>teardrop login</code> again.</p>
-	<p>Your site splits your time in two. Time whose records reached it within 5 minutes of when they happened is witnessed. Time that arrived late, such as history from before your hooks were set up or work done offline, is unwitnessed: it is shown, kept apart, and never mixed in. Programs that pay or credit hours read both through the <a href="#stats-api">Stats API</a> and decide what counts; teardrop itself credits nothing.</p>
-	<p>Witnessing stops backdating and editing after the fact. It can't stop a script that sends made-up records live, which no tracker on your own computer can rule out, so the Stats API can also list flags: more than 16 witnessed hours in a day, more than 14 hours in any 24, more than 16 hours of activity without a 2-hour break, gaps between prompts that barely or hardly vary, many prompts sent within 15 seconds of the agent's reply, many prompts or all of them never answered, and Amp turns with no tokens. A flag only asks someone to look.</p>
+	<p>Programs that pay or credit hours read your time through the <a href="#stats-api">Stats API</a> and decide what counts; teardrop itself credits nothing.</p>
 	<p>Your stats on the website are visible to you and to reviewers, apart from what your <a href="#profile">public profile</a> shows: a reviewer sees, for each project, your total and a timeline of your work blocks (when each started and ended, with its prompts, tokens, and lines changed), and neoadmins and superadmins see everything you synced. Deleting your account, under Settings, removes them; admins keep your Slack ID and a record of what your computers reported, without project names. To host the site, see <a href="#run-server">Running a server</a>.</p>
 
 	<h2 id="run-server">Running a server</h2>
@@ -353,7 +339,7 @@ npm run dev</code></pre>
 		<tr><td><code>slack</code></td><td>The person's Slack ID. Neoadmins and superadmins may send <code>id</code>, the account number, instead.</td></tr>
 		<tr><td><code>start</code>, <code>end</code></td><td>Optional. Days, such as <code>2026-01-31</code>, on the person's own clock, both included. Without them, all of their time.</td></tr>
 		<tr><td><code>project</code></td><td>Optional. Project names, separated by commas, or keys for neoadmins and superadmins. Without it, every project.</td></tr>
-		<tr><td><code>flags</code></td><td>Optional. <code>true</code> reads the records behind the answer, at most 400 days of them, and lists <a href="#server">flags</a>.</td></tr>
+		<tr><td><code>flags</code></td><td>Optional. <code>true</code> reads the records behind the answer, at most 400 days of them, and lists flags for someone to look at.</td></tr>
 	</table>
 	<p>The answer has <code>person</code> (<code>slack_id</code>, <code>name</code>, <code>created_at</code>, <code>deleted_at</code>), <code>ban</code> (<code>reason</code> and <code>at</code>, or <code>null</code>), <code>witnessed_seconds</code>, <code>unwitnessed_seconds</code>, and <code>prompts</code>; <code>projects</code>, most witnessed time first, each with <code>name</code>, <code>key</code>, the same three counts, <code>first_day</code>, and <code>last_day</code>; <code>days</code>, each <code>date</code> with the same three counts; and <code>flags</code> when asked, each with <code>kind</code> and <code>text</code>. Time on two projects at once counts once in the totals and in each project. The answer is up to the moment. Which time to credit, whether to count unwitnessed time, and how to treat a ban or a flag are the program's to decide.</p>
 	<h3 id="public-api">Public API</h3>
@@ -398,7 +384,7 @@ npm run dev</code></pre>
 	<h3>“skipped N log files that could not be read”</h3>
 	<p>Run <code>teardrop -verbose</code> to list them. Usually they are files a tool is still writing, and the rest of the report is unaffected.</p>
 	<h3>“Your clock is N minutes ahead of (or behind) the site's”</h3>
-	<p>The site credits a record only when it arrives within 5 minutes of the time it says it happened, and refuses records dated more than 5 minutes ahead of its own clock. So each computer's clock is corrected, by 5 minutes at most: the records it sends say when they were sent, and once an offset has held for a day the site pins it for that computer. It never takes a batch's word for its own offset, so records sent late stay late. A clock more than 5 minutes off is not corrected past that: its records count as unwitnessed, reviewers see which ones came from it, and a neoadmin may still accept that time. <code>teardrop sync</code> compares the two clocks and warns from 2 minutes off. Turn on setting the time automatically in your system's date and time settings, then sync again.</p>
+	<p>The site expects each computer's clock to be close to its own, and <code>teardrop sync</code> warns from 2 minutes off. Turn on setting the time automatically in your system's date and time settings, then sync again.</p>
 	<h3>My hours look too low or too high</h3>
 	<p>Compare ENGAGED with how long you think you worked, and please <a href="https://github.com/part-avocado/teardrop/issues">open an issue</a> with the numbers.</p>
 

@@ -13,11 +13,10 @@
 	<script src="theme.js"></script>
 	<script src="i18n.js" data-scripts="site.js account.js settings.js"></script>
 </head>
-<body>
+<body class="app">
 <nav class="nav" aria-label="Main" data-i18n-attr="aria-label:nav.main">
 	<a class="brand" href="index.html"><img src="favicon.svg" alt="">teardrop</a>
 	<div class="links">
-		<a href="index.html#what-counts" class="opt local-only" data-i18n="nav.whatCounts">What counts</a>
 		<a href="dashboard.html" class="app-only" data-i18n="nav.dashboard">Dashboard</a>
 		<a href="projects.html" class="app-only" data-i18n="nav.projects">Projects</a>
 		<a href="docs.html" class="docs-link" data-i18n="nav.docs">Docs</a>
@@ -41,6 +40,17 @@
 		</div>
 	</details>
 </nav>
+<aside class="appnav hosted-only" aria-label="Account" data-i18n-attr="aria-label:nav.account">
+	<div class="who-line"><span class="avatar" id="side-initial" aria-hidden="true"></span><span><span data-i18n="nav.signedInAs">Signed in as</span><b id="side-name"></b></span></div>
+	<div class="appnav-links">
+		<a href="dashboard.html" data-i18n="nav.dashboard">Dashboard</a>
+		<a href="projects.html" data-i18n="nav.projects">Projects</a>
+		<a href="settings.html" aria-current="page" data-i18n="nav.settings">Settings</a>
+		<a href="settings.html#account" data-i18n="nav.account">Account</a>
+		<a href="/review/" class="staff-only" data-i18n="nav.review">Review</a>
+	</div>
+	<form method="post" action="/logout"><button data-i18n="nav.signOut">Sign out</button></form>
+</aside>
 
 <main class="wrap dash">
 	<div class="ban-banner" id="ban-banner" role="alert" hidden>
@@ -59,8 +69,6 @@
 		</nav>
 
 		<section class="pane" id="setup" hidden>
-			<h2 data-i18n="settings.setup.h2">Set up a computer</h2>
-			<p class="muted" data-i18n="settings.setup.lead">Do this on each computer you code on. They all add up on your dashboard.</p>
 			<div id="setup-steps"><span class="skeleton block"></span></div>
 			<h3 data-i18n="settings.sync.h3">Sync keys</h3>
 			<p class="muted" data-i18n="settings.sync.lead">Each computer you connect with <code>teardrop login</code> gets a sync key of its own, listed here by its computer ID. Revoke one, and that computer alone stops syncing. You can also make a key for a computer you set up by hand with <code>teardrop sync -key</code>.</p>
@@ -70,10 +78,6 @@
 			</form>
 			<p class="msg" id="sync-key-msg" role="status" hidden></p>
 			<div class="list" id="sync-keys"><div class="item"><div class="grow"><span class="skeleton"></span></div></div></div>
-			<h3 data-i18n="settings.acctKey.h3">Account key</h3>
-			<p class="muted" data-i18n="settings.acctKey.lead">Your account's own sync key is the one in the steps above, for Amp cloud threads. If it gets out, make a new one: the old one stops working, and the keys listed above keep theirs.</p>
-			<button class="btn small" id="new-key" type="button" data-i18n="settings.acctKey.make">Make a new account key</button>
-			<p class="msg" id="key-msg" role="status" hidden></p>
 		</section>
 
 		<section class="pane" id="profile" hidden>
@@ -93,8 +97,7 @@
 				<div class="cmdbox"><div class="cmd plain"><code id="badge-md"></code><button class="copy" type="button" data-i18n="common.copy">Copy</button></div></div>
 			</div>
 			<h3 data-i18n="settings.profile.projects.h3">Projects</h3>
-			<p class="muted" data-i18n="settings.profile.projects.p">A repository on a public host, such as GitHub, is named on your profile unless you hide it. Any other project is only counted, as one of your other projects, unless you show its name.</p>
-			<div class="list" id="profile-projects"><div class="item"><div class="grow"><span class="skeleton"></span></div></div></div>
+			<p class="muted" data-i18n="settings.profile.projects.p">Whether your profile shows a project, and which GitHub repositories it links, is set on that project's page. Open it from <a href="projects.html">Projects</a>.</p>
 		</section>
 
 		<section class="pane" id="computers" hidden>
@@ -171,13 +174,6 @@
 		</section>
 	</div>
 </main>
-<dialog class="modal" id="key-dialog" aria-labelledby="key-dialog-title">
-	<h2 id="key-dialog-title" data-i18n="settings.dlg.newKey">Your new account key</h2>
-	<p data-i18n="settings.dlg.newKeyP">The old account key has stopped working. Copy this one to wherever you put the old one by hand. Computers with keys of their own keep syncing.</p>
-	<div class="box"><div class="cmd plain"><code id="new-key-value"></code><button class="copy" type="button" data-i18n="common.copy">Copy</button></div></div>
-	<p class="fine" data-i18n="settings.dlg.newKeyFine">If you count Amp cloud threads, also put the new key in the <code>TEARDROP_KEY</code> secret, in Amp's Secrets &amp; Env Vars settings. The key stays visible under Setup, so you can come back for it.</p>
-	<form method="dialog" class="actions"><button class="btn primary small" data-i18n="common.done">Done</button></form>
-</dialog>
 <dialog class="modal" id="sync-dialog" aria-labelledby="sync-dialog-title">
 	<h2 id="sync-dialog-title" data-i18n="settings.dlg.syncKey">Your new sync key</h2>
 	<p data-i18n="settings.dlg.syncKeyP">Copy it now: it is not shown again. On the computer it is for, run:</p>

@@ -79,7 +79,7 @@ curl -H "Authorization: Bearer tdr_..." "https://your-site/api/review/stats?slac
 | `slack` | The person's Slack ID. Neoadmins and superadmins may send `id`, the account number, instead. |
 | `start`, `end` | Optional. Days, such as `2026-01-31`, on the person's own clock, both included. Without them, all of their time. |
 | `project` | Optional. Project names, separated by commas, or keys for neoadmins and superadmins. Without it, every project. |
-| `flags` | Optional. `true` reads the records behind the answer, at most 400 days of them, and lists [flags](sync.md). |
+| `flags` | Optional. `true` reads the records behind the answer, at most 400 days of them, and lists flags for someone to look at. |
 
 The answer has `person` (`slack_id`, `name`, `created_at`, `deleted_at`), `ban` (`reason` and `at`, or `null`), `witnessed_seconds`, `unwitnessed_seconds`, and `prompts`; `projects`, most witnessed time first, each with `name`, `key`, the same three counts, `first_day`, and `last_day`; `days`, each `date` with the same three counts; and `flags` when asked, each with `kind` and `text`. Time on two projects at once counts once in the totals and in each project. The answer is up to the moment. Which time to credit, whether to count unwitnessed time, and how to treat a ban or a flag are the program's to decide.
 

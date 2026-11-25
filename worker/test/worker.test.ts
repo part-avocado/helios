@@ -39,6 +39,7 @@ const fake = createServer(async (req, res) => {
 })
 
 let server: ReturnType<typeof createTestHarness>
+let db: { prepare(sql: string): { bind(...v: unknown[]): { run(): Promise<unknown> }; run(): Promise<unknown> } }
 
 before(async () => {
 	await new Promise<void>((done) => fake.listen(0, '127.0.0.1', done))
@@ -53,7 +54,8 @@ before(async () => {
 		],
 	})
 	await server.listen()
-	const env = await server.getWorker<{ DB: { prepare(sql: string): { run(): Promise<unknown> } } }>().getEnv()
+	const env = await server.getWorker<{ DB: typeof db }>().getEnv()
+	db = env.DB
 	const migrations = new URL('../migrations/', import.meta.url)
 	for (const file of readdirSync(migrations).sort()) {
 		for (const statement of unstable_splitSqlQuery(readFileSync(new URL(file, migrations), 'utf8'))) await env.DB.prepare(statement).run()
@@ -87,7 +89,30 @@ async function signIn(person: string): Promise<string> {
 }
 
 async function me(cookie: string) {
-	return (await (await call('/api/me', { cookie })).json()) as { name: string; slack_id: string; handle: string; profile_public: boolean; admin: boolean; level: number | null; ban: { until: null } | null; api_key: string; computers: { id: string; cloud: boolean }[] }
+	return (await (await call('/api/me', { cookie })).json()) as { name: string; slack_id: string; handle: string; profile_public: boolean; admin: boolean; level: number | null; ban: { until: null } | null; computers: { id: string; cloud: boolean }[] }
+}
+
+/** newSyncKey makes the signed-in person a sync key, as Settings does, and returns it. */
+async function newSyncKey(cookie: string, name = 'test'): Promise<string> {
+	const res = await call('/api/sync-keys', { method: 'POST', cookie, origin: SITE, body: JSON.stringify({ name }) })
+	assert.equal(res.status, 200)
+	return ((await res.json()) as { key: string }).key
+}
+
+/** revokeSyncKey revokes the signed-in person's sync key, found by how it starts. */
+async function revokeSyncKey(cookie: string, key: string) {
+	const { keys } = (await (await call('/api/sync-keys', { cookie })).json()) as { keys: { id: number; hint: string }[] }
+	const id = keys.find((k) => key.startsWith(k.hint))!.id
+	assert.equal((await call(`/api/sync-keys/${id}`, { method: 'DELETE', cookie, origin: SITE })).status, 200)
+}
+
+/** devSyncKey gives the DEV_LOGIN person of a separate harness a sync key, straight in its database. */
+async function devSyncKey(site: { fetch(path: string): Promise<unknown> }, DB: unknown): Promise<string> {
+	await site.fetch('/api/me') // signs them in, which makes the account
+	const key = 'tdk_' + createHash('sha256').update(String(Math.random())).digest('base64url').slice(0, 32)
+	const hash = createHash('sha256').update(key).digest('hex')
+	await (DB as typeof db).prepare(`INSERT INTO sync_keys (user_id, name, hash, hint, created_at) SELECT id, 'test', ?, ?, ? FROM users WHERE hca_id LIKE 'dev:%'`).bind(hash, key.slice(0, 9), Date.now()).run()
+	return key
 }
 
 async function reports(cookie: string, query = '') {
@@ -164,7 +189,7 @@ test('MIN_VERSION sends older and unversioned clients to teardrop update', async
 		for (const file of readdirSync(migrations).sort()) {
 			for (const statement of unstable_splitSqlQuery(readFileSync(new URL(file, migrations), 'utf8'))) await env.DB.prepare(statement).run()
 		}
-		const { api_key: key } = (await (await site.fetch('/api/me')).json()) as { api_key: string }
+		const key = await devSyncKey(site, env.DB)
 		const whoami = (version?: string) =>
 			site.fetch('/api/v1/whoami', { headers: { Authorization: `Bearer ${key}`, ...(version ? { 'X-Teardrop-Version': version } : {}) } })
 		// v0.10.0 is newer than v0.6.0, though it sorts before it as text.
@@ -202,7 +227,7 @@ test('an account past its upload limits is told to wait, and its records are kep
 		for (const file of readdirSync(migrations).sort()) {
 			for (const statement of unstable_splitSqlQuery(readFileSync(new URL(file, migrations), 'utf8'))) await env.DB.prepare(statement).run()
 		}
-		const { api_key: key } = (await (await site.fetch('/api/me')).json()) as { api_key: string }
+		const key = await devSyncKey(site, env.DB)
 		const now = Date.now()
 		const line = (t: number, i: number, extra: object = {}) => JSON.stringify({ t: new Date(t).toISOString(), tool: 'cursor', event: 'turn_end', session: `s${i}`, project: 'github.com/kid/site', ...extra })
 		const post = (lines: string[]) => site.fetch('/api/v1/events', { method: 'POST', headers: { Authorization: `Bearer ${key}` }, body: lines.join('\n') })
@@ -258,7 +283,7 @@ test('batches sent at once share the day\'s record limit', async () => {
 		for (const file of readdirSync(migrations).sort()) {
 			for (const statement of unstable_splitSqlQuery(readFileSync(new URL(file, migrations), 'utf8'))) await env.DB.prepare(statement).run()
 		}
-		const { api_key: key } = (await (await site.fetch('/api/me')).json()) as { api_key: string }
+		const key = await devSyncKey(site, env.DB)
 		const day = 86400_000, now = Date.now()
 		// Six batches of old records, each on sealed days of its own, so each waits on R2 between records.
 		const batch = (b: number) => [0, 1].map((i) => JSON.stringify({ t: new Date(now - (10 + b * 2 + i) * day).toISOString(), tool: 'cursor', event: 'turn_end', session: `b${b}-${i}`, project: 'github.com/kid/old' }))
@@ -277,12 +302,12 @@ test('DEV_LOGIN signs visitors in on localhost only', async () => {
 	assert.equal((await call('/api/me')).status, 401)
 })
 
-test('signing in creates one account per person and keeps its sync key', async () => {
+test('signing in creates one account per person, with no key of its own', async () => {
 	const first = await me(await signIn('ada'))
 	assert.deepEqual([first.slack_id, first.admin], ['UADA', false])
-	assert.match(first.api_key, /^tdk_/)
-	assert.equal((await me(await signIn('ada'))).api_key, first.api_key)
-	assert.notEqual((await me(await signIn('grace'))).api_key, first.api_key)
+	assert.ok(!('api_key' in first), 'every sync key is listed under Settings, Setup')
+	assert.equal((await me(await signIn('ada'))).handle, first.handle)
+	assert.equal((await call('/api/key', { method: 'POST', cookie: await signIn('ada'), origin: SITE })).status, 404, 'there is no account key to replace')
 
 	const cookie = await signIn('ada')
 	assert.equal((await call('/logout', { method: 'POST', cookie })).status, 403, 'another site cannot sign someone out')
@@ -308,7 +333,7 @@ test('a sign-in that this browser did not start is refused', async () => {
 
 test('a synced report is stored exactly and replaced only by a newer one', async () => {
 	const cookie = await signIn('sync')
-	const { api_key: key } = await me(cookie)
+	const key = await newSyncKey(cookie)
 	const signed = computer()
 	const now = Date.now()
 
@@ -337,7 +362,7 @@ test('a synced report is stored exactly and replaced only by a newer one', async
 
 test('reports that fail teardrop\'s checks are refused', async () => {
 	const cookie = await signIn('strict')
-	const { api_key: key } = await me(cookie)
+	const key = await newSyncKey(cookie)
 	const signed = computer()
 	const now = Date.now()
 	const post = (body: string, k = key) => call('/api/v1/reports', { method: 'POST', body, key: k })
@@ -356,13 +381,14 @@ test('reports that fail teardrop\'s checks are refused', async () => {
 
 	// A computer's hours count for one person.
 	assert.equal((await post(good)).status, 200)
-	const other = await me(await signIn('other'))
-	const again = await post(signed({ engaged_seconds: 600, blocks: [] }, now + 1000), other.api_key)
+	const otherCookie = await signIn('other')
+	const other = await me(otherCookie)
+	const again = await post(signed({ engaged_seconds: 600, blocks: [] }, now + 1000), await newSyncKey(otherCookie))
 	assert.equal(again.status, 409)
 	assert.deepEqual(other.computers, [])
 })
 
-test('settings: upload, new key, and removing a computer', async () => {
+test('settings: upload, revoking a key, and removing a computer', async () => {
 	const cookie = await signIn('settings')
 	const signed = computer()
 	const body = signed({ engaged_seconds: 600, blocks: [block(Date.now() - 1000)] })
@@ -373,12 +399,12 @@ test('settings: upload, new key, and removing a computer', async () => {
 	assert.equal(up.status, 200)
 	const { computer: id } = (await up.json()) as { computer: string }
 
-	const { api_key: oldKey } = await me(cookie)
-	const rotated = (await (await call('/api/key', { method: 'POST', cookie, origin: SITE })).json()) as { api_key: string }
-	assert.notEqual(rotated.api_key, oldKey)
+	const oldKey = await newSyncKey(cookie)
+	const newKey = await newSyncKey(cookie, 'replacement')
+	await revokeSyncKey(cookie, oldKey)
 	const fresh = signed({ engaged_seconds: 700, blocks: [] }, Date.now() + 1000)
 	assert.equal((await call('/api/v1/reports', { method: 'POST', body: fresh, key: oldKey })).status, 401)
-	assert.equal((await call('/api/v1/reports', { method: 'POST', body: fresh, key: rotated.api_key })).status, 200)
+	assert.equal((await call('/api/v1/reports', { method: 'POST', body: fresh, key: newKey })).status, 200)
 
 	const stranger = await signIn('stranger')
 	assert.equal((await call(`/api/computers/${id}`, { method: 'DELETE', cookie: stranger, origin: SITE })).status, 404)
@@ -431,7 +457,7 @@ const day = (ms: number) => new Date(ms).toISOString().slice(0, 10)
 test('reviewers look a person up by Slack ID and read their log', async () => {
 	const admin = await signIn('admin')
 	const cookie = await signIn('logged')
-	const { api_key: key } = await me(cookie)
+	const key = await newSyncKey(cookie)
 	const review = async (query = 'slack=ulogged') => {
 		const res = await call(`/api/review/person?${query}`, { cookie: admin })
 		assert.equal(res.status, 200, await res.clone().text())
@@ -543,12 +569,13 @@ test('reviewers look a person up by Slack ID and read their log', async () => {
 
 	// Signing in again reopens the same account: empty, with a new sync key
 	// and its log. A computer that comes back is held to what it had.
-	const back = await me(await signIn('logged'))
-	assert.notEqual(back.api_key, key)
+	const backCookie = await signIn('logged')
+	const back = await me(backCookie)
+	const backKey = await newSyncKey(backCookie)
 	assert.deepEqual(back.computers, [])
 	assert.equal((await review()).person.deleted_at, null)
 	const more = { engaged_seconds: 16800 + 36000 + 7200, blocks: [], days: days({ 5: 16800 + 36000 + 7200 }) }
-	assert.equal((await call('/api/v1/reports', { method: 'POST', body: signed(more, now + 1000), key: back.api_key })).status, 200)
+	assert.equal((await call('/api/v1/reports', { method: 'POST', body: signed(more, now + 1000), key: backKey })).status, 200)
 	row = (await review()).log[0]!
 	assert.equal(row.flagged, 1)
 	assert.match(row.findings.join(' '), /Added 2h 00m of engaged time/)
@@ -560,7 +587,7 @@ type Detail = { bytes: number; blocks: number; first_block: number | null; last_
 test('a log entry says what the report held and what changed, and a computer has a history', async () => {
 	const admin = await signIn('admin')
 	const cookie = await signIn('detailed')
-	const { api_key: key } = await me(cookie)
+	const key = await newSyncKey(cookie)
 	const now = Date.now()
 	const review = async (query = '') => {
 		const res = await call(`/api/review/person?slack=UDETAILED${query}`, { cookie: admin })
@@ -657,7 +684,7 @@ test('a log entry says what the report held and what changed, and a computer has
 test('every report is kept in full, refused ones too, until the account is deleted', async () => {
 	const admin = await signIn('admin')
 	const cookie = await signIn('keeper')
-	const { api_key: key } = await me(cookie)
+	const key = await newSyncKey(cookie)
 	const now = Date.now()
 	const post = (body: string) => call('/api/v1/reports', { method: 'POST', body, key })
 	const review = async () => {
@@ -672,7 +699,7 @@ test('every report is kept in full, refused ones too, until the account is delet
 	const files = async (prefix: string) => (await bucket.list({ prefix })).objects.map((o) => o.key)
 
 	// Someone else's reports, which nothing below may touch.
-	const { api_key: otherKey } = await me(await signIn('bystander'))
+	const otherKey = await newSyncKey(await signIn('bystander'))
 	assert.equal((await call('/api/v1/reports', { method: 'POST', body: computer()({ engaged_seconds: 600, blocks: [block(now - 1000)] }), key: otherKey })).status, 200)
 	const others = (await files('')).length
 
@@ -715,8 +742,8 @@ test('every report is kept in full, refused ones too, until the account is delet
 
 test('events from Amp\'s cloud are kept, and a cloud thread reads them back with the key to sign its count', async () => {
 	const cookie = await signIn('cloudy')
-	const { api_key: key } = await me(cookie)
-	const { api_key: otherKey } = await me(await signIn('stranger'))
+	const key = await newSyncKey(cookie)
+	const otherKey = await newSyncKey(await signIn('stranger'))
 	const now = Date.now()
 	// sim is larger than a JavaScript number holds exactly, and must come back as sent.
 	const line = (ago: number, event: string, more = '') => `{"t":"${new Date(now - ago).toISOString()}","tool":"amp","event":"${event}","session":"T-1"${more}}`
@@ -750,9 +777,10 @@ test('events from Amp\'s cloud are kept, and a cloud thread reads them back with
 	assert.deepEqual([next.lines, next.last > first.last], [[later], true])
 
 	// Every thread of one person signs with the same key, which a new sync key doesn't change.
-	const rotated = (await (await call('/api/key', { method: 'POST', cookie, origin: SITE })).json()) as { api_key: string }
+	const rotated = await newSyncKey(cookie, 'Amp cloud')
+	await revokeSyncKey(cookie, key)
 	assert.equal((await call('/api/v1/cloud', { key })).status, 401, 'the old sync key')
-	const again = await read(0, rotated.api_key)
+	const again = await read(0, rotated)
 	assert.deepEqual([again.key, again.lines.length], [first.key, 3])
 	assert.notEqual((await read(0, otherKey)).key, first.key)
 
@@ -763,7 +791,7 @@ test('events from Amp\'s cloud are kept, and a cloud thread reads them back with
 	const cloud = computer({ publicKey: createPublicKey(privateKey), privateKey })
 	const laptop = computer()
 	for (const signed of [cloud, laptop]) {
-		const res = await call('/api/v1/reports', { method: 'POST', body: signed({ engaged_seconds: 600, blocks: [block(now - 1000)] }), key: rotated.api_key })
+		const res = await call('/api/v1/reports', { method: 'POST', body: signed({ engaged_seconds: 600, blocks: [block(now - 1000)] }), key: rotated })
 		assert.equal(res.status, 200, await res.clone().text())
 	}
 	const mine = (await me(cookie)).computers
@@ -776,7 +804,7 @@ test('events from Amp\'s cloud are kept, and a cloud thread reads them back with
 	const { slack_id } = await me(cookie)
 	const sync = async (signed: ReturnType<typeof computer>, engaged_seconds: number, days: Record<string, number>) => {
 		const report = { engaged_seconds, blocks: [block(now - 1000)], days: Object.entries(days).map(([date, engaged_seconds]) => ({ date, engaged_seconds })) }
-		const res = await call('/api/v1/reports', { method: 'POST', body: signed(report), key: rotated.api_key })
+		const res = await call('/api/v1/reports', { method: 'POST', body: signed(report), key: rotated })
 		assert.equal(res.status, 200, await res.clone().text())
 		return ((await (await call(`/api/review/person?slack=${slack_id}`, { cookie: admin })).json()) as Review).log[0]!
 	}
@@ -791,20 +819,20 @@ test('events from Amp\'s cloud are kept, and a cloud thread reads them back with
 	assert.deepEqual([row.flagged, row.past_added_seconds, row.findings.length], [1, 3600, 1])
 
 	// teardrop v0.5.2 on a computer still asks to take the events, and is told there are none for it.
-	assert.equal((await call('/api/v1/events?computer=td-aaaaaaaaaaaa&after=0', { key: rotated.api_key })).status, 404)
+	assert.equal((await call('/api/v1/events?computer=td-aaaaaaaaaaaa&after=0', { key: rotated })).status, 404)
 
 	// Events from before the year a report covers go when more arrive.
 	const env = await server.getWorker<{ DB: { prepare(sql: string): { run(): Promise<unknown> } } }>().getEnv()
 	await env.DB.prepare(`UPDATE relayed_events SET received_at = ${now - 367 * DAY} WHERE event = 'agent.end' AND session = 'T-1'`).run()
 	const newest = line(500, 'agent.end')
-	assert.equal(await send(newest, rotated.api_key), 1)
-	assert.deepEqual((await read(0, rotated.api_key)).lines, [prompt, later, newest])
+	assert.equal(await send(newest, rotated), 1)
+	assert.deepEqual((await read(0, rotated)).lines, [prompt, later, newest])
 })
 
 test('reviewers have levels, which decide what they read, whom they add and ban, and what their keys do', async () => {
 	const superadmin = await signIn('admin')
 	const [neo, rev, member] = [await signIn('neo'), await signIn('rev'), await signIn('plain')]
-	const { api_key: memberKey } = await me(member)
+	const memberKey = await newSyncKey(member)
 	const review = (path: string, cookie: string, method = 'GET', body?: object) =>
 		call(`/api/review${path}`, { method, cookie, origin: method === 'GET' ? undefined : SITE, body: body && JSON.stringify(body) })
 	const status = async (...args: Parameters<typeof review>) => (await review(...args)).status
@@ -981,7 +1009,8 @@ test('migration 0012 makes timed bans in force permanent and leaves ones that ra
 
 test('anyone reads their own stats through the public API with a read key, unless banned', async () => {
 	const cookie = await signIn('reader')
-	const { api_key: syncKey, slack_id } = await me(cookie)
+	const { slack_id } = await me(cookie)
+	const syncKey = await newSyncKey(cookie)
 	const keys = (method: string, path = '', body?: object) => call(`/api/keys${path}`, { method, cookie, origin: method === 'GET' ? undefined : SITE, body: body && JSON.stringify(body) })
 	const read = (path: string, key: string) => call(`/api/public/v1${path}`, { key })
 
@@ -1038,7 +1067,8 @@ test('anyone reads their own stats through the public API with a read key, unles
 
 test('every profile is public by default, and shows no name, Slack ID, or folder', async () => {
 	const cookie = await signIn('kid')
-	const { api_key: key, handle, profile_public } = await me(cookie)
+	const { handle, profile_public } = await me(cookie)
+	const key = await newSyncKey(cookie)
 	assert.match(handle, /^u-[0-9a-f]{12}$/, 'a neutral handle, not one made from the name')
 	assert.equal(profile_public, true)
 	const settings = (body: object) => call('/api/profile', { method: 'POST', cookie, origin: SITE, body: JSON.stringify(body) })
@@ -1068,7 +1098,7 @@ test('every profile is public by default, and shows no name, Slack ID, or folder
 	const text = await res.text()
 	const p = JSON.parse(text) as { handle: string; engaged_seconds: number; days: unknown[]; projects: unknown[]; other_projects: unknown }
 	assert.deepEqual([p.handle, p.engaged_seconds, p.days], [handle, 5000, [{ date: '2026-01-02', engaged_seconds: 5000 }]])
-	assert.deepEqual(p.projects, [{ name: 'site', repo: 'github.com/kid/site', engaged_seconds: 3600 }])
+	assert.deepEqual(p.projects, [{ name: 'site', repo: 'github.com/kid/site', repos: ['github.com/kid/site'], engaged_seconds: 3600 }])
 	assert.deepEqual(p.other_projects, { count: 1, engaged_seconds: 1800 })
 	assert.doesNotMatch(text, /kid<|&lt;b|UKID|home\/kid|game|td-[0-9a-f]|tdk_/)
 	const page = await call(`/@${handle}`)
@@ -1103,6 +1133,27 @@ test('every profile is public by default, and shows no name, Slack ID, or folder
 	assert.doesNotMatch(escaped, /<b>/)
 	assert.equal((await settings({ projects: { '/home/other/thing': true } })).status, 404)
 	assert.equal((await settings({ projects: { 'github.com/kid/site': 'yes' } })).status, 400)
+
+	// On a project's page the owner makes it public, and links, changes, or removes its GitHub repositories.
+	const project = (body: object) => call('/api/projects', { method: 'POST', cookie, origin: SITE, body: JSON.stringify(body) })
+	type Owned = { projects: { key: string; repos: string[]; shown: boolean }[] }
+	const owned = async () => ((await (await call('/api/projects', { cookie })).json()) as Owned).projects
+	assert.deepEqual((await owned()).find((x) => x.key === 'github.com/kid/site'), { key: 'github.com/kid/site', name: 'site', repo: 'github.com/kid/site', repos: ['github.com/kid/site'], engaged_seconds: 3600, shown: false })
+	assert.equal((await project({ key: '/home/kid/game', repos: ['https://github.com/Kid/game.git', 'kid/game-assets', 'github.com/kid/game-assets'] })).status, 200)
+	assert.equal((await project({ key: 'github.com/kid/site', public: true, repos: [] })).status, 200)
+	const both = await owned()
+	assert.deepEqual(both.find((x) => x.key === '/home/kid/game')!.repos, ['github.com/Kid/game', 'github.com/kid/game-assets'])
+	assert.deepEqual(both.find((x) => x.key === 'github.com/kid/site')!.repos, [])
+	const shown = (await (await profile(handle)).json()) as { projects: { name: string; repo: string | null; repos: string[] }[] }
+	assert.deepEqual(shown.projects.map((x) => [x.name, x.repo, x.repos]), [['site', null, []], ['game', 'github.com/Kid/game', ['github.com/Kid/game', 'github.com/kid/game-assets']], ['<b>&x"</b>', 'github.com/kid/x', ['github.com/kid/x']]])
+	assert.match(String(((await badge(handle, 'github.com/kid/game-assets')) as { svg: string }).svg), /teardrop: game</)
+	assert.equal((await project({ key: '/home/kid/game', repos: ['gitlab.com/kid/game'] })).status, 400)
+	assert.equal((await project({ key: '/home/kid/game', public: 'yes' })).status, 400)
+	assert.equal((await project({ key: '/home/other/thing', public: true })).status, 404)
+	assert.equal((await project({ key: '/home/kid/game', repos: Array.from({ length: 11 }, (_, i) => `kid/r${i}`) })).status, 400)
+	assert.equal((await call('/api/projects', { method: 'POST', cookie, body: '{"key":"/home/kid/game","public":false}' })).status, 403, 'no Origin')
+	// Its previous choice to show the project stays when only its repositories change.
+	assert.equal((await owned()).find((x) => x.key === '/home/kid/game')!.shown, true)
 
 	// A new handle moves the profile. Handles are lowercase, and two people can't share one.
 	assert.equal((await settings({ handle: 'a' })).status, 400)
@@ -1206,7 +1257,7 @@ test('another site gets a read key when a person signs in there with teardrop', 
 
 test('programs read a person\'s witnessed time through the review API, with a review key', async () => {
 	const cookie = await signIn('learner')
-	const { api_key: key } = await me(cookie)
+	const key = await newSyncKey(cookie)
 	const now = Date.now()
 	const line = (t: number, event: string, extra: object = {}) => JSON.stringify({ t: new Date(t).toISOString(), tool: 'claude-code', event, session: 'p1', project: 'github.com/kid/game', ...extra })
 	const post = (lines: string[]) => call('/api/v1/events', { method: 'POST', key, body: lines.join('\n') })
@@ -1258,7 +1309,7 @@ test('programs read a person\'s witnessed time through the review API, with a re
 
 test('a computer whose clock is off can\'t pick its own correction, not even under a new computer ID', async () => {
 	const cookie = await signIn('offclock')
-	const { api_key: key } = await me(cookie)
+	const key = await newSyncKey(cookie)
 	const now = Date.now()
 	const min = 60_000
 	const iso = (t: number) => new Date(t).toISOString()
@@ -1287,7 +1338,7 @@ test('a computer whose clock is off can\'t pick its own correction, not even und
 
 test('the site keeps every prompt record in R2 and credits only time it saw arrive', async () => {
 	const cookie = await signIn('recorder')
-	const { api_key: key } = await me(cookie)
+	const key = await newSyncKey(cookie)
 	const now = Date.now()
 	const at = (ms: number) => new Date(ms).toISOString()
 	const line = (t: number, event: string, extra: object = {}) => JSON.stringify({ t: at(t), tool: 'cursor', event, session: 's1', project: 'github.com/kid/site', ...extra })
@@ -1361,7 +1412,7 @@ test('home and docs work for anyone, and show the account menu once signed in', 
 
 test('exporting and deleting your own data', async () => {
 	const cookie = await signIn('leaver')
-	const { api_key: key } = await me(cookie)
+	const key = await newSyncKey(cookie)
 	const now = Date.now()
 	assert.equal((await call('/api/v1/reports', { method: 'POST', body: computer()({ engaged_seconds: 600, blocks: [block(now - 1000)] }), key })).status, 200)
 
@@ -1386,7 +1437,8 @@ test('exporting and deleting your own data', async () => {
 
 test('a dashboard hears of each record at once, and a profile never learns the project', async () => {
 	const cookie = await signIn('livewire')
-	const { api_key: key, handle } = await me(cookie)
+	const { handle } = await me(cookie)
+	const key = await newSyncKey(cookie)
 	const other = await signIn('bystander')
 	const line = (t: number, event: string, extra: object = {}) => JSON.stringify({ t: new Date(t).toISOString(), tool: 'codex', event, session: 'l1', project: 'github.com/kid/secret', ...extra })
 	const open = async (path: string, as = '') => {
@@ -1420,7 +1472,7 @@ test('a dashboard hears of each record at once, and a profile never learns the p
 
 test('commits travel as records, earn no time, and are checked against GitHub', async () => {
 	const cookie = await signIn('committer')
-	const { api_key: key } = await me(cookie)
+	const key = await newSyncKey(cookie)
 	const now = Date.now()
 	const rec = (project: string, sha: string, t: number) => JSON.stringify({ t: new Date(t).toISOString(), tool: 'git', event: 'commit', session: sha, git: project, sha, added: 12, removed: 3 })
 	// git keeps author times to the second.
@@ -1469,7 +1521,7 @@ test('commits travel as records, earn no time, and are checked against GitHub', 
 
 test('a computer that sends only records shows on the dashboard, and usage earns no time', async () => {
 	const cookie = await signIn('recordsonly')
-	const { api_key: key } = await me(cookie)
+	const key = await newSyncKey(cookie)
 	const now = Date.now()
 	const pc = 'td-00aa11bb22cc'
 	const line = (t: number, event: string, extra: object = {}) => JSON.stringify({ t: new Date(t).toISOString(), tool: 'claude-code', event, session: 'r1', git: 'github.com/kid/rec', ...extra })
@@ -1489,7 +1541,7 @@ test('a computer that sends only records shows on the dashboard, and usage earns
 	assert.deepEqual(c!.report.report.blocks.map((b) => [b.project.key, b.prompts, b.tokens_in, b.tools]), [['github.com/kid/rec', 1, 900, ['claude-code']]])
 	assert.deepEqual((await me(cookie)).computers.map((x) => x.id), [pc])
 	// Another account can't take the computer over by naming it.
-	const { api_key: other } = await me(await signIn('squatter'))
+	const other = await newSyncKey(await signIn('squatter'))
 	await server.fetch(SITE + '/api/v1/events', { method: 'POST', body: line(now - 60_000, 'UserPromptSubmit', { human: true }), headers: { Authorization: `Bearer ${other}`, 'X-Teardrop-Computer': pc } })
 	const otherID = (await env.DB.prepare('SELECT id FROM users WHERE slack_id = ?').bind('USQUATTER').first<{ id: number }>())!.id
 	await (env.HUB.get(env.HUB.idFromName(String(otherID))) as unknown as { flush(): Promise<string[]> }).flush()
@@ -1498,7 +1550,7 @@ test('a computer that sends only records shows on the dashboard, and usage earns
 
 test('old log rows move to R2, and reviewers still read every one', async () => {
 	const cookie = await signIn('longlog')
-	const { api_key: key } = await me(cookie)
+	const key = await newSyncKey(cookie)
 	const env = await server.getWorker<{ DB: { prepare(sql: string): { bind(...v: unknown[]): { first<T>(): Promise<T | null>; run(): Promise<unknown> } } } }>().getEnv()
 	const id = (await env.DB.prepare('SELECT id FROM users WHERE slack_id = ?').bind('ULONGLOG').first<{ id: number }>())!.id
 	// 450 old rows, the oldest flagged, then one sync that archives the oldest 200.
@@ -1544,7 +1596,6 @@ test('logins and wrong codes are limited, so codes can\'t be guessed or logins p
 
 test('a person has several sync keys at once, and revoking one leaves the rest', async () => {
 	const cookie = await signIn('manykeys')
-	const { api_key: account } = await me(cookie)
 	const keys = async () => ((await (await call('/api/sync-keys', { cookie })).json()) as { keys: { id: number; name: string; hint: string; last_used_at: number | null }[] }).keys
 	const make = (name: string) => call('/api/sync-keys', { method: 'POST', cookie, origin: SITE, body: JSON.stringify({ name }) })
 	const works = async (key: string) => (await call('/api/v1/whoami', { key })).status === 200
@@ -1554,7 +1605,7 @@ test('a person has several sync keys at once, and revoking one leaves the rest',
 	const laptop = (await (await make('laptop')).json()) as { id: number; key: string; hint: string }
 	const build = (await (await make('build server')).json()) as { id: number; key: string }
 	assert.ok(laptop.key.startsWith('tdk_') && laptop.key.startsWith(laptop.hint))
-	assert.deepEqual([await works(account), await works(laptop.key), await works(build.key)], [true, true, true])
+	assert.deepEqual([await works(laptop.key), await works(build.key)], [true, true])
 	// Records sent with any of them are the person's.
 	const t = new Date().toISOString()
 	const sent = await call('/api/v1/events', { method: 'POST', key: build.key, body: JSON.stringify({ t, tool: 'cursor', event: 'turn_end', session: 's', project: 'p' }) })
@@ -1566,15 +1617,31 @@ test('a person has several sync keys at once, and revoking one leaves the rest',
 
 	// Revoking one stops it alone.
 	assert.equal((await call(`/api/sync-keys/${laptop.id}`, { method: 'DELETE', cookie, origin: SITE })).status, 200)
-	assert.deepEqual([await works(account), await works(laptop.key), await works(build.key)], [true, false, true])
-	// A new account key leaves the others working too.
-	const fresh = ((await (await call('/api/key', { method: 'POST', cookie, origin: SITE })).json()) as { api_key: string }).api_key
-	assert.deepEqual([await works(account), await works(fresh), await works(build.key)], [false, true, true])
+	assert.deepEqual([await works(laptop.key), await works(build.key)], [false, true])
+	// Making a key again by name, as for Amp cloud threads, replaces the last one of that name.
+	const amp = async () => ((await (await call('/api/sync-keys', { method: 'POST', cookie, origin: SITE, body: '{"name":"Amp cloud","replace":true}' })).json()) as { key: string }).key
+	const amp1 = await amp(), amp2 = await amp()
+	assert.deepEqual([await works(amp1), await works(amp2), (await keys()).filter((k) => k.name === 'Amp cloud').length], [false, true, 1])
+	await revokeSyncKey(cookie, amp2)
+	// An account's own key from before there were sync keys keeps working, and joins the list, where it can be revoked.
+	const old = 'tdk_' + 'o'.repeat(32)
+	await db.prepare(`UPDATE users SET api_key = ? WHERE slack_id = 'UMANYKEYS'`).bind(old).run()
+	assert.ok(await works(old))
+	const adopted = (await keys()).find((k) => k.name === 'Account key (from before)')
+	assert.ok(adopted && old.startsWith(adopted.hint) && adopted.last_used_at)
+	assert.ok(await works(old), 'it works the same from the list')
+	await revokeSyncKey(cookie, old)
+	assert.equal(await works(old), false)
+	// One never used joins the list when the list is read.
+	const unused = 'tdk_' + 'u'.repeat(32)
+	await db.prepare(`UPDATE users SET api_key = ? WHERE slack_id = 'UMANYKEYS'`).bind(unused).run()
+	assert.ok((await keys()).some((k) => k.name === 'Account key (from before)' && unused.startsWith(k.hint)))
+	await revokeSyncKey(cookie, unused)
 	// No one revokes another person's key.
 	const other = await signIn('notmine')
 	assert.equal((await call(`/api/sync-keys/${build.id}`, { method: 'DELETE', cookie: other, origin: SITE })).status, 404)
 	assert.ok(await works(build.key))
-	// Fifty keys beside the account's own, and no more.
+	// Fifty keys, and no more.
 	for (let i = 0; i < 49; i++) assert.equal((await make(`key ${i}`)).status, 200)
 	assert.equal((await make('one too many')).status, 409)
 	// A login past the limit says so, and isn't used up: once a key is revoked, polling again connects it.
@@ -1599,7 +1666,6 @@ test('a person has several sync keys at once, and revoking one leaves the rest',
 
 test('teardrop login connects a computer once, only by a typed code, and never for a banned account', async () => {
 	const cookie = await signIn('connector')
-	const { api_key } = await me(cookie)
 	const start = async () => {
 		const res = await call('/api/v1/login', { method: 'POST', body: JSON.stringify({ computer: 'td-abcdef012345' }) })
 		assert.equal(res.status, 200)
@@ -1632,7 +1698,7 @@ test('teardrop login connects a computer once, only by a typed code, and never f
 	// The computer gets a sync key of its own, not the account's.
 	const got = await pollKey(login.code)
 	assert.deepEqual({ ...got, key: undefined }, { status: 'done', key: undefined, name: '<b>connector</b>', handle: (await me(cookie)).handle })
-	assert.ok(got.key?.startsWith('tdk_') && got.key !== api_key, 'a key of its own')
+	assert.ok(got.key?.startsWith('tdk_'), 'a key of its own')
 	assert.equal((await call('/api/v1/whoami', { key: got.key })).status, 200)
 	assert.equal((await call(`/api/v1/login/${login.code}`)).status, 410, 'the key is given once')
 	assert.equal((await form({ user_code: login.user_code, decision: 'allow' })).status, 400, 'a code is allowed once')

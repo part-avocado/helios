@@ -7,7 +7,7 @@ Run `teardrop` to see the last 7 days, or `teardrop -since 30d` for longer. The 
 | ENGAGED | Time you were plausibly involved. This is the number that matters. |
 | SPAN / SESSION TIME | Wall-clock time from first to last activity, for comparison. |
 | PROMPTS | Prompts you sent that counted. |
-| SKIPPED | Prompts that earned no time. Under the table, the report says how many each check below skipped. |
+| SKIPPED | Prompts that earned no time. |
 | TOKENS IN/OUT | Tokens the model read (cached ones included) and wrote. |
 | TOOLS | Which AI tools you used in that block. |
 

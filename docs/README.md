@@ -15,7 +15,6 @@ Everything you need to install teardrop, read your stats, and sync them to your 
 - [Your account](dashboard.md#account)
 - [Public profile](dashboard.md#profile)
 - [Verification keys](dashboard.md#verification-keys)
-- [What counts](what-counts.md)
 - [Tokens](tokens.md)
 
 ## Editors & agents

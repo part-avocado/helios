@@ -2,6 +2,7 @@
 // arrives during the write, nor any when the write fails or the hub is reset
 // partway through it, as a deploy does. It runs the hub of test/hub-entry.ts.
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -24,8 +25,11 @@ test('the hub loses no record while it writes a day', async () => {
 		for (const file of readdirSync(migrations).sort()) {
 			for (const statement of unstable_splitSqlQuery(readFileSync(new URL(file, migrations), 'utf8'))) await env.DB.prepare(statement).run()
 		}
-		const { api_key: key } = (await (await site.fetch('/api/me')).json()) as { api_key: string }
+		await site.fetch('/api/me') // signs the dev person in, which makes the account
 		const id = (await env.DB.prepare('SELECT id FROM users WHERE slack_id = ?').bind('UDEV').first<{ id: number }>())!.id
+		// A sync key of theirs, put straight in the database as Settings would make it.
+		const key = 'tdk_' + 'h'.repeat(32)
+		await env.DB.prepare('INSERT INTO sync_keys (user_id, name, hash, hint, created_at) VALUES (?, ?, ?, ?, ?)').bind(id, 'test', createHash('sha256').update(key).digest('hex'), key.slice(0, 9), Date.now()).first()
 		const hub = () => env.HUB.get(env.HUB.idFromName(String(id)))
 		// Records go in one batch, at a UTC offset in minutes.
 		const post = (records: { t: number; session: string; event?: string; in?: number }[], offset = 0) =>
