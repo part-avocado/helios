@@ -57,7 +57,7 @@ jobs:
           mkdir dist-bad
           cp dist/teardrop_* dist-bad/
           sed -E 's/^[0-9a-f]{64}/0000000000000000000000000000000000000000000000000000000000000000/' dist/checksums.txt > dist-bad/checksums.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: |
@@ -76,7 +76,7 @@ jobs:
       TEARDROP_NO_MODIFY_PATH: "1"
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: dist
           path: served
