@@ -50,6 +50,10 @@ with Hack Club Auth, their synced stats are kept in a D1 database, and every
 report their computers send is kept in an R2 bucket for reviewers. See
 [The website, on Cloudflare](#the-website-on-cloudflare).
 
+The docs are the Markdown pages in [`docs/`](docs/README.md). The site's docs
+page, `site/docs.html`, is built from them: after editing one, run
+`npm run docs` in `worker` and commit both.
+
 The same files are built into the binary, so `teardrop dashboard` serves the
 dashboard with live data from this machine, with no account.
 

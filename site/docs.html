@@ -48,6 +48,7 @@
 	<div class="doc-results" id="doc-results" role="listbox" aria-label="Search results" hidden data-i18n-attr="aria-label:docs.results"></div>
 	<details class="doc-toc" open>
 	<summary data-i18n="docs.contents">Contents</summary>
+	<!-- docs:toc: written by `npm run docs` in worker, from docs/README.md. Edit that, not this. -->
 	<div class="group">Getting started</div>
 	<a href="#quick-start">Quick start</a>
 	<a href="#install">Install</a>
@@ -81,9 +82,11 @@
 	<a href="#privacy">Privacy</a>
 	<a href="#troubleshooting">Troubleshooting</a>
 	<a href="#uninstall">Uninstall</a>
+	<!-- /docs:toc -->
 	</details>
 </aside>
 <article>
+	<!-- docs:article: written by `npm run docs` in worker, from the Markdown pages in docs/. Edit those, not this. -->
 	<h1>teardrop docs</h1>
 	<p class="muted">Everything you need to install teardrop, read your stats, and sync them to your site.</p>
 
@@ -152,14 +155,13 @@
 		<tr><td>Computers</td><td>Each computer that syncs to you and when it last did. Remove one to drop its hours.</td></tr>
 		<tr><td>Data</td><td>Upload a stats file from a computer that can't reach the website (make it with <code>teardrop export -o stats.json</code>, and upload it within 7 days), or download a copy of everything the site holds about you.</td></tr>
 		<tr><td>Account</td><td>Your name, Slack ID, and member-since date from Hack Club Auth, sign out, and deleting your account. Deleting removes every computer and all of your stats from the site.</td></tr>
-</table>
+	</table>
 	<p>You can sign out from the menu at the top right of any page. A computer syncs to one account. To move it to another, remove it under Computers first.</p>
 	<h3>On your computer, without an account</h3>
 	<p>Run <code>teardrop dashboard</code> to open the same charts with live data from this computer, refreshed every 30 seconds. It runs on <code>localhost</code> only and refuses requests from other sites, so your stats never leave your computer.</p>
 	<h3 id="profile">Your public profile</h3>
 	<p>Every account has a public profile at <code>/@handle</code>, which anyone can open without signing in. It shows your handle, the month you joined, your hours in the past year, a year of days, and your projects. It never shows your name, your Slack ID, or a folder on your computer. A project that is a repository on a public host, such as <code>github.com/you/site</code>, is named and linked; any other project is only counted, as one of your other projects. Under Settings, Profile, you can change your handle, hide or name each project, or make the profile private. Settings, Profile also has a badge of your hours to paste into a README, linked to your profile. A private profile, like a banned or deleted account, answers "no such profile", so its address doesn't say that the account exists.</p>
 	<p>Each account starts with a neutral handle, such as <code>u-3f9a0c12b4d1</code>, never one made from your name. When you change it, the old address stops working.</p>
-
 	<h3 id="verification-keys">Verification keys</h3>
 	<p>Every sync and export carries a verification key: an Ed25519 signature, made by your account, over the report's numbers, the time it was made, and the time it expires. Change one minute of engaged time, the account, or a date, and the key no longer matches. The website refuses a report that:</p>
 	<ul>
@@ -203,7 +205,6 @@
 	<p>In a cloud thread, the plugin downloads teardrop, checks it against the release's checksum, and runs it when you send a prompt and when Amp finishes. Each run sends your site one line: the time, thread, folder, repository, and the prompt's word counts and fingerprint, never its text. When Amp finishes, the line also holds the tokens the turn used and the lines its file edits added and removed, never the code. Your site keeps these lines for a year. At the end of each turn teardrop also sends your commits in the thread's repository, as <code>teardrop sync</code> does on a computer, so they show in the review app's graphs and can be checked against GitHub.</p>
 	<p>No computer of yours is needed. When Amp finishes a turn or you stop it, the teardrop in that thread reads all of your cloud lines back from your site, counts them with the same rules as everything else, and syncs the result. Threads that ran side by side are counted together, so their overlap counts once. Your cloud threads show up as one entry under Settings, Computers, named “Amp cloud threads”.</p>
 	<div class="callout note"><p class="callout-title"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"/></svg>Note</p><p>Cloud time reaches your dashboard when Amp finishes a turn or you stop it. Its days are split at midnight UTC, because a cloud thread doesn't know your time zone. The Mac app's threads can also run on your Mac instead of the cloud: open the app's App Settings, Runner, turn it on, and pick “This Mac” when you start a thread. Those are recorded by the first plugin.</p></div>
-
 	<h3 id="agent-prompt">Set up with a prompt</h3>
 	<p>The dashboard's setup steps include a prompt to paste into Amp or Claude Code, with your server already filled in. The agent installs teardrop, runs <code>teardrop setup -yes</code> to add the hooks and the plugin without stopping to ask, runs <code>teardrop login</code> and shows you the code to type on the site, and shows you the result. <code>-yes</code> is the part an agent can't do on its own, since setup otherwise asks before changing any settings. The prompt holds no key, so nothing secret ends up in that thread.</p>
 
@@ -283,7 +284,6 @@
 
 	<h2 id="run-server">Running a server</h2>
 	<p>The site is one Cloudflare Worker with a D1 database for summaries, an R2 bucket for every report and per-prompt record, and a Durable Object per account that takes records as they arrive and pushes them to open dashboards.</p>
-
 	<h3 id="cloudflare">The website, on Cloudflare</h3>
 	<p>The Worker is in the <code>worker</code> folder of the <a href="https://github.com/part-avocado/teardrop">repository</a> and serves the pages in <code>site</code>. You need a Cloudflare account and Node.js 22 or later.</p>
 	<p>To try it on your computer first:</p>
@@ -311,7 +311,6 @@ npm run dev</code></pre>
 		<tr><td><code>UPLOAD_BURST</code>, <code>RECENT_RECORDS_PER_DAY</code>, <code>OLD_RECORDS_PER_DAY</code></td><td>What one account may send: 1,000 uploads at once, which come back one a second; 30,000 records a day dated in the last two days; and 1,000,000 older ones a day, for a first sync of a year. Past one, the site answers 429 and teardrop keeps the records to send later. The defaults are about ten times the heaviest honest use. Records held back more than 5 minutes arrive late and aren't credited, so lower them with care.</td></tr>
 	</table>
 	<p>To change a secret later, edit it in the dashboard. For your own domain, add a <a href="https://developers.cloudflare.com/workers/configuration/routing/custom-domains/">custom domain</a> to the Worker and use it in the redirect URI. Cloudflare accepts uploads of up to 100 MB.</p>
-
 	<h3 id="review-app">The review app</h3>
 	<p>Reviewing has its own app at <code>/review/</code>, apart from the rest of the site. Reviewers get a Review link in the top bar. What a reviewer can do depends on their level:</p>
 	<table>
@@ -325,11 +324,10 @@ npm run dev</code></pre>
 	<p>Levels and bans are set on a person's account view, in its Access and Bans panels. A Slack ID that has never signed in opens a view with only those two, so a person can be added or banned before their first sign-in. The Reviewers and Bans pages list who holds each level and every ban, and link to each account view.</p>
 	<p>A ban has no length: it lasts until someone lifts it, and always has a reason, which only reviewers see. While it holds, the site takes nothing new from the person: no syncs, uploads, or cloud events. <code>teardrop sync</code>, their dashboard, and their settings say plainly that they are banned until a reviewer lifts it, but not why. They can still sign in and see what they had. The review app marks a banned person in red wherever they appear. A banned reviewer can't review. Someone below the level of whoever issued a ban can't lift or replace it.</p>
 	<p>Any reviewer can make API keys, under API keys in the app, for a script or a bot. A key acts as the person who made it, at the level they hold when it is used, and stops working when they are removed or banned. The key is shown once, in a popup to copy it from; the site keeps only its hash. Send it as a bearer token:</p>
-	<pre>curl -H "Authorization: Bearer tdr_..." "https://your-site/api/review/person?slack=U012ABCDEF"</pre>
-
+	<pre><code>curl -H "Authorization: Bearer tdr_..." "https://your-site/api/review/person?slack=U012ABCDEF"</code></pre>
 	<h3 id="stats-api">Stats API</h3>
 	<p>Programs that credit hours, such as a You Ship, We Ship, read people's time here instead of taking submissions. It is protected: call it with a review key, made under API keys in the review app by someone with a place there. A reviewer's key sees project names only; a neoadmin's or superadmin's also sees each project's key, such as <code>github.com/you/site</code>.</p>
-	<pre>curl -H "Authorization: Bearer tdr_..." "https://your-site/api/review/stats?slack=U012ABCDEF&amp;start=2026-01-01&amp;end=2026-03-31"</pre>
+	<pre><code>curl -H "Authorization: Bearer tdr_..." "https://your-site/api/review/stats?slack=U012ABCDEF&amp;start=2026-01-01&amp;end=2026-03-31"</code></pre>
 	<table>
 		<tr><th>Parameter</th><th>Meaning</th></tr>
 		<tr><td><code>slack</code></td><td>The person's Slack ID. Neoadmins and superadmins may send <code>id</code>, the account number, instead.</td></tr>
@@ -338,10 +336,9 @@ npm run dev</code></pre>
 		<tr><td><code>flags</code></td><td>Optional. <code>true</code> reads the records behind the answer, at most 400 days of them, and lists <a href="#server">flags</a>.</td></tr>
 	</table>
 	<p>The answer has <code>person</code> (<code>slack_id</code>, <code>name</code>, <code>created_at</code>, <code>deleted_at</code>), <code>ban</code> (<code>reason</code> and <code>at</code>, or <code>null</code>), <code>witnessed_seconds</code>, <code>unwitnessed_seconds</code>, and <code>prompts</code>; <code>projects</code>, most witnessed time first, each with <code>name</code>, <code>key</code>, the same three counts, <code>first_day</code>, and <code>last_day</code>; <code>days</code>, each <code>date</code> with the same three counts; and <code>flags</code> when asked, each with <code>kind</code> and <code>text</code>. Time on two projects at once counts once in the totals and in each project. The answer is up to the moment. Which time to credit, whether to count unwitnessed time, and how to treat a ban or a flag are the program's to decide.</p>
-
 	<h3 id="public-api">Public API</h3>
 	<p>Anyone with an account can read their own stats from a script, or let another site read them, for example to list your projects when you sign in there. Make a read key under Settings, API. It starts with <code>tdp_</code>, is shown once, and can only read: it can't upload, change, or delete anything. Your sync key doesn't work here, and a read key doesn't sync. While your account is banned, your read keys read nothing.</p>
-	<pre>curl -H "Authorization: Bearer tdp_..." "https://your-site/api/public/v1/projects"</pre>
+	<pre><code>curl -H "Authorization: Bearer tdp_..." "https://your-site/api/public/v1/projects"</code></pre>
 	<table>
 		<tr><th>Call</th><th>What it returns</th></tr>
 		<tr><td><code>GET /api/public/v1/me</code></td><td><code>name</code>, <code>slack_id</code>, <code>created_at</code>, <code>engaged_seconds</code> in the past year, and <code>synced_at</code>.</td></tr>
@@ -351,15 +348,13 @@ npm run dev</code></pre>
 		<tr><td><code>GET /api/public/v1/users/{handle}/badge.svg</code></td><td>A badge of the profile's hours for a README, with no key. Add <code>?project=</code> and a repository or project name the profile names for one project's hours. It shows only what the profile shows: a private, banned, or unknown profile, or a project the profile doesn't name, answers 404. Answers may be cached for 5 minutes.</td></tr>
 	</table>
 	<p>Times are Unix milliseconds. Answers are JSON; a refusal is plain text with its reason. Any site may call the API from the browser, since it takes only the key and no cookies. Folders on your computer are never shown, only repositories.</p>
-
 	<h3 id="sign-in-with-teardrop">Sign in with teardrop</h3>
 	<p>A site can get a read key without anyone pasting one. Send the person to:</p>
-	<pre>https://your-site/authorize?redirect_uri=https://example.com/callback&amp;state=RANDOM&amp;name=My+portfolio</pre>
+	<pre><code>https://your-site/authorize?redirect_uri=https://example.com/callback&amp;state=RANDOM&amp;name=My+portfolio</code></pre>
 	<p>They sign in if they need to, see the site's address and what it will read, and choose Allow. They come back to <code>redirect_uri</code> with <code>code</code> and your <code>state</code>, or with <code>error=access_denied</code> if they cancel. Check that <code>state</code> is the one you sent, then trade the code within 5 minutes, from your server or the browser:</p>
-	<pre>curl -X POST https://your-site/api/public/v1/token \
-  -d '{"code":"tdc_...","redirect_uri":"https://example.com/callback"}'</pre>
+	<pre><code>curl -X POST https://your-site/api/public/v1/token \
+  -d '{"code":"tdc_...","redirect_uri":"https://example.com/callback"}'</code></pre>
 	<p>The answer is <code>{"key": "tdp_...", "token_type": "Bearer", "name": ..., "slack_id": ...}</code>. Use the key with the calls above. A code works once, for the <code>redirect_uri</code> it was made for; trading it a second time also revokes the key it became. <code>redirect_uri</code> must use https, except on <code>localhost</code>. A site without a server should add PKCE: send <code>code_challenge</code>, the base64url SHA-256 of a random verifier, and send <code>code_verifier</code> with the code. The key shows under the person's Settings, API, named after your site, where they can revoke it. Each site keeps at most 5 keys per person; signing in again after that revokes the oldest. Banned accounts can't sign in.</p>
-
 	<h3 id="hca-app">Set up sign-in</h3>
 	<ol>
 		<li>Open Developer Apps on <a href="https://auth.hackclub.com">auth.hackclub.com</a> and create an app with the <code>openid</code>, <code>profile</code>, and <code>slack_id</code> scopes.</li>
@@ -391,6 +386,7 @@ npm run dev</code></pre>
 	<pre><code>teardrop uninstall</code></pre>
 	<p>It asks once, then removes teardrop's hooks from Claude Code, Codex, Cursor, and Copilot, its Amp and OpenCode plugins, and the line the installer added to your shell profile (on Windows, the folder it added to your Path), leaving your other settings and lines as they were. It asks whether to keep the journal folder, which holds this computer's account key and any records not sent yet, and deletes the binary last. Windows can't delete a running program, so there it tells you to delete <code>teardrop.exe</code> once the window closes. <code>-yes</code> answers every question, deleting the journal folder unless you add <code>-keep-data</code>.</p>
 	<p>Your account on the site keeps what it has; remove the computer under Settings, Computers. Claude Code's longer history setting and teardrop's <code>.teardrop-backup</code> copies of settings files stay. To remove only the hooks and keep teardrop, run <code>teardrop setup -remove-hooks</code>.</p>
+	<!-- /docs:article -->
 </article>
 <a class="to-top" href="#" hidden><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 10l5-5 5 5"/></svg><span data-i18n="docs.top">Top</span></a>
 </div>

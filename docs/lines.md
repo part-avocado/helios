@@ -1,0 +1,5 @@
+# Lines of code
+
+When a computer syncs, teardrop also sends your site one record per commit of yours in each project with a git remote: its SHA, author time, and lines added and removed, never its message or code. Commits earn no time. Your profile links a public repository's latest commits, and once an hour the site asks GitHub which of them exist, so a reviewer can tell a claimed commit GitHub doesn't have. For each commit GitHub has, the review app also shows the GitHub account it is linked to, and marks one whose claimed time differs from GitHub's author date: the SHA pins that date, so a difference means the time was changed after the commit was made. A private repository's commits are shown as not checked. The check needs a `GITHUB_TOKEN` secret on the Worker; without one, the review app says so.
+
+For each project the report shows the lines agents changed (**AGENT LINES**), how many of the added lines later turned up in your commits (**KEPT**), and the lines your own commits added (**COMMITTED**). The code itself is not kept.

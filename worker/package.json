@@ -5,6 +5,7 @@
 	"scripts": {
 		"dev": "wrangler d1 migrations apply DB --local && wrangler dev",
 		"deploy": "node scripts/deploy.ts",
+		"docs": "node scripts/docs.ts",
 		"check": "wrangler types --strict-vars false --env-file .dev.vars.example && tsc --noEmit && tsc --noEmit -p test",
 		"test": "node --test \"test/*.test.ts\""
 	},
