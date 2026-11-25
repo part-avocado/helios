@@ -1,7 +1,8 @@
 // `teardrop login` connects a computer without anyone copying its sync key.
 // The CLI asks for a login (POST /api/v1/login) and shows its person a short
-// code. Signed in on the site, they open /connect, type the code, check the
-// computer's ID, and allow it. The CLI, polling GET /api/v1/login/{code}
+// code. Signed in on the site, they type the code at /connect (or in the same
+// form on the empty dashboard, which posts here), check the computer's ID,
+// and allow it. The CLI, polling GET /api/v1/login/{code}
 // with a secret code of its own, then gets a sync key of its own, once,
 // named by its computer ID, which they can revoke alone under Settings.
 //
@@ -114,7 +115,8 @@ export async function connect(request: Request, env: Env): Promise<Response> {
 		.bind(user.id, Date.now(), row.hash)
 		.run()
 	if (!allowed.meta.changes) return codePage(400, 'That code was used already. Run `teardrop login` again.')
-	return page(200, 'Computer connected', `<p class="muted">Computer <b class="site">${esc(row.computer_id)}</b> is connected. Go back to your terminal; teardrop takes it from there.</p>`)
+	return page(200, 'Computer connected', `<p class="muted">Computer <b class="site">${esc(row.computer_id)}</b> is connected. Go back to your terminal; teardrop takes it from there.</p>
+		<a class="btn primary" href="/dashboard.html">Go to your dashboard</a>`)
 }
 
 function codePage(status: number, error: string): Response {

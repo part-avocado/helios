@@ -1,19 +1,3 @@
-#!/usr/bin/env python3
-# Builds internal/textscore/letterpairs.bin, the letter-pair table the mash
-# check scores words with (internal/textscore/mash.go):
-#
-#   python3 scripts/letter-pairs.py
-#
-# For each language it takes the 20,000 most common words of FrequencyWords
-# (github.com/hermitdave/FrequencyWords, from OpenSubtitles 2018), folds
-# them to plain a-z as people type without accents, and counts each pair of
-# adjacent letters once per word, with ^ and $ for the word's start and end.
-# English comes from the dictionary teardrop already embeds. Only the counts'
-# log-probabilities are kept, never the words.
-#
-# The file is one table per language: 27 rows (^, a-z) of 27 bytes (a-z, $),
-# each byte the pair's -log(probability of the second letter after the
-# first) times 16, at most 255.
 import gzip, math, os, re, unicodedata, urllib.request
 
 LANGS = "es fr de pt it nl id tr pl sv ro cs fi hu sk hr da no lv lt et ms sq eu ca gl sl is bs eo".split()

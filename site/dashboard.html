@@ -11,27 +11,29 @@
 	<link rel="stylesheet" href="base.css">
 	<link rel="stylesheet" href="style.css">
 	<script src="theme.js"></script>
-	<script src="i18n.js" data-scripts="site.js account.js charts.js tables.js dashboard.js"></script>
+	<script src="i18n.js" data-scripts="site.js account.js charts.js tables.js reports.js dashboard.js"></script>
 </head>
 <body>
 <nav class="nav" aria-label="Main" data-i18n-attr="aria-label:nav.main">
 	<a class="brand" href="index.html"><img src="favicon.svg" alt="">teardrop</a>
 	<div class="links">
 		<a href="index.html#what-counts" class="opt local-only" data-i18n="nav.whatCounts">What counts</a>
-		<a href="dashboard.html" class="hosted-only active" aria-current="page" data-i18n="nav.dashboard">Dashboard</a>
-		<a href="settings.html" class="hosted-only" data-i18n="nav.settings">Settings</a>
-		<a href="/review/" class="staff-only" data-i18n="nav.review">Review</a>
+		<a href="dashboard.html" class="app-only active" aria-current="page" data-i18n="nav.dashboard">Dashboard</a>
+		<a href="projects.html" class="app-only" data-i18n="nav.projects">Projects</a>
 		<a href="docs.html" class="docs-link" data-i18n="nav.docs">Docs</a>
+		<a href="settings.html" class="hosted-only settings-link" data-i18n="nav.settings">Settings</a>
+		<a href="/review/" class="staff-only" data-i18n="nav.review">Review</a>
 		<a href="https://github.com/part-avocado/teardrop" class="opt local-only" data-i18n="nav.github">GitHub</a>
 	</div>
 	<button class="theme" type="button" data-theme-toggle aria-label="Switch between dark and light" title="Switch between dark and light" data-i18n-attr="aria-label:nav.theme;title:nav.theme"><svg class="sun" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1.5V3M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/></svg><svg class="moon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M13.5 9.5a5.5 5.5 0 0 1-7-7 5.5 5.5 0 1 0 7 7z"/></svg></button>
 	<button class="theme lang" type="button" data-lang-toggle>日本語</button>
-	<a class="btn primary small local-only" href="dashboard.html" aria-current="page" data-i18n="nav.dashboard">Dashboard</a>
+	<a class="btn primary small guest-only" href="login.html" data-i18n="nav.signIn">Sign in</a>
 	<details class="account hosted-only">
 		<summary aria-label="Account menu" data-i18n-attr="aria-label:nav.accountMenu"><span class="avatar" id="account-initial" aria-hidden="true"></span><span class="who" id="account-name"></span><svg class="chev" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
 		<div class="menu">
 			<div class="who-line"><span data-i18n="nav.signedInAs">Signed in as</span><b id="account-name-full"></b></div>
 			<a href="dashboard.html" data-i18n="nav.dashboard">Dashboard</a>
+			<a href="projects.html" data-i18n="nav.projects">Projects</a>
 			<a href="settings.html" data-i18n="nav.settings">Settings</a>
 			<a href="settings.html#account" data-i18n="nav.account">Account</a>
 			<a href="/review/" class="staff-only" data-i18n="nav.review">Review</a>
@@ -61,10 +63,10 @@
 		</div>
 	</div>
 
-	<!-- Signed in, with nothing synced yet. -->
+	<!-- Signed in, with nothing synced yet. Its code form posts to /connect, which asks to allow the computer. -->
 	<div id="setup" class="empty" hidden>
-		<h2 data-i18n="dash.setup.h2">Let's get your first hours in</h2>
-		<p class="muted" data-i18n="dash.setup.lead">Two commands and your stats show up here. No timers to start, nothing to remember.</p>
+		<h2 data-i18n="dash.setup.h2">Let's get agentic.</h2>
+		<p class="muted" data-i18n="dash.setup.lead">Paste one command into a terminal, then type the code it shows here.</p>
 		<div id="setup-steps"></div>
 		<p class="waiting" role="status"><span class="dot live"></span><span data-i18n="dash.setup.waiting">Waiting for your first sync. This page updates on its own.</span></p>
 		<p class="muted fine" data-i18n="dash.setup.upload">Can't reach this site from that computer? <a href="settings.html#data">Upload a stats file</a> instead.</p>

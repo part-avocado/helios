@@ -128,7 +128,7 @@ test('every answer says it may not be framed or have its type guessed', async ()
 })
 
 test('pages and data need an account', async () => {
-	for (const page of ['/dashboard', '/settings.html', '/review/']) {
+	for (const page of ['/dashboard', '/projects', '/projects.html?days=7', '/settings.html', '/review/']) {
 		const res = await call(page)
 		assert.equal(res.status, 302, page)
 		assert.equal(res.headers.get('Location'), `/login?next=${encodeURIComponent(page)}`)
@@ -400,7 +400,7 @@ test('only reviewers see other people, in the review app', async () => {
 
 	assert.match(await (await call('/review/', { cookie: admin })).text(), /<html[^>]* data-staff[\s\S]*<title>teardrop review</)
 	// Only a reviewer's pages are marked to show the Review links.
-	for (const page of ['/', '/dashboard', '/settings']) {
+	for (const page of ['/', '/dashboard', '/projects', '/settings']) {
 		assert.match(await (await call(page, { cookie: admin })).text(), /<html[^>]* data-staff[\s\S]*class="staff-only"[^>]*>Review</, page)
 		assert.doesNotMatch(await (await call(page, { cookie: member })).text(), /<html[^>]* data-staff/, page)
 	}
@@ -1338,10 +1338,14 @@ test('home and docs work for anyone, and show the account menu once signed in', 
 	for (const page of ['/', '/docs']) {
 		const plain = await call(page)
 		assert.equal(plain.status, 200, page)
-		assert.doesNotMatch(await plain.text(), /<html[^>]* data-hosted/)
+		const plainText = await plain.text()
+		assert.doesNotMatch(plainText, /<html[^>]* data-hosted/)
+		// Marked as the website, so the nav offers to sign in, not this computer's dashboard.
+		assert.match(plainText, /<html[^>]* data-web/, page)
 		const cookie = await signIn('menu')
 		const signedIn = await (await call(page, { cookie })).text()
 		assert.match(signedIn, /<html[^>]* data-hosted/, page)
+		assert.match(signedIn, /<html[^>]* data-web/, page)
 		assert.match(signedIn, /id="account-name-full"[^>]*>&lt;b&gt;menu&lt;\/b&gt;</, page)
 	}
 	// Home stays up before the secrets exist.

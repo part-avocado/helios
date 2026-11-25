@@ -3,13 +3,14 @@
 // it is one signed report made live on this computer.
 const DAY = 86400000
 const hosted = 'hosted' in document.documentElement.dataset
+const params = new URLSearchParams(location.search)
 // Set when a neoadmin or superadmin opens someone else's stats from the review app.
-const viewing = hosted ? new URLSearchParams(location.search).get('user') : null
+const viewing = hosted ? params.get('user') : null
 let report = null
-let days = 30
+// The range, and the project picked, come from the address (?days=7&project=…),
+// and are kept in it, so a view can be linked, reloaded, and bookmarked.
+let days = rangeFrom(params)
 let live = false
-
-const count = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(n))
 
 // What the visitor has picked. Clicking a day on the heatmap or a bar picks
 // that day (a week, on the yearly chart) and shows its work blocks below.
@@ -17,7 +18,7 @@ const count = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e
 // Clicking either again clears it.
 let heatScrolled = false
 let pick = null // { from: Date, to: Date, label: string }
-let only = null // a project key
+let only = params.get('project') || null // a project key
 
 const fmtDay = new Intl.DateTimeFormat(LANG, { weekday: 'short', month: 'short', day: 'numeric' })
 const fmtShort = new Intl.DateTimeFormat(LANG, { month: 'short', day: 'numeric' })
@@ -157,12 +158,37 @@ function render() {
 	if (!all.length) {
 		$('no-data').innerHTML = hosted ? t('dash.noDataHosted') : t('dash.noDataLocal')
 	}
+	syncURL(only && (projects.get(only)?.name || scoped[0]?.project.name || only))
+}
+
+// syncURL puts the project picked and the range in the address, leaving the
+// rest of it (such as a reviewer's ?user=) as it is, and names the project
+// in the tab's title.
+function syncURL(name) {
+	const url = new URL(location.href)
+	if (only) url.searchParams.set('project', only)
+	else url.searchParams.delete('project')
+	if (days !== 30) url.searchParams.set('days', String(days))
+	else url.searchParams.delete('days')
+	if (url.href !== location.href) history.replaceState(history.state, '', url)
+	document.title = name ? t('dash.projectTitle', { name }) : t('dash.title')
+}
+
+// projectsURL is the projects page, for the same person and range.
+function projectsURL() {
+	const q = new URLSearchParams()
+	if (viewing) q.set('user', viewing)
+	if (days !== 30) q.set('days', String(days))
+	return 'projects.html' + (q.size ? '?' + q : '')
 }
 
 // renderChips shows what is picked, each with a way to clear it.
 function renderChips(projects, scoped) {
 	const chips = []
-	if (only) chips.push(`<button type="button" class="chip" data-clear="project" title="${t('dash.showAllProjects')}">${esc(projects.get(only)?.name || scoped[0]?.project.name || only)}${X}</button>`)
+	if (only) {
+		chips.push(`<button type="button" class="chip" data-clear="project" title="${t('dash.showAllProjects')}">${esc(projects.get(only)?.name || scoped[0]?.project.name || only)}${X}</button>`)
+		chips.push(`<a class="link" href="${esc(projectsURL())}">${t('dash.allProjects')}</a>`)
+	}
 	if (pick) {
 		const inPick = scoped.filter((b) => b.s >= pick.from && b.s < pick.to)
 		const secs = inPick.reduce((n, b) => n + b.engaged_seconds, 0)
@@ -222,43 +248,7 @@ function renderBars(perDay, from) {
 	$('bar-labels').innerHTML = `<span>${fmtShort.format(first)}</span><span>${fmtShort.format(addDays(from, days - 1))}</span>`
 }
 
-// verify checks a signed report from `teardrop dashboard` and returns its payload.
-// The key is an Ed25519 signature of the payload text by the account inside it,
-// so editing any number, the account, or a time makes it fail.
-const SKEW = 5 * 60000
-const b64u = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0))
-async function verify(file) {
-	if (!file || typeof file.payload !== 'string' || typeof file.key !== 'string') {
-		throw new Error(t('dash.err.noKey'))
-	}
-	let p
-	try {
-		p = JSON.parse(file.payload)
-	} catch {
-		throw new Error(t('dash.err.damaged'))
-	}
-	let ok = false
-	try {
-		const key = await crypto.subtle.importKey('raw', b64u(p.account), { name: 'Ed25519' }, false, ['verify'])
-		ok = await crypto.subtle.verify({ name: 'Ed25519' }, key, b64u(file.key), new TextEncoder().encode(file.payload))
-	} catch (e) {
-		if (!crypto.subtle) throw new Error(t('dash.err.insecure'))
-		if (e?.name === 'NotSupportedError') throw new Error(t('dash.err.unsupported'))
-	}
-	if (!ok) throw new Error(t('dash.err.mismatch'))
-	const generated = Date.parse(p.generated_at), expires = Date.parse(p.expires_at), now = Date.now()
-	if (!(generated <= now + SKEW)) throw new Error(t('dash.err.future'))
-	if (!(now <= expires)) throw new Error(t('dash.err.expired', { date: new Date(expires).toLocaleString(LANG) }))
-	if ((p.report?.blocks || []).some((b) => Date.parse(b.end) > generated + SKEW)) {
-		throw new Error(t('dash.err.afterMade'))
-	}
-	const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', b64u(p.account)))
-	p.accountID = 'td-' + [...digest.slice(0, 6)].map((x) => x.toString(16).padStart(2, '0')).join('')
-	return p
-}
-
-const verifiedNote = (p) =>
-	`<span class="tag ok" title="${esc(t('dash.verifiedTitle'))}"><svg class="ico" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>${t('dash.verified')}</span> ${t('dash.verifiedNote', { id: esc(p.accountID), date: esc(new Date(p.expires_at).toLocaleDateString(LANG)) })}`
+// verify, verifiedNote, and merge, which read reports, are in reports.js.
 
 // The page shows one of four things: stats, the setup steps, a notice, or,
 // until the first answer arrives, the shapes of the stats to come.
@@ -288,20 +278,8 @@ $('notice-retry').addEventListener('click', () => {
 	loadHosted()
 })
 
-// merge adds up the latest report of each of a person's computers.
-function merge(computers) {
-	const reports = computers.map((c) => c.report.report || {})
-	const perDay = new Map()
-	for (const r of reports) for (const d of r.days || []) perDay.set(d.date, (perDay.get(d.date) || 0) + d.engaged_seconds)
-	return {
-		blocks: reports.flatMap((r) => r.blocks || []),
-		projects: reports.flatMap((r) => r.projects || []),
-		// Without per-day totals from every computer, render() adds up blocks instead.
-		days: reports.every((r) => Array.isArray(r.days)) ? [...perDay].map(([date, engaged_seconds]) => ({ date, engaged_seconds })) : undefined,
-	}
-}
-
 let setupReady = false
+let noteAsked = false // whether profileNote has been asked for, once there are stats
 
 // showSetup nudges a signed-in visitor with nothing synced to connect a computer.
 async function showSetup() {
@@ -340,6 +318,10 @@ async function loadHosted() {
 		else notice(viewing ? t('dash.notice.cannotLoadThese') : t('dash.notice.cannotLoadYour'), esc(e.message), true)
 		again(15000)
 		return
+	}
+	if (!viewing && !noteAsked) {
+		noteAsked = true
+		profileNote().catch(() => {})
 	}
 	const last = Math.max(...body.computers.map((c) => c.synced_at))
 	const stale = Date.now() - last > 3 * DAY
@@ -380,6 +362,7 @@ async function poll() {
 }
 
 for (const b of document.querySelectorAll('#range button')) {
+	b.setAttribute('aria-pressed', String(Number(b.dataset.days) === days))
 	b.addEventListener('click', () => {
 		days = Number(b.dataset.days)
 		for (const o of document.querySelectorAll('#range button')) o.setAttribute('aria-pressed', String(o === b))
@@ -409,7 +392,8 @@ $('content').addEventListener('click', (e) => {
 initTips($('content'))
 
 // Profiles are public by default, so each person is told once, with the
-// address of theirs and where to change it. Not when a reviewer is viewing.
+// address of theirs and where to change it: once there is something on it,
+// so a new account's first sight is its setup. Not when a reviewer is viewing.
 async function profileNote() {
 	if (localStorage.getItem('teardrop-profile-note')) return
 	const me = await api('/api/me')
@@ -423,7 +407,6 @@ $('profile-note-ok').addEventListener('click', () => {
 	localStorage.setItem('teardrop-profile-note', '1')
 	$('profile-note').hidden = true
 })
-if (hosted && !viewing) profileNote().catch(() => {})
 
 // Live: each prompt and turn end shows within seconds. When a turn ends, its
 // sync follows shortly, so the stats are read again then.

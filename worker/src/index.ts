@@ -69,7 +69,7 @@ async function liveView(env: Env, userID: number, request: Request, tag: 'owner'
 }
 
 /** Pages that need an account. */
-const PAGES = new Set(['dashboard', 'settings'])
+const PAGES = new Set(['dashboard', 'projects', 'settings'])
 
 /** Addresses the review app had before it moved to /review/, and ones a reviewer might try. */
 const REVIEW_ALIASES = new Set(['review', 'reviews', 'reviewer', 'admin', 'people', 'person'])
@@ -370,16 +370,26 @@ async function reviewAPI(request: Request, env: Env, url: URL): Promise<Response
 }
 
 /**
- * servePage serves a page of the site. For a signed-in visitor it marks the
- * page, so it shows their account menu from the first paint.
+ * servePage serves a page of the site. It marks every page as served here,
+ * with data-web, which `teardrop dashboard` does not, so the nav offers a
+ * visitor who is not signed in a way to sign in rather than this computer's
+ * dashboard. For a signed-in visitor it marks the page, so it shows their
+ * account menu from the first paint.
  */
 async function servePage(request: Request, env: Env, user: User | null): Promise<Response> {
 	// A fresh request, so the copy served is never "not modified" for someone else.
 	const asset = await env.ASSETS.fetch(new Request(request.url))
-	if (!user || !asset.headers.get('Content-Type')?.includes('text/html')) return asset // or a redirect to the page's tidy address
+	if (!asset.headers.get('Content-Type')?.includes('text/html')) return asset // or a redirect to the page's tidy address
+	if (!user) {
+		const page = new HTMLRewriter().on('html', { element: (el) => void el.setAttribute('data-web', '') }).transform(asset)
+		const headers = new Headers(page.headers)
+		headers.delete('ETag') // the asset's, for what is no longer quite the asset
+		return new Response(page.body, { status: page.status, headers })
+	}
 	const page = new HTMLRewriter()
 		.on('html', {
 			element(el) {
+				el.setAttribute('data-web', '')
 				el.setAttribute('data-hosted', '')
 				// Reviewers of any level get a link to the review app.
 				if (user.level != null) el.setAttribute('data-staff', '')
