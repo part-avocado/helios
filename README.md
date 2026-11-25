@@ -2,8 +2,9 @@
 [![Latest Build](https://github.com/part-avocado/teardrop/actions/workflows/ci.yml/badge.svg)](https://github.com/part-avocado/teardrop/actions/workflows/ci.yml)
 
 See how much time you actually spend working with AI coding tools, per project.
-teardrop reads the logs Claude Code and Codex already write, so there is
-nothing to keep running and nothing to configure inside those tools.
+teardrop reads the logs Claude Code and Codex already write, and records Amp,
+OpenCode, GitHub Copilot, and Cursor through hooks and plugins that
+`teardrop setup` adds, so there is nothing to keep running.
 
 ## Install
 
@@ -36,8 +37,8 @@ rights are needed. It installs to `~/.local/bin`, or
 
 `setup` lists the tools it found and offers to stop Claude Code from deleting
 transcripts after 30 days. It changes nothing without asking and is safe to rerun.
-To set up one tool only, name it: `teardrop setup amp`, `teardrop setup claude`,
-or `teardrop setup codex`.
+To set up one tool only, name it: `teardrop setup claude`, `codex`, `amp`,
+`opencode`, `copilot`, or `cursor`.
 
 With Go 1.25 or later you can also run
 `go install github.com/part-avocado/teardrop/cmd/teardrop@latest`.
@@ -162,7 +163,7 @@ matched by a hash; the code itself is not kept.
 ## Accounts and sync
 
 On the website, sign in with Hack Club and open the dashboard. With nothing
-synced yet it shows the two commands that connect a computer; the second is
+synced yet it shows what to run to connect a computer: the installer, then
 
 ```sh
 teardrop login -server https://your-site

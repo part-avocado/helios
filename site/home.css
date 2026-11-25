@@ -20,6 +20,10 @@ main p a { text-decoration: underline; text-underline-offset: 3px; }
 .install .cmd { padding: 12px 12px 12px 16px; }
 .install .copy { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
 .install .note { padding: 10px 16px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+/* The second way in: the website, for every computer's hours */
+.web { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; margin-top: 14px; font-size: 15px; color: var(--muted); }
+.web span { flex: 1 1 16em; }
+.web b { font-weight: 600; color: var(--text); }
 .under { margin-top: 16px; font-size: 15px; color: var(--muted); }
 .term { margin: 0; padding: 20px 22px; border: 1px solid var(--line); border-radius: 12px; background: var(--term-bg); color: var(--term-text); font: 12.5px/1.75 var(--mono); overflow-x: auto; white-space: pre; }
 /* On a narrow screen the report scrolls sideways. An edge it runs past is
@@ -49,7 +53,7 @@ main p a { text-decoration: underline; text-underline-offset: 3px; }
 
 /* Getting started */
 .start { padding: 80px 0; }
-.how { list-style: none; margin: 36px 0 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px; counter-reset: how; }
+.how { list-style: none; margin: 36px 0 0; padding: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 32px; counter-reset: how; }
 .how li { counter-increment: how; padding-left: 18px; border-left: 2px solid var(--line); }
 .how li::before { content: "0" counter(how); display: block; margin-bottom: 8px; font: 500 14px var(--mono); color: var(--accent); }
 .how p { margin-top: 6px; color: var(--muted); }
@@ -65,6 +69,9 @@ main p a { text-decoration: underline; text-underline-offset: 3px; }
 .close .actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 28px; }
 .close .btn { height: 46px; padding: 0 22px; font-size: 16px; }
 
+@media (max-width: 1080px) {
+	.how { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 @media (max-width: 860px) {
 	.hero { padding: 40px 0 56px; }
 	.hero .wrap, .cards, .how, .faq .grid { grid-template-columns: minmax(0, 1fr); }
@@ -73,4 +80,12 @@ main p a { text-decoration: underline; text-underline-offset: 3px; }
 	.how { gap: 24px; }
 	.faq .grid { gap: 28px; }
 	.term { font-size: 11px; padding: 16px; }
+}
+/* On a phone, the install box comes into view without scrolling far. */
+@media (max-width: 520px) {
+	.hero { padding-top: 24px; }
+	h1 { font-size: 29px; }
+	.lead { margin-top: 12px; font-size: 16.5px; line-height: 1.55; }
+	.install { margin-top: 18px; }
+	.install .cmd { padding-left: 12px; }
 }

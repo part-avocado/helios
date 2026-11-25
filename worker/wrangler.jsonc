@@ -26,6 +26,8 @@
 			"/login.html",
 			"/dashboard",
 			"/dashboard.html",
+			"/projects",
+			"/projects.html",
 			"/settings",
 			"/settings.html",
 			"/review",

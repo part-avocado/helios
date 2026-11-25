@@ -63,9 +63,20 @@ function listComputers(computers) {
 		`<div class="item"><div class="grow muted">${t('settings.computers.none')}</div></div>`
 }
 
+// With a computer connected already, Setup is for adding another: the
+// command and the code, with the rest folded away.
+let another = false
+function showSetup(key) {
+	const h2 = $('setup').querySelector('h2'), lead = $('setup').querySelector('h2 + .muted')
+	h2.textContent = t(another ? 'settings.setup.again.h2' : 'settings.setup.h2')
+	lead.textContent = t(another ? 'settings.setup.again.lead' : 'settings.setup.lead')
+	renderSetup($('setup-steps'), key, another)
+}
+
 async function load() {
 	const me = await api('/api/me')
-	renderSetup($('setup-steps'), me.api_key)
+	another = me.computers.length > 0
+	showSetup(me.api_key)
 	listComputers(me.computers)
 	$('me-name').textContent = me.name || t('common.notSet')
 	$('me-slack').textContent = me.slack_id || t('settings.account.noSlack')
@@ -78,7 +89,7 @@ $('new-key').addEventListener('click', async () => {
 	if (!(await ask(t('settings.acctKey.askTitle'), t('settings.acctKey.askText'), t('settings.acctKey.askGo')))) return
 	try {
 		const key = (await change('/api/key', 'POST')).api_key
-		renderSetup($('setup-steps'), key)
+		showSetup(key)
 		// The new key in a popup, to copy to wherever the old one was.
 		$('new-key-value').textContent = key
 		$('key-dialog').showModal()

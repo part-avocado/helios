@@ -2,13 +2,13 @@
 
 Start with `teardrop doctor`. It checks the usual causes below and prints what to run for each one it finds.
 
-## “No Claude Code or Codex sessions found”
+## “No Claude Code, Codex, or Amp sessions found”
 
 Run `teardrop setup` to see where teardrop looked. If your logs live elsewhere, such as inside WSL on Windows, pass `-claude-dir` or `-codex-dir`. Try `-since 30d` if your last session was more than a week ago.
 
 ## “teardrop: command not found”
 
-Open a new terminal so the PATH change applies. On Windows, restart any terminal that was open during install.
+Open a new terminal so the PATH change applies. On Windows, the PowerShell window you installed from already has it; restart any other terminal that was open during install.
 
 ## “skipped N log files that could not be read”
 

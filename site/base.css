@@ -78,6 +78,11 @@ h1, h2, h3 { line-height: 1.15; }
 /* The server marks <html> with data-hosted when someone is signed in (and
    data-staff for reviewers), so these show or hide what only an account needs. */
 html:not([data-hosted]) .hosted-only, html[data-hosted] .local-only, html:not([data-staff]) .staff-only { display: none !important; }
+/* The Worker also marks every page it serves with data-web, which `teardrop
+   dashboard` does not. So app-only shows to someone signed in and on this
+   computer's own dashboard, and guest-only to a visitor of the website who
+   is not signed in. */
+html[data-web]:not([data-hosted]) .app-only, html:not([data-web]) .guest-only, html[data-hosted] .guest-only { display: none !important; }
 
 /* Header bar */
 /* The side padding keeps the bar's contents in line with .wrap on a wide screen. */
@@ -181,9 +186,11 @@ footer a { color: var(--text); }
 @media (max-width: 520px) {
 	.nav { gap: 4px; padding: 0 14px; }
 	.nav .brand { font-size: 19px; }
-	.nav .links { margin-right: 2px; }
-	.nav .links a { padding: 7px; font-size: 14px; }
+	/* Should the pages still not fit, as in a longer language, they scroll rather than widen the page. */
+	.nav .links { min-width: 0; margin-right: 2px; overflow-x: auto; scrollbar-width: none; }
+	.nav .links a { flex: none; padding: 7px; font-size: 14px; }
 	.nav .account { margin-left: 2px; }
-	html[data-hosted] .nav .docs-link { display: none; }
-	html[data-hosted] .nav .brand { font-size: 0; } /* the logo stands alone; the name would not fit */
+	/* Docs, and Settings, which the account menu has, make room for the app's own pages. */
+	html:is([data-hosted], :not([data-web])) .nav .docs-link, html[data-hosted] .nav .settings-link { display: none; }
+	html:is([data-hosted], :not([data-web])) .nav .brand { font-size: 0; } /* the logo stands alone; the name would not fit */
 }

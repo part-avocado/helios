@@ -35,7 +35,8 @@ func runLogin(args []string) {
 	if *server != "" {
 		srv, err = checkServer(*server)
 	} else if srv, err = serverURL(""); err != nil {
-		err = errors.New("name your teardrop site: teardrop login -server https://your-site")
+		err = errors.New("name your teardrop site: teardrop login -server https://your-site\n" +
+			"Your site's dashboard, or Settings, Setup, shows the exact command, ready to copy")
 	}
 	check(err)
 	id, err := thisComputer()

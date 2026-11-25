@@ -86,25 +86,42 @@ async function api(path, init) {
 	return res.json()
 }
 
+const INSTALL = 'https://raw.githubusercontent.com/part-avocado/teardrop/main/install'
+// setupCommands are the one line to paste on each OS: install (or update),
+// then connect to this site. install.ps1 puts teardrop on this session's
+// PATH; install.sh only on a new terminal's, so its own path is named.
+function setupCommands() {
+	return {
+		sh: `curl -fsSL ${INSTALL}.sh | sh && ~/.local/bin/teardrop login -server ${location.origin}`,
+		ps: `irm ${INSTALL}.ps1 | iex; teardrop login -server ${location.origin}`,
+	}
+}
+
 // renderSetup fills el with the steps that connect a computer to this
-// account. key is the visitor's sync key, shown only for the Amp cloud
-// secret: a computer gets it by `teardrop login`, so no command holds it.
-function renderSetup(el, key) {
-	const sh = 'curl -fsSL https://raw.githubusercontent.com/part-avocado/teardrop/main/install.sh | sh'
-	const ps = 'irm https://raw.githubusercontent.com/part-avocado/teardrop/main/install.ps1 | iex'
-	const connect = `teardrop login -server ${location.origin}`
+// account: one command, then the code it shows, typed into a form that posts
+// to /connect, which still asks to allow the computer by its ID. key is the
+// visitor's sync key, shown only for the Amp cloud secret: a computer gets
+// one by `teardrop login`, so no command holds it. With again, for a person
+// who has a computer already, the agent's way is folded away.
+function renderSetup(el, key, again = false) {
+	const { sh, ps } = setupCommands()
 	const cmd = (text, kind = '') => `<div class="cmd ${kind}"><code>${esc(text)}</code><button class="copy" type="button">${t('common.copy')}</button></div>`
+	const promptBox = (text) => `<div class="prompt"><code>${esc(text)}</code><button class="copy" type="button">${t('common.copy')}</button></div>`
 	// What to paste into an agent so it does the setup itself. The questions
 	// teardrop setup asks are answered up front, since an agent can't answer them.
-	const prompt = t('setup.agentPrompt', { sh, ps, connect })
+	const prompt = t('setup.agentPrompt', {
+		sh: `curl -fsSL ${INSTALL}.sh | TEARDROP_NO_SETUP=1 sh`,
+		ps: `$env:TEARDROP_NO_SETUP=1; irm ${INSTALL}.ps1 | iex`,
+		connect: `teardrop login -server ${location.origin}`,
+	})
 	// What to paste into Amp so its cloud threads count. The sync key is left
 	// out: Amp asks for a secret's value in a private dialog.
 	const cloudPrompt = t('setup.cloudPrompt', { origin: location.origin })
-	el.innerHTML = `<ol class="steps">
+	const steps = `<ol class="steps">
 		<li><div>
 			<h3>${t('setup.install.h')}</h3>
 			<p>${t('setup.install.p')}</p>
-			<div class="cmdbox" data-tabs>
+			<div class="cmdbox setup-cmd" data-tabs>
 				<div class="tabs" role="tablist">
 					<button type="button" data-tab="mac" role="tab">${t('os.mac')}</button>
 					<button type="button" data-tab="linux" role="tab">${t('os.linux')}</button>
@@ -118,34 +135,54 @@ function renderSetup(el, key) {
 		<li><div>
 			<h3>${t('setup.connect.h')}</h3>
 			<p>${t('setup.connect.p')}</p>
-			<div class="cmdbox">${cmd(connect)}</div>
+			<form class="code-form" method="post" action="/connect">
+				<input name="user_code" aria-label="${esc(t('setup.connect.label'))}" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX" maxlength="12" required>
+				<button class="btn primary">${t('setup.connect.go')}</button>
+			</form>
 			<p class="fine">${t('setup.connect.fine')}</p>
 		</div></li>
-		<li><div>
-			<h3>${t('setup.tools.h')}</h3>
-			<p>${t('setup.tools.p')}</p>
-			<div class="cmdbox tools" data-tabs data-default="claude">
-				<div class="tabs" role="tablist">
-					<button type="button" data-tab="claude" role="tab">Claude Code</button>
-					<button type="button" data-tab="codex" role="tab">Codex</button>
-					<button type="button" data-tab="amp" role="tab">Amp</button>
-				</div>
-				<div class="tab-panel" data-tab="claude"><p>${t('setup.tools.claude')}</p></div>
-				<div class="tab-panel" data-tab="codex"><p>${t('setup.tools.codex')}</p></div>
-				<div class="tab-panel" data-tab="amp"><p>${t('setup.tools.amp1')}</p>${cmd('teardrop setup amp')}<p>${t('setup.tools.amp2')}</p>
-					<h4>${t('setup.cloud.h')}</h4>
-					<p>${t('setup.cloud.p1')}</p>
-					<div class="prompt"><code>${esc(cloudPrompt)}</code><button class="copy" type="button">${t('common.copy')}</button></div>
-					<p>${t('setup.cloud.p2')}</p>${cmd(key, 'plain')}
-					<p>${t('setup.cloud.p3')}</p></div>
-			</div>
-		</div></li>
-		<li class="alt"><div>
-			<h3>${t('setup.agent.h')}</h3>
-			<p>${t('setup.agent.p')}</p>
-			<div class="prompt"><code>${esc(prompt)}</code><button class="copy" type="button">${t('common.copy')}</button></div>
-			<p class="fine">${t('setup.agent.fine')}</p>
-		</div></li>
 	</ol>`
+	const agent = `<div class="setup-agent">
+		<p>${t('setup.agent.p')}</p>
+		${promptBox(prompt)}
+		<p class="fine">${t('setup.agent.fine')}</p>
+	</div>`
+	const notes = `<div class="setup-notes"><details class="setup-more">
+		<summary>${t('setup.tools.h')}</summary>
+		<p>${t('setup.tools.p')}</p>
+		<div class="cmdbox tools" data-tabs data-default="claude">
+			<div class="tabs" role="tablist">
+				<button type="button" data-tab="claude" role="tab">Claude Code</button>
+				<button type="button" data-tab="codex" role="tab">Codex</button>
+				<button type="button" data-tab="amp" role="tab">Amp</button>
+			</div>
+			<div class="tab-panel" data-tab="claude"><p>${t('setup.tools.claude')}</p></div>
+			<div class="tab-panel" data-tab="codex"><p>${t('setup.tools.codex')}</p></div>
+			<div class="tab-panel" data-tab="amp"><p>${t('setup.tools.amp1')}</p>${cmd('teardrop setup amp')}<p>${t('setup.tools.amp2')}</p></div>
+		</div>
+	</details>
+	<details class="setup-more" id="amp-cloud">
+		<summary>${t('setup.cloud.h')}</summary>
+		<p>${t('setup.cloud.p1')}</p>
+		${promptBox(cloudPrompt)}
+		<p>${t('setup.cloud.p2')}</p>
+		<div class="cmdbox">${cmd(key, 'plain')}</div>
+		<p>${t('setup.cloud.p3')}</p>
+	</details></div>`
+	el.innerHTML = again
+		? `${steps}<details class="setup-more"><summary>${t('setup.agent.h')}</summary>${agent}</details>${notes}`
+		: `<div class="seg setup-mode" role="group">
+				<button type="button" data-mode="self" aria-pressed="true">${t('setup.mode.self')}</button>
+				<button type="button" data-mode="agent" aria-pressed="false">${t('setup.mode.agent')}</button>
+			</div>
+			<div data-mode-panel="self">${steps}</div>
+			<div data-mode-panel="agent" hidden>${agent}</div>
+			${notes}`
+	for (const b of el.querySelectorAll('.setup-mode button')) {
+		b.addEventListener('click', () => {
+			for (const o of el.querySelectorAll('.setup-mode button')) o.setAttribute('aria-pressed', String(o === b))
+			for (const p of el.querySelectorAll('[data-mode-panel]')) p.hidden = p.dataset.modePanel !== b.dataset.mode
+		})
+	}
 	initTabs(el)
 }

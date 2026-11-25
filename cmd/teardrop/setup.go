@@ -51,7 +51,7 @@ func runSetup(args []string) {
 	claudeDir := fs.String("claude-dir", "", "Claude Code config directories, comma-separated")
 	codexDir := fs.String("codex-dir", "", "Codex home directories, comma-separated")
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "Usage: teardrop setup [flags] [claude] [codex] [amp] [copilot] [cursor]")
+		fmt.Fprintln(os.Stderr, "Usage: teardrop setup [flags] [claude] [codex] [amp] [opencode] [copilot] [cursor]")
 		fmt.Fprintln(os.Stderr, "       Sets up every tool it finds, or only the ones you name.")
 		fmt.Fprintln(os.Stderr)
 		fs.PrintDefaults()
@@ -148,7 +148,7 @@ func runSetup(args []string) {
 	switch {
 	case !anyFound && len(only) == 0:
 		fmt.Println("No supported tools found. teardrop reads Claude Code and Codex logs, and")
-		fmt.Println("records Amp and OpenCode through plugins. If yours keep logs in a custom place, pass")
+		fmt.Println("records Amp, OpenCode, Copilot, and Cursor through plugins and hooks. If yours keep logs in a custom place, pass")
 		fmt.Println("-claude-dir or -codex-dir.")
 	case !anyFound:
 	case *removeHooks && len(only) == 0:

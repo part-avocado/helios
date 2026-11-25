@@ -17,20 +17,23 @@
 <nav class="nav" aria-label="Main" data-i18n-attr="aria-label:nav.main">
 	<a class="brand" href="/"><img src="/favicon.svg" alt="">teardrop</a>
 	<div class="links">
-		<a href="/#what-counts" class="opt" data-i18n="nav.whatCounts">What counts</a>
-		<a href="/dashboard" class="hosted-only" data-i18n="nav.dashboard">Dashboard</a>
-		<a href="/settings" class="hosted-only" data-i18n="nav.settings">Settings</a>
-		<a href="/review/" class="staff-only" data-i18n="nav.review">Review</a>
+		<a href="/#what-counts" class="opt local-only" data-i18n="nav.whatCounts">What counts</a>
+		<a href="/dashboard" class="app-only" data-i18n="nav.dashboard">Dashboard</a>
+		<a href="/projects" class="app-only" data-i18n="nav.projects">Projects</a>
 		<a href="/docs" class="docs-link" data-i18n="nav.docs">Docs</a>
+		<a href="/settings" class="hosted-only settings-link" data-i18n="nav.settings">Settings</a>
+		<a href="/review/" class="staff-only" data-i18n="nav.review">Review</a>
+		<a href="https://github.com/part-avocado/teardrop" class="opt local-only" data-i18n="nav.github">GitHub</a>
 	</div>
 	<button class="theme" type="button" data-theme-toggle aria-label="Switch between dark and light" title="Switch between dark and light" data-i18n-attr="aria-label:nav.theme;title:nav.theme"><svg class="sun" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1.5V3M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/></svg><svg class="moon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M13.5 9.5a5.5 5.5 0 0 1-7-7 5.5 5.5 0 1 0 7 7z"/></svg></button>
 	<button class="theme lang" type="button" data-lang-toggle>日本語</button>
-	<a class="btn primary small local-only" href="/login" data-i18n="nav.signIn">Sign in</a>
+	<a class="btn primary small guest-only" href="/login" data-i18n="nav.signIn">Sign in</a>
 	<details class="account hosted-only">
 		<summary aria-label="Account menu" data-i18n-attr="aria-label:nav.accountMenu"><span class="avatar" id="account-initial" aria-hidden="true"></span><span class="who" id="account-name"></span><svg class="chev" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
 		<div class="menu">
 			<div class="who-line"><span data-i18n="nav.signedInAs">Signed in as</span><b id="account-name-full"></b></div>
 			<a href="/dashboard" data-i18n="nav.dashboard">Dashboard</a>
+			<a href="/projects" data-i18n="nav.projects">Projects</a>
 			<a href="/settings" data-i18n="nav.settings">Settings</a>
 			<a href="/settings#profile" data-i18n="nav.profile">Profile</a>
 			<a href="/review/" class="staff-only" data-i18n="nav.review">Review</a>

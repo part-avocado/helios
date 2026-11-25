@@ -12,9 +12,17 @@ curl -fsSL https://raw.githubusercontent.com/part-avocado/teardrop/main/install.
 irm https://raw.githubusercontent.com/part-avocado/teardrop/main/install.ps1 | iex
 ```
 
-The installer downloads the right binary, checks it against the release's `checksums.txt`, and installs it without admin rights to `~/.local/bin`, or `%LOCALAPPDATA%\Programs\teardrop` on Windows. It adds that folder to your PATH, then runs `teardrop setup`. Open a new terminal afterwards so the PATH change applies.
+The installer downloads the right binary, checks it against the release's `checksums.txt`, and installs it without admin rights to `~/.local/bin`, or `%LOCALAPPDATA%\Programs\teardrop` on Windows. It adds that folder to your PATH, then runs `teardrop setup`. The first command writes the PATH change to your shell's profile, so open a new terminal before you run `teardrop` yourself. The PowerShell one also adds the folder to the window you installed from, so `teardrop` works there straight away; restart any other terminal that was already open.
 
-To update later, run `teardrop update`, or run the install command again. `teardrop update v0.5.0` installs one version in particular. Once a day, a background sync checks for a newer release, and `teardrop` prints one line when there is one. teardrop updates itself only if you run `teardrop update -auto on`: then that daily check installs each new release once it matches the release's checksums and runs as that version, keeps the one it replaced beside it with `.old` on the end, and says so for three days. Run `teardrop setup` afterwards to bring hooks and plugins up to date. The checksums come from the same release as the binary, so auto-update trusts GitHub and teardrop's release workflow as much as the installer does. `teardrop update -auto off` stops it. These optional environment variables change what the installer does:
+## Updating
+
+To update later, run `teardrop update`, or run the install command again. `teardrop update -check` only says whether a newer version is out, and `teardrop update v0.5.0` installs one version in particular, even an older one. `teardrop update` and the installer both run `teardrop setup` again with the new version, to bring hooks and plugins up to date.
+
+Once a day, a background sync checks for a newer release, and `teardrop` prints one line when there is one. teardrop updates itself only if you run `teardrop update -auto on`: then that daily check installs each new release once it matches the release's checksums and runs as that version, keeps the one it replaced beside it with `.old` on the end, and says so for three days. Run `teardrop setup` after an update like this to bring hooks and plugins up to date. The checksums come from the same release as the binary, so auto-update trusts GitHub and teardrop's release workflow as much as the installer does. `teardrop update -auto off` stops it.
+
+## Installer options
+
+These optional environment variables change what the installer does:
 
 | Variable | Effect |
 | --- | --- |
