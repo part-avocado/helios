@@ -13,11 +13,11 @@ const ARCHIVE = 200
 const SLACK = 300
 /**
  * Seconds of engaged time that a report may add from before the report before
- * it. teardrop syncs when a reply ends, and a reply that ends earns up to ten
+ * it. teardrop syncs when a reply ends, and a reply that ends earns up to four
  * minutes of watching the agent work, which may all lie before a sync that
  * another session started meanwhile.
  */
-const WATCHED = 600
+const WATCHED = 240
 /** The most days kept from one report. A year's report has 366 at most. */
 const MAX_DAYS = 400
 /** The most projects kept from one report, the largest first. */

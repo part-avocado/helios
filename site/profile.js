@@ -21,7 +21,7 @@ function render(p) {
 	document.title = `@${p.handle} - teardrop`
 	$('title').textContent = `@${p.handle}`
 	const joined = new Date(Number(p.joined.slice(0, 4)), Number(p.joined.slice(5, 7)) - 1)
-	$('status').textContent = `Joined ${joined.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}`
+	$('status').textContent = t('profile.joined', { date: joined.toLocaleDateString(LANG, { month: 'long', year: 'numeric' }) })
 
 	// Days arrive as YYYY-MM-DD; the charts key them like dayKey.
 	const perDay = new Map(p.days.map((d) => [d.date.split('-').map(Number).join('-'), d.engaged_seconds]))
@@ -37,19 +37,19 @@ function render(p) {
 
 	$('s-total').textContent = dur(p.engaged_seconds)
 	$('s-week').textContent = dur(week)
-	$('s-week-hint').textContent = 'the last 7 days'
-	$('s-streak').textContent = `${streak} ${streak === 1 ? 'day' : 'days'}`
+	$('s-week-hint').textContent = t('profile.last7')
+	$('s-streak').textContent = tn('common.day', streak)
 	$('s-days').textContent = String(active)
 	$('heatmap').innerHTML = heatmapHTML(perDay, now)
 
 	// A public repository's latest commits link to the host, marked when GitHub has them.
-	const commits = (x) => !x.commits?.length ? '' : `<div class="fine muted">${x.commits.map((c) => `<a href="https://${esc(x.repo)}/commit/${esc(c.sha)}" rel="nofollow noopener"><code>${esc(c.sha.slice(0, 7))}</code></a>${c.found === true ? ' ✓' : c.found === false ? ' (not on GitHub)' : ''}`).join(', ')}${x.checked ? '' : ' · not checked yet'}</div>`
+	const commits = (x) => !x.commits?.length ? '' : `<div class="fine muted">${x.commits.map((c) => `<a href="https://${esc(x.repo)}/commit/${esc(c.sha)}" rel="nofollow noopener"><code>${esc(c.sha.slice(0, 7))}</code></a>${c.found === true ? ' ✓' : c.found === false ? t('profile.notOnGithub') : ''}`).join(', ')}${x.checked ? '' : t('profile.notChecked')}</div>`
 	const rows = p.projects.map((x) => `<tr><td>${x.repo ? `<a href="https://${esc(x.repo)}" rel="nofollow noopener">${esc(x.name)}</a>` : esc(x.name)}${commits(x)}</td><td>${dur(x.engaged_seconds)}</td></tr>`)
 	if (p.other_projects.count) {
 		const n = p.other_projects.count
-		rows.push(`<tr><td class="muted">${n} other ${n === 1 ? 'project' : 'projects'}</td><td>${dur(p.other_projects.engaged_seconds)}</td></tr>`)
+		rows.push(`<tr><td class="muted">${tn('common.otherProject', n)}</td><td>${dur(p.other_projects.engaged_seconds)}</td></tr>`)
 	}
-	$('projects').innerHTML = '<tr><th>Project</th><th>Engaged</th></tr>' + (rows.join('') || '<tr><td colspan="2" class="muted">No projects yet.</td></tr>')
+	$('projects').innerHTML = `<tr><th>${t('common.project')}</th><th>${t('common.engaged')}</th></tr>` + (rows.join('') || `<tr><td colspan="2" class="muted">${t('profile.noProjects')}</td></tr>`)
 	labelCells()
 	$('notice').hidden = $('loading').hidden = true
 	$('content').hidden = false
@@ -62,10 +62,10 @@ async function load() {
 	try {
 		res = await fetch(`/api/public/v1/users/${encodeURIComponent(handle)}`)
 	} catch {
-		return notice('Could not load this profile', 'Check your connection, then try again.', true)
+		return notice(t('profile.err.loadTitle'), t('profile.err.loadText'), true)
 	}
-	if (res.status === 404) return notice('No such profile', 'There is no public profile at this address. Its owner may have changed their handle or made it private.')
-	if (!res.ok) return notice('Could not load this profile', (await res.text()).trim(), true)
+	if (res.status === 404) return notice(t('profile.err.noneTitle'), t('profile.err.noneText'))
+	if (!res.ok) return notice(t('profile.err.loadTitle'), (await res.text()).trim(), true)
 	render(await res.json())
 }
 
@@ -80,4 +80,4 @@ if (handle) {
 		$('live-now').innerHTML = text
 	})
 }
-else notice('No such profile', 'A profile address looks like /@handle.')
+else notice(t('profile.err.noneTitle'), t('profile.err.addressText'))

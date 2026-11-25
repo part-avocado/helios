@@ -47,7 +47,7 @@ async function during(button, work) {
 
 // unloaded says so in each place that was still waiting for what could not be loaded.
 function unloaded(...ids) {
-	for (const id of ids) for (const el of $(id).querySelectorAll('.skeleton')) el.replaceWith('Could not load this.')
+	for (const id of ids) for (const el of $(id).querySelectorAll('.skeleton')) el.replaceWith(t('common.loadFailed'))
 }
 
 // The API only takes changes from this site's own pages, which the browser
@@ -56,33 +56,33 @@ const change = (path, method, body) => api(path, { method, body })
 
 function listComputers(computers) {
 	$('computer-list').innerHTML = computers.map((c) => `<div class="item">
-			<div class="grow">${c.cloud ? 'Amp cloud threads ' : ''}<code>${esc(c.id)}</code>
-				<div class="sub">Synced ${esc(ago(c.synced_at))} · ${dur(c.engaged_seconds)} in the past year${c.teardrop_version ? ` · teardrop ${esc(c.teardrop_version)}` : ''}</div></div>
-			<button class="btn small danger" type="button" data-remove="${esc(c.id)}">Remove</button>
+			<div class="grow">${c.cloud ? `${t('settings.computers.amp')} ` : ''}<code>${esc(c.id)}</code>
+				<div class="sub">${t('settings.computers.synced', { ago: esc(ago(c.synced_at)), time: dur(c.engaged_seconds) })}${c.teardrop_version ? t('settings.computers.version', { version: esc(c.teardrop_version) }) : ''}</div></div>
+			<button class="btn small danger" type="button" data-remove="${esc(c.id)}">${t('common.remove')}</button>
 		</div>`).join('') ||
-		'<div class="item"><div class="grow muted">No computers yet. <a href="#setup">Set one up</a> and it appears here after its first sync.</div></div>'
+		`<div class="item"><div class="grow muted">${t('settings.computers.none')}</div></div>`
 }
 
 async function load() {
 	const me = await api('/api/me')
 	renderSetup($('setup-steps'), me.api_key)
 	listComputers(me.computers)
-	$('me-name').textContent = me.name || 'Not set'
-	$('me-slack').textContent = me.slack_id || 'No Slack account linked'
-	$('me-since').textContent = new Intl.DateTimeFormat(undefined, { dateStyle: 'long' }).format(me.created_at)
-	$('me-role').textContent = (['Superadmin', 'Neoadmin', 'Reviewer'][me.level] ?? 'Member') + (me.ban ? '. Banned' : '')
+	$('me-name').textContent = me.name || t('common.notSet')
+	$('me-slack').textContent = me.slack_id || t('settings.account.noSlack')
+	$('me-since').textContent = new Intl.DateTimeFormat(LANG, { dateStyle: 'long' }).format(me.created_at)
+	$('me-role').textContent = t(`settings.account.role.${['superadmin', 'neoadmin', 'reviewer'][me.level] ?? 'member'}`) + (me.ban ? t('settings.account.banned') : '')
 	showBan(me.ban)
 }
 
 $('new-key').addEventListener('click', async () => {
-	if (!(await ask('Make a new account key?', 'The old one stops working wherever you put it by hand, such as Amp cloud threads. Computers with keys of their own keep syncing.', 'Make a new key'))) return
+	if (!(await ask(t('settings.acctKey.askTitle'), t('settings.acctKey.askText'), t('settings.acctKey.askGo')))) return
 	try {
 		const key = (await change('/api/key', 'POST')).api_key
 		renderSetup($('setup-steps'), key)
 		// The new key in a popup, to copy to wherever the old one was.
 		$('new-key-value').textContent = key
 		$('key-dialog').showModal()
-		say($('key-msg'), 'New key made. The steps above now use it.', true)
+		say($('key-msg'), t('settings.acctKey.made'), true)
 	} catch (e) {
 		say($('key-msg'), e.message, false)
 	}
@@ -102,9 +102,9 @@ function showProfile(p) {
 	$('badge-md').textContent = `[![teardrop](${badge})](${url})`
 	$('profile-projects').innerHTML = p.projects.map((x) => `<div class="item">
 			<div class="grow"><b>${esc(x.name)}</b>
-				<div class="sub">${x.repo ? esc(x.repo) : 'A folder on your computer'} · ${dur(x.engaged_seconds)}</div></div>
-			<label class="check"><input type="checkbox" data-project="${esc(x.key)}"${x.shown ? ' checked' : ''}> Name it</label>
-		</div>`).join('') || '<div class="item"><div class="grow muted">No projects yet. They appear here after your first sync.</div></div>'
+				<div class="sub">${x.repo ? esc(x.repo) : t('settings.profile.folder')} · ${dur(x.engaged_seconds)}</div></div>
+			<label class="check"><input type="checkbox" data-project="${esc(x.key)}"${x.shown ? ' checked' : ''}> ${t('settings.profile.nameIt')}</label>
+		</div>`).join('') || `<div class="item"><div class="grow muted">${t('settings.profile.noProjects')}</div></div>`
 }
 const saveProfile = async (changes, done) => {
 	try {
@@ -121,22 +121,25 @@ const saveProfile = async (changes, done) => {
 }
 $('handle-form').addEventListener('submit', (e) => {
 	e.preventDefault()
-	during(e.target.querySelector('button'), () => saveProfile({ handle: $('handle').value }, 'Handle saved. Your profile has moved to the new address.'))
+	during(e.target.querySelector('button'), () => saveProfile({ handle: $('handle').value }, t('settings.profile.handleSaved')))
 })
-$('profile-public').addEventListener('change', (e) => saveProfile({ public: e.target.checked }, e.target.checked ? 'Your profile is public.' : 'Your profile is private. Its address now says there is no such profile.'))
+$('profile-public').addEventListener('change', (e) => saveProfile({ public: e.target.checked }, e.target.checked ? t('settings.profile.nowPublic') : t('settings.profile.nowPrivate')))
 $('profile-projects').addEventListener('change', (e) => {
 	const key = e.target.dataset.project
 	if (key !== undefined) saveProfile({ projects: { [key]: e.target.checked } })
 })
 
+// lastUsed says when a key was last used, as HTML.
+const lastUsed = (k) => (k.last_used_at ? t('settings.key.lastUsed', { ago: esc(ago(k.last_used_at)) }) : t('settings.key.neverUsed'))
+
 // Sync keys beside the account's own: one per computer that ran teardrop login, and any made here.
 async function listSyncKeys() {
 	const { keys } = await api('/api/sync-keys')
 	$('sync-keys').innerHTML = keys.map((k) => `<div class="item">
-			<div class="grow">${/^td-[0-9a-f]{12}$/.test(k.name) ? `Computer <code>${esc(k.name)}</code>` : `<b>${esc(k.name)}</b>`} <code>${esc(k.hint)}…</code>
-				<div class="sub">Made ${esc(ago(k.created_at))} · ${k.last_used_at ? `last used ${esc(ago(k.last_used_at))}` : 'never used'}</div></div>
-			<button class="btn small danger" type="button" data-revoke="${k.id}" data-name="${esc(k.name)}">Revoke</button>
-		</div>`).join('') || '<div class="item"><div class="grow muted">No other sync keys. Each computer you connect with teardrop login adds one.</div></div>'
+			<div class="grow">${/^td-[0-9a-f]{12}$/.test(k.name) ? t('settings.sync.computer', { id: esc(k.name) }) : `<b>${esc(k.name)}</b>`} <code>${esc(k.hint)}…</code>
+				<div class="sub">${t('settings.key.madeLine', { ago: esc(ago(k.created_at)), used: lastUsed(k) })}</div></div>
+			<button class="btn small danger" type="button" data-revoke="${k.id}" data-name="${esc(k.name)}">${t('common.revoke')}</button>
+		</div>`).join('') || `<div class="item"><div class="grow muted">${t('settings.sync.none')}</div></div>`
 }
 $('sync-key-form').addEventListener('submit', async (e) => {
 	e.preventDefault()
@@ -153,7 +156,7 @@ $('sync-key-form').addEventListener('submit', async (e) => {
 })
 $('sync-keys').addEventListener('click', async (e) => {
 	const d = e.target.closest('[data-revoke]')?.dataset
-	if (!d || !(await ask('Revoke this sync key?', `Whatever uses "${d.name}" stops syncing at once.`, 'Revoke'))) return
+	if (!d || !(await ask(t('settings.sync.revokeTitle'), t('settings.sync.revokeText', { name: d.name }), t('common.revoke')))) return
 	try {
 		await change('/api/sync-keys/' + d.revoke, 'DELETE')
 		await listSyncKeys()
@@ -167,9 +170,9 @@ async function listKeys() {
 	const { keys } = await api('/api/keys')
 	$('api-keys').innerHTML = keys.map((k) => `<div class="item">
 			<div class="grow"><b>${esc(k.name)}</b> <code>${esc(k.hint)}…</code>
-				<div class="sub">${k.site ? `Signed in at ${esc(k.site)}, ` : 'Made '}${esc(ago(k.created_at))} · ${k.last_used_at ? `last used ${esc(ago(k.last_used_at))}` : 'never used'}</div></div>
-			<button class="btn small danger" type="button" data-revoke="${k.id}" data-name="${esc(k.name)}">Revoke</button>
-		</div>`).join('') || '<div class="item"><div class="grow muted">You have no read keys.</div></div>'
+				<div class="sub">${k.site ? t('settings.api.signedInAt', { site: esc(k.site), ago: esc(ago(k.created_at)) }) : t('settings.api.made', { ago: esc(ago(k.created_at)) })} · ${lastUsed(k)}</div></div>
+			<button class="btn small danger" type="button" data-revoke="${k.id}" data-name="${esc(k.name)}">${t('common.revoke')}</button>
+		</div>`).join('') || `<div class="item"><div class="grow muted">${t('settings.api.none')}</div></div>`
 }
 $('api-example').textContent = `curl -H "Authorization: Bearer $KEY" ${location.origin}/api/public/v1/projects`
 $('api-form').addEventListener('submit', async (e) => {
@@ -187,7 +190,7 @@ $('api-form').addEventListener('submit', async (e) => {
 })
 $('api-keys').addEventListener('click', async (e) => {
 	const d = e.target.closest('[data-revoke]')?.dataset
-	if (!d || !(await ask('Revoke this read key?', `Whatever uses "${d.name}" stops working at once.`, 'Revoke'))) return
+	if (!d || !(await ask(t('settings.api.revokeTitle'), t('settings.api.revokeText', { name: d.name }), t('common.revoke')))) return
 	try {
 		await change('/api/keys/' + d.revoke, 'DELETE')
 		await listKeys()
@@ -198,7 +201,7 @@ $('api-keys').addEventListener('click', async (e) => {
 
 $('computer-list').addEventListener('click', async (e) => {
 	const id = e.target.closest('[data-remove]')?.dataset.remove
-	if (!id || !(await ask('Remove this computer?', `${id} and its hours leave your account. It comes back if it syncs again.`, 'Remove'))) return
+	if (!id || !(await ask(t('settings.computers.removeTitle'), t('settings.computers.removeText', { id }), t('common.remove')))) return
 	try {
 		await change('/api/computers/' + encodeURIComponent(id), 'DELETE')
 		listComputers((await api('/api/me')).computers)
@@ -213,7 +216,7 @@ async function upload(file) {
 	$('file').value = '' // so choosing the same file again still uploads it
 	try {
 		const { computer } = await change('/api/reports', 'POST', await file.text())
-		msg.innerHTML = `Added the stats from computer <code>${esc(computer)}</code>. <a href="dashboard.html">See your dashboard</a>`
+		msg.innerHTML = t('settings.upload.added', { computer: esc(computer) })
 		msg.className = 'msg ok'
 		msg.hidden = false
 		listComputers((await api('/api/me')).computers)
@@ -231,7 +234,7 @@ drop.addEventListener('drop', (e) => {
 	if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0])
 })
 
-$('delete-confirm').addEventListener('input', () => ($('delete-account').disabled = $('delete-confirm').value.trim().toLowerCase() !== 'delete'))
+$('delete-confirm').addEventListener('input', () => ($('delete-account').disabled = $('delete-confirm').value.trim().toLowerCase() !== t('settings.delete.word')))
 $('delete-account').addEventListener('click', async (e) => {
 	try {
 		await during(e.currentTarget, () => change('/api/account', 'DELETE'))

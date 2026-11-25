@@ -220,23 +220,23 @@ func TestCalibrate(t *testing.T) {
 	ev := func(min int, k timeline.Kind) timeline.Event {
 		return timeline.Event{Time: at.Add(time.Duration(min) * time.Minute), Kind: k}
 	}
-	// A prompt, the agent's reply 4 minutes later, and the next prompt 16 minutes after that.
-	sessions := []timeline.Session{{Tool: "claude-code", ID: "s", Events: []timeline.Event{ev(0, timeline.Human), ev(4, timeline.Agent), ev(20, timeline.Human)}}}
+	// A prompt, the agent's reply 3 minutes later, and the next prompt 17 minutes after that.
+	sessions := []timeline.Session{{Tool: "claude-code", ID: "s", Events: []timeline.Event{ev(0, timeline.Human), ev(3, timeline.Agent), ev(20, timeline.Human)}}}
 	var b strings.Builder
 	calibrate(&b, sessions)
 	out := b.String()
-	// Under 5m/10m: 4m watching plus the last 5m before the prompt. Under 2m/5m: 4m plus 2m.
+	// Under 5m/5m: 3m watching plus the last 5m before the prompt. Under 2m/5m: 3m plus 2m.
 	rows := map[string]string{}
 	for _, l := range strings.Split(out, "\n") {
 		if f := strings.Fields(l); len(f) == 5 {
 			rows[f[0]] = strings.Join(f[1:], " ")
 		}
 	}
-	if rows["5m*"] != "9m 9m 9m 9m" || rows["2m"] != "6m 6m 6m 6m" {
+	if rows["5m*"] != "8m 8m 8m 8m" || rows["2m"] != "5m 5m 5m 5m" {
 		t.Errorf("grid:\n%s", out)
 	}
 	if !strings.Contains(out, "a prompt") || !strings.Contains(out, "100%") {
-		t.Errorf("the 16-minute gap before the prompt should be over the 5m cap:\n%s", out)
+		t.Errorf("the 17-minute gap before the prompt should be over the 5m cap:\n%s", out)
 	}
 }
 

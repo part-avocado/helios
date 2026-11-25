@@ -5,7 +5,7 @@ const dayKey = (d) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
 const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate())
 // Calendar days, not 24-hour steps, which land on the wrong day across a clock change.
 const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n)
-const fmtDate = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+const fmtDate = new Intl.DateTimeFormat(LANG, { month: 'short', day: 'numeric', year: 'numeric' })
 
 // tipAttrs makes an element show the tooltip: a title, a line under it, and
 // an optional hint about clicking.
@@ -25,20 +25,21 @@ function heatmapHTML(perDay, now, { clickable = false, selected = () => false } 
 		if (row === 0 && d > start) col++
 		if (row === 0 && d.getMonth() !== lastMonth) {
 			lastMonth = d.getMonth()
-			months += `<text x="${30 + col * (cell + gap)}" y="10">${d.toLocaleString(undefined, { month: 'short' })}</text>`
+			months += `<text x="${30 + col * (cell + gap)}" y="10">${d.toLocaleString(LANG, { month: 'short' })}</text>`
 		}
 		const s = perDay.get(dayKey(d)) || 0
 		const click = clickable && s > 0
 		// The level's class colors the day, so the chart follows the dark or light theme.
 		const cls = `l${level(s)}${click ? ' has' : ''}${click && selected(d) ? ' sel' : ''}`
 		const attrs = click ? ` data-ts="${d.getTime()}" data-span="1"` : ''
-		rects += `<rect class="${cls}" x="${30 + col * (cell + gap)}" y="${18 + row * (cell + gap)}" width="${cell}" height="${cell}" rx="2"${attrs}${tipAttrs(fmtDate.format(d), s ? dur(s) : 'No activity', click ? 'Click to see this day' : '')}/>`
+		rects += `<rect class="${cls}" x="${30 + col * (cell + gap)}" y="${18 + row * (cell + gap)}" width="${cell}" height="${cell}" rx="2"${attrs}${tipAttrs(fmtDate.format(d), s ? dur(s) : t('common.noActivity'), click ? t('dash.clickDay') : '')}/>`
 	}
-	const labels = ['Mon', 'Wed', 'Fri'].map((t, i) => `<text x="0" y="${18 + (i * 2 + 1) * (cell + gap) + 10}">${t}</text>`).join('')
+	// Monday, Wednesday, and Friday, named in the page's language. 2023-01-02 was a Monday.
+	const labels = [0, 2, 4].map((n, i) => `<text x="0" y="${18 + (i * 2 + 1) * (cell + gap) + 10}">${new Date(2023, 0, 2 + n).toLocaleDateString(LANG, { weekday: 'short' })}</text>`).join('')
 	const w = 30 + (col + 1) * (cell + gap)
 	const h = 18 + 7 * (cell + gap)
 	// Drawn to fill its panel, and no smaller than its own size, below which its box scrolls.
-	return `<svg viewBox="0 0 ${w} ${h}" style="min-width:${w}px" role="img" aria-label="Engaged time per day over the last year">${months}${labels}${rects}</svg>`
+	return `<svg viewBox="0 0 ${w} ${h}" style="min-width:${w}px" role="img" aria-label="${esc(t('dash.heatmapLabel'))}">${months}${labels}${rects}</svg>`
 }
 
 // initTips shows the page's tooltip (#tip) over the elements with data-tip

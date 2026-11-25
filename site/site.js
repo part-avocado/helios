@@ -20,11 +20,11 @@ document.addEventListener('click', async (e) => {
 	const text = btn.parentElement.querySelector('pre, code').textContent
 	try {
 		await navigator.clipboard.writeText(text)
-		btn.textContent = 'Copied'
+		btn.textContent = t('common.copied')
 	} catch {
-		btn.textContent = 'Select and copy'
+		btn.textContent = t('common.selectAndCopy')
 	}
-	setTimeout(() => (btn.textContent = 'Copy'), 1500)
+	setTimeout(() => (btn.textContent = t('common.copy')), 1500)
 })
 
 // Docs: highlight the sidebar link of the section in view.
@@ -116,9 +116,9 @@ if (search) {
 			.sort((a, b) => b.score - a.score)
 			.slice(0, 12)
 		results.innerHTML = found.length
-			? `<p class="count">${found.length === 1 ? '1 section' : `${found.length} sections`}</p>` +
+			? `<p class="count">${tn('docs.section', found.length)}</p>` +
 				found.map((s) => `<a href="#${esc(s.id)}" role="option">${s.chapter ? `<span>${esc(s.chapter)}</span>` : ''}<b>${mark(s.title, words)}</b><small>${mark(snippet(s.text, words), words)}</small></a>`).join('')
-			: '<p class="none">Nothing matches. Try fewer words.</p>'
+			: `<p class="none">${t('docs.none')}</p>`
 		pick(0)
 	}
 	search.addEventListener('input', show)
@@ -157,5 +157,5 @@ for (const pre of document.querySelectorAll('.docs article pre')) {
 	box.className = 'code'
 	pre.replaceWith(box)
 	box.append(pre)
-	box.insertAdjacentHTML('beforeend', '<button class="copy" type="button">Copy</button>')
+	box.insertAdjacentHTML('beforeend', `<button class="copy" type="button">${t('common.copy')}</button>`)
 }

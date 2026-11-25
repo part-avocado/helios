@@ -8,8 +8,10 @@
 //   - If the later event is a human input, the human was reading the agent's
 //     output and writing the next prompt. Credit the last ComposeCap of the gap.
 //   - If the later event is agent output, the agent was working. Credit the gap
-//     only while it lies within WatchCap of the last human input, so a
-//     long-running agent left alone does not earn time.
+//     only while it lies within WatchCap of the last human input, and less of
+//     it the longer ago that input was: the first WatchFull count in full, the
+//     rest of the window at half. A long-running agent left alone earns a
+//     little for the prompt that started it and then nothing.
 //
 // Credited intervals of all sessions in a project are unioned, so parallel
 // sessions on one project are not counted twice.
@@ -59,13 +61,30 @@ type Session struct {
 
 type Rules struct {
 	ComposeCap time.Duration // max credit for reading output and writing a prompt
-	WatchCap   time.Duration // max credit for watching the agent after a human input
+	WatchFull  time.Duration // agent work this soon after a human input counts in full
+	WatchCap   time.Duration // agent work later than this after a human input earns nothing; between WatchFull and WatchCap it counts at half
 	BlockGap   time.Duration // engaged intervals closer than this are shown as one block
+}
+
+// watched is the credit for agent work from a to b after a human input, a
+// before b: full up to WatchFull, half up to WatchCap, none after. A whole
+// window earns WatchFull + (WatchCap-WatchFull)/2.
+func (r Rules) watched(a, b time.Duration) time.Duration {
+	full := min(r.WatchFull, r.WatchCap)
+	at := func(t time.Duration) time.Duration {
+		t = min(t, r.WatchCap)
+		if t <= full {
+			return t
+		}
+		return full + (t-full)/2
+	}
+	return at(b) - at(a)
 }
 
 var DefaultRules = Rules{
 	ComposeCap: 5 * time.Minute,
-	WatchCap:   10 * time.Minute,
+	WatchFull:  3 * time.Minute,
+	WatchCap:   5 * time.Minute,
 	BlockGap:   15 * time.Minute,
 }
 
@@ -104,7 +123,9 @@ func Credit(events []Event, r Rules) []Interval {
 			case e.Kind == Human:
 				start, end = later(prev, e.Time.Add(-r.ComposeCap)), e.Time
 			case haveHuman:
-				start, end = prev, earlier(e.Time, lastHuman.Add(r.WatchCap))
+				// The credit sits at the start of the gap, where the agent's time counts most.
+				start = prev
+				end = start.Add(r.watched(prev.Sub(lastHuman), earlier(e.Time, lastHuman.Add(r.WatchCap)).Sub(lastHuman)))
 			}
 			if end.After(start) {
 				out = append(out, Interval{start, end})

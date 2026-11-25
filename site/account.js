@@ -6,12 +6,12 @@ const $ = (id) => document.getElementById(id)
 function showBan(ban) {
 	$('ban-banner').hidden = !ban
 	if (!ban) return
-	$('ban-text').textContent = `It is banned until a reviewer lifts the ban. Nothing new is taken from it: no syncs, uploads, or cloud events. What was synced before stays here for you to see.`
+	$('ban-text').textContent = t('ban.text')
 }
 const esc = (s) => String(s).replace(/[&<>\"']/g, (c) => `&#${c.charCodeAt(0)};`)
 const dur = (sec) => {
 	const m = Math.round(sec / 60)
-	return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`
+	return m < 60 ? t('common.minutesShort', { m }) : t('common.hoursShort', { h: Math.floor(m / 60), m: String(m % 60).padStart(2, '0') })
 }
 
 // liveFeed follows a person's live state: whether they are at it now, and
@@ -56,20 +56,21 @@ function liveFeed(path, wsPath, onState) {
 
 // liveText says what a live state shows, as HTML.
 function liveText(s, withProject) {
-	const today = s.today && s.today.witnessed_seconds ? ` · ${dur(s.today.witnessed_seconds)} witnessed today` : ''
-	if (!s.working) return today ? `Today: ${today.slice(3)}` : ''
-	const where = withProject && s.working.project ? ` in <b>${esc(s.working.project.split('/').pop())}</b>` : ''
-	return `<span class="dot live"></span><span>Working now${where} with ${esc(s.working.tool)}${today}</span>`
+	const time = s.today && s.today.witnessed_seconds ? dur(s.today.witnessed_seconds) : ''
+	if (!s.working) return time ? t('live.todayOnly', { time }) : ''
+	const where = withProject && s.working.project ? t('live.in', { project: esc(s.working.project.split('/').pop()) }) : ''
+	const today = time ? t('live.witnessed', { time }) : ''
+	return `<span class="dot live"></span><span>${t('live.working', { where, tool: esc(s.working.tool), today })}</span>`
 }
 
 // ago says how long before now a time was, such as "3 minutes ago".
 function ago(ms) {
-	const fmt = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
+	const fmt = new Intl.RelativeTimeFormat(LANG, { numeric: 'auto' })
 	const seconds = (ms - Date.now()) / 1000
 	for (const [unit, size] of [['day', 86400], ['hour', 3600], ['minute', 60]]) {
 		if (Math.abs(seconds) >= size) return fmt.format(Math.round(seconds / size), unit)
 	}
-	return 'just now'
+	return t('common.justNow')
 }
 
 // api calls this site's API as the signed-in visitor. It throws the server's
@@ -79,9 +80,9 @@ async function api(path, init) {
 	const res = await fetch(path, { cache: 'no-store', ...init })
 	if (res.status === 401) {
 		location.href = '/login?next=' + encodeURIComponent(location.pathname + location.search + location.hash)
-		throw new Error('Signing you in again…')
+		throw new Error(t('api.signingIn'))
 	}
-	if (!res.ok) throw new Error((await res.text()).trim() || `The server answered ${res.status}.`)
+	if (!res.ok) throw new Error((await res.text()).trim() || t('api.serverAnswered', { status: res.status }))
 	return res.json()
 }
 
@@ -92,39 +93,22 @@ function renderSetup(el, key) {
 	const sh = 'curl -fsSL https://raw.githubusercontent.com/part-avocado/teardrop/main/install.sh | sh'
 	const ps = 'irm https://raw.githubusercontent.com/part-avocado/teardrop/main/install.ps1 | iex'
 	const connect = `teardrop login -server ${location.origin}`
-	const cmd = (text, kind = '') => `<div class="cmd ${kind}"><code>${esc(text)}</code><button class="copy" type="button">Copy</button></div>`
+	const cmd = (text, kind = '') => `<div class="cmd ${kind}"><code>${esc(text)}</code><button class="copy" type="button">${t('common.copy')}</button></div>`
 	// What to paste into an agent so it does the setup itself. The questions
 	// teardrop setup asks are answered up front, since an agent can't answer them.
-	const prompt = [
-		'Set up teardrop on this computer and connect it to my account.',
-		'',
-		`1. Install it: run \`${sh}\` (on Windows, in PowerShell: \`${ps}\`). Set TEARDROP_NO_SETUP=1 first so the installer does not stop to ask questions.`,
-		'2. Run `teardrop setup -yes`. It adds the Claude Code hooks and the Amp plugin for the tools I have.',
-		`3. Run \`${connect}\` and let it keep running. It prints a code and a web address: show me both right away, so I can type the code there and allow this computer. It finishes on its own once I have.`,
-		'4. Run `teardrop` and show me its output.',
-		'',
-		'If you are Amp, tell me to run "plugins: reload" in my open threads.',
-	].join('\n')
+	const prompt = t('setup.agentPrompt', { sh, ps, connect })
 	// What to paste into Amp so its cloud threads count. The sync key is left
 	// out: Amp asks for a secret's value in a private dialog.
-	const cloudPrompt = [
-		'Count my Amp cloud threads with teardrop.',
-		'',
-		'1. Save https://raw.githubusercontent.com/part-avocado/teardrop/main/amp/teardrop-cloud.ts as teardrop-cloud.ts in my personal Amp plugins, and push it.',
-		`2. Add a personal environment variable named TEARDROP_SERVER with the value ${location.origin}`,
-		'3. Add a personal secret named TEARDROP_KEY. Ask me for its value; I will paste it myself.',
-		'',
-		'Tell me when it is done.',
-	].join('\n')
+	const cloudPrompt = t('setup.cloudPrompt', { origin: location.origin })
 	el.innerHTML = `<ol class="steps">
 		<li><div>
-			<h3>Install teardrop</h3>
-			<p>Paste this into a terminal on the computer you code on. If teardrop is already there, this updates it.</p>
+			<h3>${t('setup.install.h')}</h3>
+			<p>${t('setup.install.p')}</p>
 			<div class="cmdbox" data-tabs>
 				<div class="tabs" role="tablist">
-					<button type="button" data-tab="mac" role="tab">macOS</button>
-					<button type="button" data-tab="linux" role="tab">Linux</button>
-					<button type="button" data-tab="windows" role="tab">Windows</button>
+					<button type="button" data-tab="mac" role="tab">${t('os.mac')}</button>
+					<button type="button" data-tab="linux" role="tab">${t('os.linux')}</button>
+					<button type="button" data-tab="windows" role="tab">${t('os.windows')}</button>
 				</div>
 				<div class="tab-panel" data-tab="mac">${cmd(sh)}</div>
 				<div class="tab-panel" data-tab="linux">${cmd(sh)}</div>
@@ -132,35 +116,35 @@ function renderSetup(el, key) {
 			</div>
 		</div></li>
 		<li><div>
-			<h3>Connect it to your account</h3>
-			<p>Open a new terminal and run this once. It shows a code to type on this site, then uploads your hours, and teardrop syncs again each time a reply finishes in Claude Code or Amp, or you stop one.</p>
+			<h3>${t('setup.connect.h')}</h3>
+			<p>${t('setup.connect.p')}</p>
 			<div class="cmdbox">${cmd(connect)}</div>
-			<p class="fine">Only type a code that your own terminal shows. Anyone whose code you type gets your sync key: they can send records as you.</p>
+			<p class="fine">${t('setup.connect.fine')}</p>
 		</div></li>
 		<li><div>
-			<h3>Check your tools</h3>
-			<p><code>teardrop setup</code> already looked for these. Run it again any time to add one you installed later.</p>
+			<h3>${t('setup.tools.h')}</h3>
+			<p>${t('setup.tools.p')}</p>
 			<div class="cmdbox tools" data-tabs data-default="claude">
 				<div class="tabs" role="tablist">
 					<button type="button" data-tab="claude" role="tab">Claude Code</button>
 					<button type="button" data-tab="codex" role="tab">Codex</button>
 					<button type="button" data-tab="amp" role="tab">Amp</button>
 				</div>
-				<div class="tab-panel" data-tab="claude"><p>Setup adds hooks to Claude Code's settings, so each prompt is recorded as you send it. Your past sessions are read from its logs, so they count too. Nothing else to do.</p></div>
-				<div class="tab-panel" data-tab="codex"><p>teardrop reads Codex's session logs, so there is nothing to install. Use Codex as usual; your sessions show up after the next sync.</p></div>
-				<div class="tab-panel" data-tab="amp"><p>Amp keeps threads on its own servers, so setup writes a small plugin to <code>~/.config/amp/plugins/teardrop.ts</code>. It records when you send a prompt and when Amp finishes, never the prompt text. To add only the plugin:</p>${cmd('teardrop setup amp')}<p>New Amp threads load the plugin on their own. In a thread that is already open, run <b>plugins: reload</b> from the command palette.</p>
-					<h4>Threads in Amp's cloud</h4>
-					<p>Threads you start in the Amp app or on ampcode.com run on Amp's machines, where that plugin can't reach. To count them too, paste this into any Amp thread:</p>
-					<div class="prompt"><code>${esc(cloudPrompt)}</code><button class="copy" type="button">Copy</button></div>
-					<p>When Amp asks for the secret, paste your sync key:</p>${cmd(key, 'plain')}
-					<p>Cloud time is counted in the cloud and reaches your dashboard when Amp finishes a turn or you stop it. No computer needs to be on.</p></div>
+				<div class="tab-panel" data-tab="claude"><p>${t('setup.tools.claude')}</p></div>
+				<div class="tab-panel" data-tab="codex"><p>${t('setup.tools.codex')}</p></div>
+				<div class="tab-panel" data-tab="amp"><p>${t('setup.tools.amp1')}</p>${cmd('teardrop setup amp')}<p>${t('setup.tools.amp2')}</p>
+					<h4>${t('setup.cloud.h')}</h4>
+					<p>${t('setup.cloud.p1')}</p>
+					<div class="prompt"><code>${esc(cloudPrompt)}</code><button class="copy" type="button">${t('common.copy')}</button></div>
+					<p>${t('setup.cloud.p2')}</p>${cmd(key, 'plain')}
+					<p>${t('setup.cloud.p3')}</p></div>
 			</div>
 		</div></li>
 		<li class="alt"><div>
-			<h3>Or let your agent do it</h3>
-			<p>Paste this into Amp or Claude Code and it runs the steps above for you. It answers setup's questions in advance, since an agent can't.</p>
-			<div class="prompt"><code>${esc(prompt)}</code><button class="copy" type="button">Copy</button></div>
-			<p class="fine">The prompt holds no key: the agent shows you a code to type here instead.</p>
+			<h3>${t('setup.agent.h')}</h3>
+			<p>${t('setup.agent.p')}</p>
+			<div class="prompt"><code>${esc(prompt)}</code><button class="copy" type="button">${t('common.copy')}</button></div>
+			<p class="fine">${t('setup.agent.fine')}</p>
 		</div></li>
 	</ol>`
 	initTabs(el)

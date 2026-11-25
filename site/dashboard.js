@@ -19,10 +19,10 @@ let heatScrolled = false
 let pick = null // { from: Date, to: Date, label: string }
 let only = null // a project key
 
-const fmtDay = new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
-const fmtShort = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' })
-const hm = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' })
-const hourName = (h) => new Date(2000, 0, 1, h % 24).toLocaleTimeString(undefined, { hour: 'numeric' })
+const fmtDay = new Intl.DateTimeFormat(LANG, { weekday: 'short', month: 'short', day: 'numeric' })
+const fmtShort = new Intl.DateTimeFormat(LANG, { month: 'short', day: 'numeric' })
+const hm = new Intl.DateTimeFormat(LANG, { hour: '2-digit', minute: '2-digit' })
+const hourName = (h) => new Date(2000, 0, 1, h % 24).toLocaleTimeString(LANG, { hour: 'numeric' })
 const pct = (v, of) => (of ? Math.round((v / of) * 100) : 0) + '%'
 
 const X = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>'
@@ -93,7 +93,7 @@ function render() {
 		skipped[2] += p.autopilot_prompts || 0
 	}
 	const noise = skipped[0] + skipped[1] + skipped[2]
-	const why = ['mashed', 'repeats', 'steering only'].map((name, i) => (skipped[i] ? `${skipped[i]} ${name}` : '')).filter(Boolean).join(', ')
+	const why = ['mashed', 'repeats', 'steering'].map((name, i) => (skipped[i] ? t(`dash.why.${name}`, { n: skipped[i] }) : '')).filter(Boolean).join(t('dash.sep'))
 
 	// Streak: consecutive days with activity, ending today (or yesterday, if nothing yet today).
 	const allDays = new Set(scoped.map((b) => dayKey(b.s)))
@@ -110,67 +110,67 @@ function render() {
 	const today = perDay.get(dayKey(now)) || 0
 	const activeDays = [...perDay.values()].filter((v) => v > 0).length
 	$('s-total').textContent = dur(total)
-	$('s-total-hint').textContent = `${activeDays} active ${activeDays === 1 ? 'day' : 'days'}, ${dur(activeDays ? total / activeDays : 0)} per active day`
+	$('s-total-hint').textContent = t('dash.activeSummary', { days: tn('common.activeDay', activeDays), avg: dur(activeDays ? total / activeDays : 0) })
 	$('s-today').textContent = dur(today)
-	$('s-today-hint').textContent = today ? 'keep going' : 'nothing yet today'
-	$('s-streak').textContent = `${streak} ${streak === 1 ? 'day' : 'days'}`
+	$('s-today-hint').textContent = today ? t('dash.keepGoing') : t('dash.nothingToday')
+	$('s-streak').textContent = tn('common.day', streak)
 	$('s-top').textContent = top?.name || '-'
 	$('s-top').title = top?.name || '' // in full, where the card cuts a long name short
 	$('s-top-hint').textContent = top ? dur(top.engaged) : ''
 	$('s-prompts').textContent = count(prompts)
-	$('s-prompts-hint').textContent = noise ? `${noise} skipped: ${why}` : 'none skipped'
-	$('s-prompts-hint').title = noise ? 'Skipped prompts earn no time: ones that read as keyboard mashing, a third ask for the same thing within 5 prompts, or a third steering-only prompt in a row ("continue", "yes").' : ''
+	$('s-prompts-hint').textContent = noise ? t('dash.skipped', { n: noise, why }) : t('dash.noneSkipped')
+	$('s-prompts-hint').title = noise ? t('dash.skipHint') : ''
 	$('s-tokens').textContent = count(tin + tout)
-	$('s-tokens-hint').textContent = `${count(tin)} read, ${count(tout)} written`
+	$('s-tokens-hint').textContent = t('dash.tokenHint', { read: count(tin), written: count(tout) })
 
 	renderChips(projects, scoped)
 	renderHeatmap(now, scoped)
 	renderBars(perDay, from)
 
 	const maxHour = Math.max(...perHour)
-	$('hours-peak').textContent = maxHour > 0 ? `busiest ${hourName(perHour.indexOf(maxHour))}` : ''
+	$('hours-peak').textContent = maxHour > 0 ? t('dash.busiest', { hour: hourName(perHour.indexOf(maxHour)) }) : ''
 	$('hours').innerHTML = perHour.map((v, h) =>
-		`<div class="col"${tipAttrs(`${hourName(h)} to ${hourName(h + 1)}`, v ? `${dur(v)}, ${pct(v, perHour.reduce((a, b) => a + b, 0))} of your day's work` : 'No activity')}><i style="height:${maxHour ? (v / maxHour) * 100 : 0}%"></i></div>`).join('')
+		`<div class="col"${tipAttrs(t('dash.hourRange', { from: hourName(h), to: hourName(h + 1) }), v ? t('dash.hourTip', { time: dur(v), pct: pct(v, perHour.reduce((a, b) => a + b, 0)) }) : t('common.noActivity'))}><i style="height:${maxHour ? (v / maxHour) * 100 : 0}%"></i></div>`).join('')
 
 	const toolTotal = [...tools.values()].reduce((a, b) => a + b, 0)
 	const maxTool = Math.max(1, ...tools.values())
-	$('tools').innerHTML = [...tools].sort((a, b) => b[1] - a[1]).map(([t, v]) =>
-		`<div class="row"${tipAttrs(t, `${dur(v)}, ${pct(v, toolTotal)} of the time`)}><div class="top"><span>${esc(t)}</span><span class="muted">${dur(v)}</span></div><div class="track"><div class="fill" style="width:${(v / maxTool) * 100}%"></div></div></div>`).join('') ||
-		'<p class="muted">No activity in this range.</p>'
+	$('tools').innerHTML = [...tools].sort((a, b) => b[1] - a[1]).map(([tool, v]) => {
+		const name = tool === 'unknown' ? t('dash.unknownTool') : tool
+		return `<div class="row"${tipAttrs(name, t('dash.toolTip', { time: dur(v), pct: pct(v, toolTotal) }))}><div class="top"><span>${esc(name)}</span><span class="muted">${dur(v)}</span></div><div class="track"><div class="fill" style="width:${(v / maxTool) * 100}%"></div></div></div>`
+	}).join('') ||
+		`<p class="muted">${t('common.noActivityRange')}</p>`
 
-	$('projects').innerHTML = '<tr><th>Project</th><th>Engaged</th><th>Prompts</th><th>Tokens</th></tr>' +
-		(ranked.map((p) => `<tr class="pick${only === p.key ? ' sel' : ''}" data-project="${esc(p.key)}"><td><button type="button" class="link" aria-pressed="${only === p.key}" title="${only === p.key ? 'Show all projects' : 'Show only this project'}">${esc(p.name)}</button></td><td>${dur(p.engaged)}</td><td>${p.prompts}</td><td>${count(p.tin)}/${count(p.tout)}</td></tr>`).join('') ||
-			'<tr><td colspan="4" class="muted">No activity in this range.</td></tr>')
+	$('projects').innerHTML = `<tr><th>${t('common.project')}</th><th>${t('common.engaged')}</th><th>${t('dash.col.prompts')}</th><th>${t('dash.col.tokens')}</th></tr>` +
+		(ranked.map((p) => `<tr class="pick${only === p.key ? ' sel' : ''}" data-project="${esc(p.key)}"><td><button type="button" class="link" aria-pressed="${only === p.key}" title="${t(only === p.key ? 'dash.showAllProjects' : 'dash.showOnlyProject')}">${esc(p.name)}</button></td><td>${dur(p.engaged)}</td><td>${p.prompts}</td><td>${count(p.tin)}/${count(p.tout)}</td></tr>`).join('') ||
+			`<tr><td colspan="4" class="muted">${t('common.noActivityRange')}</td></tr>`)
 
 	// With a day picked, list that day's blocks, even if it is outside the range above.
 	const listed = (pick ? scoped.filter((b) => b.s >= pick.from && b.s < pick.to) : blocks).slice().sort((a, b) => b.s - a.s)
-	$('blocks-title').textContent = pick ? `Work blocks · ${pick.label}` : 'Recent work blocks'
-	$('blocks').innerHTML = '<tr><th>When</th><th>Project</th><th>Engaged</th><th>Span</th><th>Prompts</th><th>Tokens</th><th>Tools</th></tr>' +
+	$('blocks-title').textContent = pick ? t('dash.panel.blocksFor', { label: pick.label }) : t('dash.panel.recentBlocks')
+	$('blocks').innerHTML = `<tr><th>${t('dash.col.when')}</th><th>${t('common.project')}</th><th>${t('common.engaged')}</th><th>${t('dash.col.span')}</th><th>${t('dash.col.prompts')}</th><th>${t('dash.col.tokens')}</th><th>${t('dash.col.tools')}</th></tr>` +
 		(listed.slice(0, pick ? 100 : 25).map((b) =>
-			`<tr><td>${fmtDay.format(b.s)}, ${hm.format(b.s)}–${hm.format(b.e)}</td><td>${esc(b.project.name)}</td><td>${dur(b.engaged_seconds)}</td><td>${dur((b.e - b.s) / 1000)}</td><td>${b.prompts}</td><td>${count(b.tokens_in)}/${count(b.tokens_out)}</td><td>${b.tools.map((t) => `<span class="tag">${esc(t)}</span>`).join('')}</td></tr>`).join('') ||
-			`<tr><td colspan="7" class="muted">${pick ? 'No work blocks in this range.' : 'No activity in this range.'}</td></tr>`)
+			`<tr><td>${fmtDay.format(b.s)}, ${hm.format(b.s)}–${hm.format(b.e)}</td><td>${esc(b.project.name)}</td><td>${dur(b.engaged_seconds)}</td><td>${dur((b.e - b.s) / 1000)}</td><td>${b.prompts}</td><td>${count(b.tokens_in)}/${count(b.tokens_out)}</td><td>${b.tools.map((tool) => `<span class="tag">${esc(tool)}</span>`).join('')}</td></tr>`).join('') ||
+			`<tr><td colspan="7" class="muted">${pick ? t('dash.noBlocks') : t('common.noActivityRange')}</td></tr>`)
 	labelCells()
 	// A year with nothing in it says so, and what to do, instead of leaving a page of zeros to explain itself.
 	$('no-data').hidden = all.length > 0
 	if (!all.length) {
-		$('no-data').innerHTML = hosted
-			? 'Nothing recorded in the past year. Use Claude Code, Codex, or Amp as usual, and your time shows up here after the next sync.'
-			: 'teardrop found no Claude Code, Codex, or Amp sessions from the past year on this computer. Run <code>teardrop setup</code> to see where it looks.'
+		$('no-data').innerHTML = hosted ? t('dash.noDataHosted') : t('dash.noDataLocal')
 	}
 }
 
 // renderChips shows what is picked, each with a way to clear it.
 function renderChips(projects, scoped) {
 	const chips = []
-	if (only) chips.push(`<button type="button" class="chip" data-clear="project" title="Show all projects">${esc(projects.get(only)?.name || scoped[0]?.project.name || only)}${X}</button>`)
+	if (only) chips.push(`<button type="button" class="chip" data-clear="project" title="${t('dash.showAllProjects')}">${esc(projects.get(only)?.name || scoped[0]?.project.name || only)}${X}</button>`)
 	if (pick) {
 		const inPick = scoped.filter((b) => b.s >= pick.from && b.s < pick.to)
 		const secs = inPick.reduce((n, b) => n + b.engaged_seconds, 0)
-		chips.push(`<button type="button" class="chip" data-clear="pick" title="Back to the whole range">${esc(pick.label)} · ${dur(secs)}${X}</button>`)
-		chips.push('<a class="link" href="#blocks-panel">See its work blocks</a>')
+		chips.push(`<button type="button" class="chip" data-clear="pick" title="${t('dash.backToRange')}">${esc(pick.label)} · ${dur(secs)}${X}</button>`)
+		chips.push(`<a class="link" href="#blocks-panel">${t('dash.seeBlocks')}</a>`)
 	}
 	$('chips').hidden = !chips.length
-	$('chips').innerHTML = chips.length ? '<span class="muted">Showing</span>' + chips.join('') : ''
+	$('chips').innerHTML = chips.length ? `<span class="muted">${t('dash.showing')}</span>` + chips.join('') : ''
 }
 
 // dayTotals returns the report's engaged seconds per day, keyed like dayKey,
@@ -211,13 +211,13 @@ function renderBars(perDay, from) {
 		vals.push([d, v])
 	}
 	const max = Math.max(...vals.map((v) => v[1]))
-	$('bars-title').textContent = step === 7 ? 'Engaged per week' : 'Engaged per day'
-	$('bars-peak').textContent = max > 0 ? `peak ${dur(max)}` : ''
+	$('bars-title').textContent = step === 7 ? t('dash.panel.perWeek') : t('dash.panel.perDay')
+	$('bars-peak').textContent = max > 0 ? t('dash.peak', { time: dur(max) }) : ''
 	$('bars').classList.toggle('dense', vals.length > 40)
 	$('bars').innerHTML = vals.map(([d, v]) => {
-		const label = step === 7 ? `Week of ${fmtShort.format(d)}` : fmtDate.format(d)
+		const label = step === 7 ? t('dash.weekOf', { date: fmtShort.format(d) }) : fmtDate.format(d)
 		const click = v > 0 ? ` data-ts="${d.getTime()}" data-span="${step}" data-label="${esc(label)}"` : ''
-		return `<button type="button" class="col${picked(d, step) ? ' sel' : ''}"${click}${v > 0 ? '' : ' tabindex="-1"'}${tipAttrs(label, v ? dur(v) : 'No activity', v ? `Click to see ${step === 7 ? 'this week' : 'this day'}` : '')}><i style="height:${max ? Math.max((v / max) * 100, v ? 1.5 : 0) : 0}%"></i></button>`
+		return `<button type="button" class="col${picked(d, step) ? ' sel' : ''}"${click}${v > 0 ? '' : ' tabindex="-1"'}${tipAttrs(label, v ? dur(v) : t('common.noActivity'), v ? t(step === 7 ? 'dash.clickWeek' : 'dash.clickDay') : '')}><i style="height:${max ? Math.max((v / max) * 100, v ? 1.5 : 0) : 0}%"></i></button>`
 	}).join('')
 	$('bar-labels').innerHTML = `<span>${fmtShort.format(first)}</span><span>${fmtShort.format(addDays(from, days - 1))}</span>`
 }
@@ -229,28 +229,28 @@ const SKEW = 5 * 60000
 const b64u = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0))
 async function verify(file) {
 	if (!file || typeof file.payload !== 'string' || typeof file.key !== 'string') {
-		throw new Error('This report has no verification key.')
+		throw new Error(t('dash.err.noKey'))
 	}
 	let p
 	try {
 		p = JSON.parse(file.payload)
 	} catch {
-		throw new Error('This report is damaged.')
+		throw new Error(t('dash.err.damaged'))
 	}
 	let ok = false
 	try {
 		const key = await crypto.subtle.importKey('raw', b64u(p.account), { name: 'Ed25519' }, false, ['verify'])
 		ok = await crypto.subtle.verify({ name: 'Ed25519' }, key, b64u(file.key), new TextEncoder().encode(file.payload))
 	} catch (e) {
-		if (!crypto.subtle) throw new Error('Verification needs a secure page (https or localhost).')
-		if (e?.name === 'NotSupportedError') throw new Error('This browser cannot check verification keys. Update it and try again.')
+		if (!crypto.subtle) throw new Error(t('dash.err.insecure'))
+		if (e?.name === 'NotSupportedError') throw new Error(t('dash.err.unsupported'))
 	}
-	if (!ok) throw new Error('The verification key does not match this report.')
+	if (!ok) throw new Error(t('dash.err.mismatch'))
 	const generated = Date.parse(p.generated_at), expires = Date.parse(p.expires_at), now = Date.now()
-	if (!(generated <= now + SKEW)) throw new Error('This report says it was made in the future. Check your clock.')
-	if (!(now <= expires)) throw new Error(`This report's key expired on ${new Date(expires).toLocaleString()}.`)
+	if (!(generated <= now + SKEW)) throw new Error(t('dash.err.future'))
+	if (!(now <= expires)) throw new Error(t('dash.err.expired', { date: new Date(expires).toLocaleString(LANG) }))
 	if ((p.report?.blocks || []).some((b) => Date.parse(b.end) > generated + SKEW)) {
-		throw new Error('This report has activity after the time it was made, which is not possible.')
+		throw new Error(t('dash.err.afterMade'))
 	}
 	const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', b64u(p.account)))
 	p.accountID = 'td-' + [...digest.slice(0, 6)].map((x) => x.toString(16).padStart(2, '0')).join('')
@@ -258,7 +258,7 @@ async function verify(file) {
 }
 
 const verifiedNote = (p) =>
-	`<span class="tag ok" title="Signed by this account; any change to the numbers or times would break the key"><svg class="ico" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>verified</span> account ${esc(p.accountID)} · key valid until ${esc(new Date(p.expires_at).toLocaleDateString())}`
+	`<span class="tag ok" title="${esc(t('dash.verifiedTitle'))}"><svg class="ico" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>${t('dash.verified')}</span> ${t('dash.verifiedNote', { id: esc(p.accountID), date: esc(new Date(p.expires_at).toLocaleDateString(LANG)) })}`
 
 // The page shows one of four things: stats, the setup steps, a notice, or,
 // until the first answer arrives, the shapes of the stats to come.
@@ -324,28 +324,28 @@ async function loadHosted() {
 	try {
 		body = await api('/api/report' + (viewing ? `?user=${encodeURIComponent(viewing)}` : ''))
 		if (viewing) {
-			$('title').textContent = body.person.name ? `Stats for ${body.person.name}` : 'Their stats'
+			$('title').textContent = body.person.name ? t('dash.statsFor', { name: body.person.name }) : t('dash.theirStats')
 			document.querySelector('.nav .links .active')?.classList.remove('active')
 		}
 		if (!viewing) showBan(body.ban)
 		if (!body.computers.length) {
-			if (viewing) notice('Nothing synced yet', 'This person has signed in, but no computer of theirs has synced. <a href="/review/">Back to review</a>')
-			else if (body.ban) notice('Nothing synced', 'This account was banned before anything synced, so there is nothing to show.')
+			if (viewing) notice(t('dash.notice.nothingSynced'), t('dash.notice.noComputers'))
+			else if (body.ban) notice(t('dash.notice.nothingSyncedBanned'), t('dash.notice.bannedBefore'))
 			else await showSetup()
 			again(10000) // so the stats appear as soon as the first sync lands
 			return
 		}
 	} catch (e) {
-		if (report) $('status').textContent = 'Could not reach the server. Trying again.'
-		else notice(viewing ? 'Could not load these stats' : 'Could not load your stats', esc(e.message), true)
+		if (report) $('status').textContent = t('dash.status.unreachable')
+		else notice(viewing ? t('dash.notice.cannotLoadThese') : t('dash.notice.cannotLoadYour'), esc(e.message), true)
 		again(15000)
 		return
 	}
 	const last = Math.max(...body.computers.map((c) => c.synced_at))
 	const stale = Date.now() - last > 3 * DAY
-	const from = body.computers.length === 1 ? '1 computer' : `${body.computers.length} computers`
-	show(merge(body.computers), `<span class="dot${stale ? ' old' : ''}"></span>Synced ${esc(ago(last))} from ${from}` +
-		(viewing ? ` · <a href="/review/#/person/id:${encodeURIComponent(viewing)}">review</a> · <a href="/review/#/people">all people</a>` : body.ban ? ' · <b>syncing is paused</b>' : stale ? ' · run <code>teardrop sync</code> to update' : ''))
+	const from = tn('common.computer', body.computers.length)
+	show(merge(body.computers), `<span class="dot${stale ? ' old' : ''}"></span>${t('dash.status.synced', { ago: esc(ago(last)), from })}` +
+		(viewing ? ` · <a href="/review/#/person/id:${encodeURIComponent(viewing)}">${t('dash.status.review')}</a> · <a href="/review/#/people">${t('dash.status.allPeople')}</a>` : body.ban ? ` · <b>${t('dash.status.paused')}</b>` : stale ? ` · ${t('dash.status.runSync')}` : ''))
 	again(5 * 60000)
 }
 
@@ -359,22 +359,22 @@ async function poll() {
 	} catch {
 		if (!live) {
 			// A copy of the site with nothing behind it to ask.
-			notice('Your stats live on your computer', 'Run <code>teardrop dashboard</code> to see them here, updated as you work. New to teardrop? <a href="docs.html#quick-start">Start here</a>.')
+			notice(t('dash.notice.liveOnComputer'), t('dash.notice.liveHowTo'))
 			return
 		}
 		// teardrop dashboard was stopped or the computer slept: keep the last stats and keep asking.
-		$('status').textContent = 'Lost contact with teardrop dashboard. Start it again to keep updating.'
+		$('status').textContent = t('dash.status.lostContact')
 		setTimeout(poll, 5000)
 		return
 	}
 	try {
 		const p = await verify(body)
 		live = true
-		show(p.report, `<span class="dot live"></span>Live from this computer · updated ${new Date().toLocaleTimeString()} · ${verifiedNote(p)}`)
+		show(p.report, `<span class="dot live"></span>${t('dash.status.live', { time: new Date().toLocaleTimeString(LANG), note: verifiedNote(p) })}`)
 	} catch (e) {
 		// Stats already on the page stay, with what went wrong beside the title.
 		if (report) $('status').textContent = e.message
-		else notice('Could not show your stats', esc(e.message))
+		else notice(t('dash.notice.cannotShow'), esc(e.message))
 	}
 	setTimeout(poll, 30000)
 }

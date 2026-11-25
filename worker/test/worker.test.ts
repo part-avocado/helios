@@ -401,7 +401,7 @@ test('only reviewers see other people, in the review app', async () => {
 	assert.match(await (await call('/review/', { cookie: admin })).text(), /<html[^>]* data-staff[\s\S]*<title>teardrop review</)
 	// Only a reviewer's pages are marked to show the Review links.
 	for (const page of ['/', '/dashboard', '/settings']) {
-		assert.match(await (await call(page, { cookie: admin })).text(), /<html[^>]* data-staff[\s\S]*class="staff-only">Review</, page)
+		assert.match(await (await call(page, { cookie: admin })).text(), /<html[^>]* data-staff[\s\S]*class="staff-only"[^>]*>Review</, page)
 		assert.doesNotMatch(await (await call(page, { cookie: member })).text(), /<html[^>]* data-staff/, page)
 	}
 	// The addresses the review pages had, and ones someone would guess, lead to the app.
@@ -863,7 +863,7 @@ test('reviewers have levels, which decide what they read, whom they add and ban,
 	}
 	assert.deepEqual([(await call(`/api/report?user=${full.person.id}`, { cookie: rev })).status, (await call(`/api/report?user=${full.person.id}`, { cookie: neo })).status], [403, 200])
 	// The app's page and script are for reviewers of any level.
-	assert.match(await (await call('/dashboard', { cookie: rev })).text(), /<html[^>]* data-staff[\s\S]*class="staff-only">Review</)
+	assert.match(await (await call('/dashboard', { cookie: rev })).text(), /<html[^>]* data-staff[\s\S]*class="staff-only"[^>]*>Review</)
 	assert.match(await (await call('/review/review.js', { cookie: rev })).text(), /api\/review/)
 	assert.equal((await call('/review/review.js', { cookie: member })).headers.get('Location'), '/dashboard')
 

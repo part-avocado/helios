@@ -3,7 +3,7 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>Sign in - teardrop</title>
+	<title data-i18n="login.title">Sign in - teardrop</title>
 	<link rel="icon" href="favicon.svg">
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -11,35 +11,22 @@
 	<link rel="stylesheet" href="base.css">
 	<link rel="stylesheet" href="style.css">
 	<script src="theme.js"></script>
+	<script src="i18n.js" data-scripts="login.js"></script>
 </head>
 <body>
 <main class="signin">
 	<div>
 		<div class="card">
-			<a href="index.html" aria-label="teardrop home"><img src="favicon.svg" alt=""></a>
-			<h1>Sign in to teardrop</h1>
-			<p class="muted">Your hours from every computer, in one place.</p>
+			<a href="index.html" aria-label="teardrop home" data-i18n-attr="aria-label:login.home"><img src="favicon.svg" alt=""></a>
+			<h1 data-i18n="login.h1">Sign in to teardrop</h1>
+			<p class="muted" data-i18n="login.lead">Your hours from every computer, in one place.</p>
 			<p class="msg bad" id="error" role="alert" hidden></p>
-			<a class="btn primary" id="go" href="/auth/hca">Sign in with Hack Club</a>
-			<p class="fine muted">New here? Signing in creates your account.</p>
+			<a class="btn primary" id="go" href="/auth/hca" data-i18n="login.go">Sign in with Hack Club</a>
+			<p class="fine muted" data-i18n="login.fine">New here? Signing in creates your account.</p>
 		</div>
-		<p class="back"><a href="index.html"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M13 8H3M7 4L3 8l4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Back to home</a></p>
+		<p class="back"><a href="index.html"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M13 8H3M7 4L3 8l4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span data-i18n="login.back">Back to home</span></a></p>
+		<p class="back"><button class="theme lang" type="button" data-lang-toggle>日本語</button></p>
 	</div>
 </main>
-<script>
-// Carry on to the page the visitor asked for, and say why a sign-in didn't work.
-const query = new URLSearchParams(location.search)
-if (query.get('next')) document.getElementById('go').href += '?next=' + encodeURIComponent(query.get('next'))
-const why = {
-	expired: 'That sign-in took too long, or was started in another tab. Try again.',
-	cancelled: 'Sign-in was cancelled.',
-	failed: "Hack Club Auth couldn't sign you in. Try again in a moment.",
-	setup: "Sign-in isn't set up on this server yet.",
-}[query.get('error')]
-if (why) {
-	document.getElementById('error').textContent = why
-	document.getElementById('error').hidden = false
-}
-</script>
 </body>
 </html>

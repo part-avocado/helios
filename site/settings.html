@@ -3,7 +3,7 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>Settings - teardrop</title>
+	<title data-i18n="settings.title">Settings - teardrop</title>
 	<link rel="icon" href="favicon.svg">
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -11,26 +11,28 @@
 	<link rel="stylesheet" href="base.css">
 	<link rel="stylesheet" href="style.css">
 	<script src="theme.js"></script>
+	<script src="i18n.js" data-scripts="site.js account.js settings.js"></script>
 </head>
 <body>
-<nav class="nav" aria-label="Main">
+<nav class="nav" aria-label="Main" data-i18n-attr="aria-label:nav.main">
 	<a class="brand" href="index.html"><img src="favicon.svg" alt="">teardrop</a>
 	<div class="links">
-		<a href="dashboard.html">Dashboard</a>
-		<a href="settings.html" class="active" aria-current="page">Settings</a>
-		<a href="/review/" class="staff-only">Review</a>
-		<a href="docs.html" class="docs-link">Docs</a>
+		<a href="dashboard.html" data-i18n="nav.dashboard">Dashboard</a>
+		<a href="settings.html" class="active" aria-current="page" data-i18n="nav.settings">Settings</a>
+		<a href="/review/" class="staff-only" data-i18n="nav.review">Review</a>
+		<a href="docs.html" class="docs-link" data-i18n="nav.docs">Docs</a>
 	</div>
-	<button class="theme" type="button" data-theme-toggle aria-label="Switch between dark and light" title="Switch between dark and light"><svg class="sun" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1.5V3M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/></svg><svg class="moon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M13.5 9.5a5.5 5.5 0 0 1-7-7 5.5 5.5 0 1 0 7 7z"/></svg></button>
+	<button class="theme" type="button" data-theme-toggle aria-label="Switch between dark and light" title="Switch between dark and light" data-i18n-attr="aria-label:nav.theme;title:nav.theme"><svg class="sun" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1.5V3M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/></svg><svg class="moon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M13.5 9.5a5.5 5.5 0 0 1-7-7 5.5 5.5 0 1 0 7 7z"/></svg></button>
+	<button class="theme lang" type="button" data-lang-toggle>日本語</button>
 	<details class="account hosted-only">
-		<summary aria-label="Account menu"><span class="avatar" id="account-initial" aria-hidden="true"></span><span class="who" id="account-name"></span><svg class="chev" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+		<summary aria-label="Account menu" data-i18n-attr="aria-label:nav.accountMenu"><span class="avatar" id="account-initial" aria-hidden="true"></span><span class="who" id="account-name"></span><svg class="chev" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
 		<div class="menu">
-			<div class="who-line">Signed in as<b id="account-name-full"></b></div>
-			<a href="dashboard.html">Dashboard</a>
-			<a href="settings.html">Settings</a>
-			<a href="settings.html#account">Account</a>
-			<a href="/review/" class="staff-only">Review</a>
-			<form method="post" action="/logout"><button>Sign out</button></form>
+			<div class="who-line"><span data-i18n="nav.signedInAs">Signed in as</span><b id="account-name-full"></b></div>
+			<a href="dashboard.html" data-i18n="nav.dashboard">Dashboard</a>
+			<a href="settings.html" data-i18n="nav.settings">Settings</a>
+			<a href="settings.html#account" data-i18n="nav.account">Account</a>
+			<a href="/review/" class="staff-only" data-i18n="nav.review">Review</a>
+			<form method="post" action="/logout"><button data-i18n="nav.signOut">Sign out</button></form>
 		</div>
 	</details>
 </nav>
@@ -38,158 +40,155 @@
 <main class="wrap dash">
 	<div class="ban-banner" id="ban-banner" role="alert" hidden>
 		<svg viewBox="0 0 16 16" width="28" height="28" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="m3.8 3.8 8.4 8.4"/></svg>
-		<div><h2>This account is banned</h2><p id="ban-text"></p></div>
+		<div><h2 data-i18n="ban.title">This account is banned</h2><p id="ban-text"></p></div>
 	</div>
-	<div class="dash-head"><h1>Settings</h1></div>
+	<div class="dash-head"><h1 data-i18n="settings.h1">Settings</h1></div>
 	<div class="settings">
-		<nav class="side" aria-label="Settings">
-			<a href="#setup"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2.5 3.5h11v9h-11zM5 6.5l2 1.5-2 1.5M8.5 10H11"/></svg>Setup</a>
-			<a href="#profile"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M2.5 8h11M8 2.5c1.6 1.6 2.3 3.4 2.3 5.5S9.6 11.9 8 13.5M8 2.5C6.4 4.1 5.7 5.9 5.7 8s.7 3.9 2.3 5.5"/></svg>Profile</a>
-			<a href="#computers"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2.5 3h11v7.5h-11zM6 13.5h4M8 10.5v3"/></svg>Computers</a>
-			<a href="#data"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M8 10.5V3M5 6l3-3 3 3M3 10.5V13h10v-2.5"/></svg>Data</a>
-			<a href="#api"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="5.5" cy="10.5" r="3"/><path d="M7.7 8.3 13.5 2.5M11 5l2 2M9.3 6.7l1.5 1.5"/></svg>API</a>
-			<a href="#account"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="5.5" r="2.5"/><path d="M3 13.5c.6-2.5 2.6-4 5-4s4.4 1.5 5 4"/></svg>Account</a>
+		<nav class="side" aria-label="Settings" data-i18n-attr="aria-label:settings.nav">
+			<a href="#setup"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2.5 3.5h11v9h-11zM5 6.5l2 1.5-2 1.5M8.5 10H11"/></svg><span data-i18n="settings.side.setup">Setup</span></a>
+			<a href="#profile"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M2.5 8h11M8 2.5c1.6 1.6 2.3 3.4 2.3 5.5S9.6 11.9 8 13.5M8 2.5C6.4 4.1 5.7 5.9 5.7 8s.7 3.9 2.3 5.5"/></svg><span data-i18n="settings.side.profile">Profile</span></a>
+			<a href="#computers"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2.5 3h11v7.5h-11zM6 13.5h4M8 10.5v3"/></svg><span data-i18n="settings.side.computers">Computers</span></a>
+			<a href="#data"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M8 10.5V3M5 6l3-3 3 3M3 10.5V13h10v-2.5"/></svg><span data-i18n="settings.side.data">Data</span></a>
+			<a href="#api"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="5.5" cy="10.5" r="3"/><path d="M7.7 8.3 13.5 2.5M11 5l2 2M9.3 6.7l1.5 1.5"/></svg><span data-i18n="settings.side.api">API</span></a>
+			<a href="#account"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="5.5" r="2.5"/><path d="M3 13.5c.6-2.5 2.6-4 5-4s4.4 1.5 5 4"/></svg><span data-i18n="settings.side.account">Account</span></a>
 		</nav>
 
 		<section class="pane" id="setup" hidden>
-			<h2>Set up a computer</h2>
-			<p class="muted">Do this on each computer you code on. They all add up on your dashboard.</p>
+			<h2 data-i18n="settings.setup.h2">Set up a computer</h2>
+			<p class="muted" data-i18n="settings.setup.lead">Do this on each computer you code on. They all add up on your dashboard.</p>
 			<div id="setup-steps"><span class="skeleton block"></span></div>
-			<h3>Sync keys</h3>
-			<p class="muted">Each computer you connect with <code>teardrop login</code> gets a sync key of its own, listed here by its computer ID. Revoke one, and that computer alone stops syncing. You can also make a key for a computer you set up by hand with <code>teardrop sync -key</code>.</p>
+			<h3 data-i18n="settings.sync.h3">Sync keys</h3>
+			<p class="muted" data-i18n="settings.sync.lead">Each computer you connect with <code>teardrop login</code> gets a sync key of its own, listed here by its computer ID. Revoke one, and that computer alone stops syncing. You can also make a key for a computer you set up by hand with <code>teardrop sync -key</code>.</p>
 			<form class="key-form" id="sync-key-form">
-				<label class="field">What will use it<input name="name" maxlength="60" autocomplete="off" placeholder="Such as: build server" required></label>
-				<button class="btn small primary">Make a sync key</button>
+				<label class="field"><span data-i18n="settings.keyUse">What will use it</span><input name="name" maxlength="60" autocomplete="off" placeholder="Such as: build server" data-i18n-attr="placeholder:settings.sync.placeholder" required></label>
+				<button class="btn small primary" data-i18n="settings.sync.make">Make a sync key</button>
 			</form>
 			<p class="msg" id="sync-key-msg" role="status" hidden></p>
 			<div class="list" id="sync-keys"><div class="item"><div class="grow"><span class="skeleton"></span></div></div></div>
-			<h3>Account key</h3>
-			<p class="muted">Your account's own sync key is the one in the steps above, for Amp cloud threads. If it gets out, make a new one: the old one stops working, and the keys listed above keep theirs.</p>
-			<button class="btn small" id="new-key" type="button">Make a new account key</button>
+			<h3 data-i18n="settings.acctKey.h3">Account key</h3>
+			<p class="muted" data-i18n="settings.acctKey.lead">Your account's own sync key is the one in the steps above, for Amp cloud threads. If it gets out, make a new one: the old one stops working, and the keys listed above keep theirs.</p>
+			<button class="btn small" id="new-key" type="button" data-i18n="settings.acctKey.make">Make a new account key</button>
 			<p class="msg" id="key-msg" role="status" hidden></p>
 		</section>
 
 		<section class="pane" id="profile" hidden>
-			<h2>Public profile</h2>
-			<p class="muted">Anyone can see your profile at <a id="profile-link" href="#profile">-</a>: your handle, when you joined, your hours, and the projects it names. It never shows your name, your Slack ID, or folders on your computer.</p>
-			<label class="check"><input type="checkbox" id="profile-public"> Anyone can see my profile</label>
+			<h2 data-i18n="settings.profile.h2">Public profile</h2>
+			<p class="muted" data-i18n="settings.profile.lead">Anyone can see your profile at <a id="profile-link" href="#profile">-</a>: your handle, when you joined, your hours, and the projects it names. It never shows your name, your Slack ID, or folders on your computer.</p>
+			<label class="check"><input type="checkbox" id="profile-public"> <span data-i18n="settings.profile.public">Anyone can see my profile</span></label>
 			<form class="key-form" id="handle-form">
-				<label class="field">Handle<input name="handle" id="handle" minlength="3" maxlength="30" autocomplete="off" spellcheck="false" required></label>
-				<button class="btn small primary">Save handle</button>
+				<label class="field"><span data-i18n="settings.profile.handle">Handle</span><input name="handle" id="handle" minlength="3" maxlength="30" autocomplete="off" spellcheck="false" required></label>
+				<button class="btn small primary" data-i18n="settings.profile.saveHandle">Save handle</button>
 			</form>
-			<p class="muted fine">3 to 30 letters, digits, and hyphens. Your old address stops working when you change it.</p>
+			<p class="muted fine" data-i18n="settings.profile.handleHint">3 to 30 letters, digits, and hyphens. Your old address stops working when you change it.</p>
 			<p class="msg" id="profile-msg" role="status" hidden></p>
 			<div id="badge" hidden>
-				<h3>Badge</h3>
-				<p class="muted">Your hours as a badge for a README, linked to your profile. For one project, add <code>?project=</code> and a repository your profile names, such as <code>github.com/you/site</code>.</p>
-				<p><img id="badge-img" alt="Your badge" height="20"></p>
-				<div class="cmdbox"><div class="cmd plain"><code id="badge-md"></code><button class="copy" type="button">Copy</button></div></div>
+				<h3 data-i18n="settings.profile.badge.h3">Badge</h3>
+				<p class="muted" data-i18n="settings.profile.badge.p">Your hours as a badge for a README, linked to your profile. For one project, add <code>?project=</code> and a repository your profile names, such as <code>github.com/you/site</code>.</p>
+				<p><img id="badge-img" alt="Your badge" height="20" data-i18n-attr="alt:settings.profile.badge.alt"></p>
+				<div class="cmdbox"><div class="cmd plain"><code id="badge-md"></code><button class="copy" type="button" data-i18n="common.copy">Copy</button></div></div>
 			</div>
-			<h3>Projects</h3>
-			<p class="muted">A repository on a public host, such as GitHub, is named on your profile unless you hide it. Any other project is only counted, as one of your other projects, unless you show its name.</p>
+			<h3 data-i18n="settings.profile.projects.h3">Projects</h3>
+			<p class="muted" data-i18n="settings.profile.projects.p">A repository on a public host, such as GitHub, is named on your profile unless you hide it. Any other project is only counted, as one of your other projects, unless you show its name.</p>
 			<div class="list" id="profile-projects"><div class="item"><div class="grow"><span class="skeleton"></span></div></div></div>
 		</section>
 
 		<section class="pane" id="computers" hidden>
-			<h2>Computers</h2>
-			<p class="muted">Every computer that syncs to your account, and when it last did.</p>
+			<h2 data-i18n="settings.computers.h2">Computers</h2>
+			<p class="muted" data-i18n="settings.computers.lead">Every computer that syncs to your account, and when it last did.</p>
 			<div class="list" id="computer-list"><div class="item"><div class="grow"><span class="skeleton"></span></div></div></div>
 			<p class="msg bad" id="computer-msg" role="alert" hidden></p>
 		</section>
 
 		<section class="pane" id="data" hidden>
-			<h2>Your data</h2>
-			<p class="muted">Bring stats in from a computer that can't sync, or take a copy of your stats.</p>
-			<h3 class="first">Upload a stats file</h3>
-			<p class="muted">For a computer that can't reach this site. Everywhere else, <a href="#setup">set up syncing</a> and you never need this.</p>
+			<h2 data-i18n="settings.data.h2">Your data</h2>
+			<p class="muted" data-i18n="settings.data.lead">Bring stats in from a computer that can't sync, or take a copy of your stats.</p>
+			<h3 class="first" data-i18n="settings.upload.h3">Upload a stats file</h3>
+			<p class="muted" data-i18n="settings.upload.lead">For a computer that can't reach this site. Everywhere else, <a href="#setup">set up syncing</a> and you never need this.</p>
 			<ol class="steps">
 				<li><div>
-					<h3>Make the file</h3>
-					<p>On that computer, run:</p>
-					<div class="cmdbox"><div class="cmd"><code>teardrop export -o stats.json</code><button class="copy" type="button">Copy</button></div></div>
+					<h3 data-i18n="settings.upload.step1.h">Make the file</h3>
+					<p data-i18n="settings.upload.step1.p">On that computer, run:</p>
+					<div class="cmdbox"><div class="cmd"><code>teardrop export -o stats.json</code><button class="copy" type="button" data-i18n="common.copy">Copy</button></div></div>
 				</div></li>
 				<li><div>
-					<h3>Upload it within 7 days</h3>
-					<label class="drop" id="drop">Drop <code>stats.json</code> here, or click to choose it
+					<h3 data-i18n="settings.upload.step2.h">Upload it within 7 days</h3>
+					<label class="drop" id="drop"><span data-i18n="settings.upload.drop">Drop <code>stats.json</code> here, or click to choose it</span>
 						<input type="file" id="file" accept=".json,application/json" hidden>
 					</label>
 					<p class="msg" id="upload-msg" role="status" hidden></p>
 				</div></li>
 			</ol>
-			<p class="muted fine">The file holds times and counts, never the text of your prompts. A file that was edited after it was made is refused.</p>
-			<h3>Export your data</h3>
-			<p class="muted">Download your name, your Slack ID, your handle, and the latest stats from each of your computers as one JSON file. It does not include your sync key.</p>
-			<a class="btn small" href="/api/export" download>Download my data</a>
+			<p class="muted fine" data-i18n="settings.upload.fine">The file holds times and counts, never the text of your prompts. A file that was edited after it was made is refused.</p>
+			<h3 data-i18n="settings.export.h3">Export your data</h3>
+			<p class="muted" data-i18n="settings.export.p">Download your name, your Slack ID, your handle, and the latest stats from each of your computers as one JSON file. It does not include your sync key.</p>
+			<a class="btn small" href="/api/export" download data-i18n="settings.export.go">Download my data</a>
 		</section>
 
 		<section class="pane" id="api" hidden>
-			<h2>API</h2>
-			<p class="muted">Read keys let a script, or another site you sign in to, read your own stats: your name and Slack ID, your projects with their repositories and hours, and your hours per day. A read key can't upload, change, or delete anything, and it reads nothing while your account is banned. Folders on your computer are never shown, only repositories.</p>
+			<h2 data-i18n="settings.api.h2">API</h2>
+			<p class="muted" data-i18n="settings.api.lead">Read keys let a script, or another site you sign in to, read your own stats: your name and Slack ID, your projects with their repositories and hours, and your hours per day. A read key can't upload, change, or delete anything, and it reads nothing while your account is banned. Folders on your computer are never shown, only repositories.</p>
 			<form class="key-form" id="api-form">
-				<label class="field">What will use it<input name="name" maxlength="60" autocomplete="off" placeholder="Such as: my portfolio site" required></label>
-				<button class="btn small primary">Make a read key</button>
+				<label class="field"><span data-i18n="settings.keyUse">What will use it</span><input name="name" maxlength="60" autocomplete="off" placeholder="Such as: my portfolio site" data-i18n-attr="placeholder:settings.api.placeholder" required></label>
+				<button class="btn small primary" data-i18n="settings.api.make">Make a read key</button>
 			</form>
 			<p class="msg" id="api-msg" role="status" hidden></p>
 			<div class="list" id="api-keys"><div class="item"><div class="grow"><span class="skeleton"></span></div></div></div>
-			<h3>Using a key</h3>
-			<p class="muted">Send it as a bearer token. Any site may call these from the browser.</p>
-			<div class="cmdbox"><div class="cmd"><code id="api-example"></code><button class="copy" type="button">Copy</button></div></div>
+			<h3 data-i18n="settings.api.using.h3">Using a key</h3>
+			<p class="muted" data-i18n="settings.api.using.p">Send it as a bearer token. Any site may call these from the browser.</p>
+			<div class="cmdbox"><div class="cmd"><code id="api-example"></code><button class="copy" type="button" data-i18n="common.copy">Copy</button></div></div>
 			<div class="table-scroll"><table class="data left api-calls">
-				<tr><th>Call</th><th>What it returns</th></tr>
-				<tr><td><code>GET /api/public/v1/me</code></td><td>Your name, Slack ID, when you joined, your engaged seconds in the past year, and your last sync.</td></tr>
-				<tr><td><code>GET /api/public/v1/projects</code></td><td>Each project: its name, its repository (such as <code>github.com/you/site</code>, or <code>null</code>), its engaged seconds, and when you first and last worked on it.</td></tr>
-				<tr><td><code>GET /api/public/v1/days?since=2026-01-01</code></td><td>Your engaged seconds on each day.</td></tr>
-				<tr><td><code>GET /api/public/v1/users/{handle}</code></td><td>Anyone's public profile, as it shows at /@handle. Needs no key.</td></tr>
+				<tr><th data-i18n="settings.api.col.call">Call</th><th data-i18n="settings.api.col.returns">What it returns</th></tr>
+				<tr><td><code>GET /api/public/v1/me</code></td><td data-i18n="settings.api.me">Your name, Slack ID, when you joined, your engaged seconds in the past year, and your last sync.</td></tr>
+				<tr><td><code>GET /api/public/v1/projects</code></td><td data-i18n="settings.api.projects">Each project: its name, its repository (such as <code>github.com/you/site</code>, or <code>null</code>), its engaged seconds, and when you first and last worked on it.</td></tr>
+				<tr><td><code>GET /api/public/v1/days?since=2026-01-01</code></td><td data-i18n="settings.api.days">Your engaged seconds on each day.</td></tr>
+				<tr><td><code>GET /api/public/v1/users/{handle}</code></td><td data-i18n="settings.api.users">Anyone's public profile, as it shows at /@handle. Needs no key.</td></tr>
 			</table></div>
-			<p class="muted fine">More in the <a href="docs.html#public-api">docs</a>.</p>
+			<p class="muted fine" data-i18n="settings.api.more">More in the <a href="docs.html#public-api">docs</a>.</p>
 		</section>
 
 		<section class="pane" id="account" hidden>
-			<h2>Account</h2>
-			<p class="muted">You sign in with Hack Club Auth, so your name and Slack ID come from there. They update each time you sign in.</p>
+			<h2 data-i18n="settings.account.h2">Account</h2>
+			<p class="muted" data-i18n="settings.account.lead">You sign in with Hack Club Auth, so your name and Slack ID come from there. They update each time you sign in.</p>
 			<dl class="facts">
-				<div><dt>Name</dt><dd id="me-name"><span class="skeleton"></span></dd></div>
-				<div><dt>Slack ID</dt><dd id="me-slack"><span class="skeleton"></span></dd></div>
-				<div><dt>Member since</dt><dd id="me-since"><span class="skeleton"></span></dd></div>
-				<div><dt>Role</dt><dd id="me-role"><span class="skeleton"></span></dd></div>
+				<div><dt data-i18n="settings.account.name">Name</dt><dd id="me-name"><span class="skeleton"></span></dd></div>
+				<div><dt data-i18n="settings.account.slack">Slack ID</dt><dd id="me-slack"><span class="skeleton"></span></dd></div>
+				<div><dt data-i18n="settings.account.since">Member since</dt><dd id="me-since"><span class="skeleton"></span></dd></div>
+				<div><dt data-i18n="settings.account.role">Role</dt><dd id="me-role"><span class="skeleton"></span></dd></div>
 			</dl>
-			<form method="post" action="/logout"><button class="btn small">Sign out</button></form>
-			<h3>Delete your account</h3>
-			<p class="muted">This removes every computer connected to your account and all of your stats from this site, and signs you out. Nothing on your own computers is touched. Reviewers keep your Slack ID and a record of what your computers reported: times and totals, without project names. Signing in again reopens the account, empty.</p>
-			<label class="field">Type <b>delete</b> to confirm
+			<form method="post" action="/logout"><button class="btn small" data-i18n="nav.signOut">Sign out</button></form>
+			<h3 data-i18n="settings.delete.h3">Delete your account</h3>
+			<p class="muted" data-i18n="settings.delete.p">This removes every computer connected to your account and all of your stats from this site, and signs you out. Nothing on your own computers is touched. Reviewers keep your Slack ID and a record of what your computers reported: times and totals, without project names. Signing in again reopens the account, empty.</p>
+			<label class="field"><span data-i18n="settings.delete.confirmLabel">Type <b>delete</b> to confirm</span>
 				<input id="delete-confirm" type="text" autocomplete="off" spellcheck="false">
 			</label>
-			<button class="btn small danger" id="delete-account" type="button" disabled>Delete my account</button>
+			<button class="btn small danger" id="delete-account" type="button" disabled data-i18n="settings.delete.go">Delete my account</button>
 			<p class="msg bad" id="delete-msg" role="alert" hidden></p>
 		</section>
 	</div>
 </main>
 <dialog class="modal" id="key-dialog" aria-labelledby="key-dialog-title">
-	<h2 id="key-dialog-title">Your new account key</h2>
-	<p>The old account key has stopped working. Copy this one to wherever you put the old one by hand. Computers with keys of their own keep syncing.</p>
-	<div class="box"><div class="cmd plain"><code id="new-key-value"></code><button class="copy" type="button">Copy</button></div></div>
-	<p class="fine">If you count Amp cloud threads, also put the new key in the <code>TEARDROP_KEY</code> secret, in Amp's Secrets &amp; Env Vars settings. The key stays visible under Setup, so you can come back for it.</p>
-	<form method="dialog" class="actions"><button class="btn primary small">Done</button></form>
+	<h2 id="key-dialog-title" data-i18n="settings.dlg.newKey">Your new account key</h2>
+	<p data-i18n="settings.dlg.newKeyP">The old account key has stopped working. Copy this one to wherever you put the old one by hand. Computers with keys of their own keep syncing.</p>
+	<div class="box"><div class="cmd plain"><code id="new-key-value"></code><button class="copy" type="button" data-i18n="common.copy">Copy</button></div></div>
+	<p class="fine" data-i18n="settings.dlg.newKeyFine">If you count Amp cloud threads, also put the new key in the <code>TEARDROP_KEY</code> secret, in Amp's Secrets &amp; Env Vars settings. The key stays visible under Setup, so you can come back for it.</p>
+	<form method="dialog" class="actions"><button class="btn primary small" data-i18n="common.done">Done</button></form>
 </dialog>
 <dialog class="modal" id="sync-dialog" aria-labelledby="sync-dialog-title">
-	<h2 id="sync-dialog-title">Your new sync key</h2>
-	<p>Copy it now: it is not shown again. On the computer it is for, run:</p>
-	<div class="box"><div class="cmd"><code id="sync-key-connect"></code><button class="copy" type="button">Copy</button></div></div>
-	<form method="dialog" class="actions"><button class="btn primary small">Done</button></form>
+	<h2 id="sync-dialog-title" data-i18n="settings.dlg.syncKey">Your new sync key</h2>
+	<p data-i18n="settings.dlg.syncKeyP">Copy it now: it is not shown again. On the computer it is for, run:</p>
+	<div class="box"><div class="cmd"><code id="sync-key-connect"></code><button class="copy" type="button" data-i18n="common.copy">Copy</button></div></div>
+	<form method="dialog" class="actions"><button class="btn primary small" data-i18n="common.done">Done</button></form>
 </dialog>
 <dialog class="modal" id="api-dialog" aria-labelledby="api-dialog-title">
-	<h2 id="api-dialog-title">Your new read key</h2>
-	<p>Copy it now and keep it somewhere safe. It is not shown again. If you lose it, revoke it and make another.</p>
-	<div class="box"><div class="cmd plain"><code id="api-key-value"></code><button class="copy" type="button">Copy</button></div></div>
-	<form method="dialog" class="actions"><button class="btn primary small">Done</button></form>
+	<h2 id="api-dialog-title" data-i18n="settings.dlg.readKey">Your new read key</h2>
+	<p data-i18n="settings.dlg.readKeyP">Copy it now and keep it somewhere safe. It is not shown again. If you lose it, revoke it and make another.</p>
+	<div class="box"><div class="cmd plain"><code id="api-key-value"></code><button class="copy" type="button" data-i18n="common.copy">Copy</button></div></div>
+	<form method="dialog" class="actions"><button class="btn primary small" data-i18n="common.done">Done</button></form>
 </dialog>
 <dialog class="modal" id="confirm-dialog" aria-labelledby="confirm-title">
 	<h2 id="confirm-title"></h2>
 	<p id="confirm-text"></p>
-	<form method="dialog" class="actions"><button class="btn small" value="no">Cancel</button><button class="btn small danger fill" id="confirm-go" value="yes"></button></form>
+	<form method="dialog" class="actions"><button class="btn small" value="no" data-i18n="common.cancel">Cancel</button><button class="btn small danger fill" id="confirm-go" value="yes"></button></form>
 </dialog>
-<script src="site.js"></script>
-<script src="account.js"></script>
-<script src="settings.js"></script>
 </body>
 </html>

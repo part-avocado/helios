@@ -66,7 +66,7 @@ func calibrate(out io.Writer, sessions []timeline.Session) {
 	w.Flush()
 	fmt.Fprintln(out, "\nEngaged total by compose cap (rows) and watch cap (columns); * marks the caps in use:")
 	w = tabwriter.NewWriter(out, 0, 0, 2, ' ', tabwriter.AlignRight)
-	watches := []time.Duration{5 * time.Minute, 10 * time.Minute, 15 * time.Minute, 20 * time.Minute}
+	watches := []time.Duration{3 * time.Minute, 5 * time.Minute, 8 * time.Minute, 10 * time.Minute}
 	fmt.Fprint(w, "\t")
 	for _, wc := range watches {
 		fmt.Fprintf(w, "%s\t", capName(wc, wc == timeline.DefaultRules.WatchCap))

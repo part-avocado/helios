@@ -50,6 +50,7 @@ func TestCreditProperties(t *testing.T) {
 		more := DefaultRules
 		more.ComposeCap += time.Duration(r.Int63n(int64(10 * time.Minute)))
 		more.WatchCap += time.Duration(r.Int63n(int64(10 * time.Minute)))
+		more.WatchFull = min(more.WatchFull+time.Duration(r.Int63n(int64(time.Minute))), more.WatchCap)
 		if higher := Total(Credit(ev, more)); higher < got {
 			t.Fatalf("raising the caps to %v/%v lowered %v to %v", more.ComposeCap, more.WatchCap, got, higher)
 		}

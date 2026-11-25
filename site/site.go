@@ -5,5 +5,5 @@ package site
 
 import "embed"
 
-//go:embed *.html *.css *.js *.svg
+//go:embed *.html *.css *.js *.json *.svg
 var FS embed.FS

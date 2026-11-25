@@ -1,8 +1,9 @@
 [
 	{"name": "a reply, then a prompt after a long read", "events": [[0, "h"], [180, "a"], [1380, "h"]], "engaged": 480},
-	{"name": "an agent left running earns only the watch window", "events": [[0, "h"], [60, "a"], [1200, "a"]], "engaged": 600},
+	{"name": "an agent left running earns 3 minutes in full and 2 at half", "events": [[0, "h"], [60, "a"], [1200, "a"]], "engaged": 240},
+	{"name": "a reply that ends in the half-rate part of the window", "events": [[0, "h"], [240, "a"]], "engaged": 210},
 	{"name": "agent output with no prompt earns nothing", "events": [[0, "a"], [100, "a"]], "engaged": 0},
 	{"name": "a quick reply and a quick prompt", "events": [[0, "h"], [30, "a"], [90, "h"]], "engaged": 90},
 	{"name": "out of order records are sorted first", "events": [[90, "h"], [0, "h"], [30, "a"]], "engaged": 90},
-	{"name": "a second prompt restarts the watch window", "events": [[0, "h"], [500, "h"], [1000, "a"], [1300, "a"]], "engaged": 900}
+	{"name": "a second prompt restarts the watch window", "events": [[0, "h"], [500, "h"], [1000, "a"], [1300, "a"]], "engaged": 540}
 ]

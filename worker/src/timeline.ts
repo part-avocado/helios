@@ -5,14 +5,16 @@
 //
 // Time between two records of a session is credited like this: before a
 // prompt, the last COMPOSE of the gap (reading the reply, writing the prompt);
-// before agent output, the gap while it lies within WATCH of the last prompt.
+// before agent output, the gap while it lies within WATCH of the last prompt,
+// in full for the first WATCH_FULL and at half after that.
 // Here each credited stretch is also marked witnessed when the site received
 // the records at both of its ends within WITNESS of the time they claim.
 
 /** The version of these rules, stamped on what they compute. */
-export const RULES = 1
+export const RULES = 2
 export const COMPOSE = 5 * 60_000
-export const WATCH = 10 * 60_000
+export const WATCH_FULL = 3 * 60_000
+export const WATCH = 5 * 60_000
 /** A record that reaches the site within this long of the time it claims was witnessed. */
 export const WITNESS = 5 * 60_000
 
@@ -112,6 +114,18 @@ export function kinds(recs: Rec[]): Kind[] {
 	})
 }
 
+/**
+ * watched is the credit for agent work from a to b milliseconds after a prompt:
+ * full up to WATCH_FULL, half up to WATCH, none after.
+ */
+function watched(a: number, b: number): number {
+	const at = (t: number) => {
+		t = Math.min(t, WATCH)
+		return t <= WATCH_FULL ? t : WATCH_FULL + Math.floor((t - WATCH_FULL) / 2)
+	}
+	return at(b) - at(a)
+}
+
 /** credit returns the stretches of one session in which the person was plausibly engaged. */
 export function credit(recs: Rec[]): Stretch[] {
 	const ev = recs.filter(timed).sort((a, b) => a.t - b.t)
@@ -123,7 +137,12 @@ export function credit(recs: Rec[]): Stretch[] {
 			const prev = ev[i - 1]!.t
 			let start = 0, end = 0
 			if (k[i] === 'human') (start = Math.max(prev, ev[i]!.t - COMPOSE)), (end = ev[i]!.t)
-			else if (lastHuman >= 0) (start = prev), (end = Math.min(ev[i]!.t, ev[lastHuman]!.t + WATCH))
+			else if (lastHuman >= 0) {
+				// The credit sits at the start of the gap, where the agent's time counts most.
+				const from = ev[lastHuman]!.t
+				start = prev
+				end = start + watched(prev - from, Math.min(ev[i]!.t, from + WATCH) - from)
+			}
 			if (end > start) out.push({ start, end, witnessed: witnessed(ev[i - 1]!) && witnessed(ev[i]!) })
 		}
 		if (k[i] === 'human') lastHuman = i

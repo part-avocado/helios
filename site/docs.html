@@ -3,7 +3,7 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>Docs - teardrop</title>
+	<title data-i18n="docs.title">Docs - teardrop</title>
 	<link rel="icon" href="favicon.svg">
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -11,40 +11,43 @@
 	<link rel="stylesheet" href="base.css">
 	<link rel="stylesheet" href="style.css">
 	<script src="theme.js"></script>
+	<script src="i18n.js" data-scripts="site.js"></script>
 </head>
 <body>
-<nav class="nav" aria-label="Main">
+<nav class="nav" aria-label="Main" data-i18n-attr="aria-label:nav.main">
 	<a class="brand" href="index.html"><img src="favicon.svg" alt="">teardrop</a>
 	<div class="links">
-		<a href="index.html#what-counts" class="opt">What counts</a>
-		<a href="docs.html" class="active">Docs</a>
-		<a href="https://github.com/part-avocado/teardrop" class="opt">GitHub</a>
+		<a href="index.html#what-counts" class="opt" data-i18n="nav.whatCounts">What counts</a>
+		<a href="docs.html" class="active" data-i18n="nav.docs">Docs</a>
+		<a href="https://github.com/part-avocado/teardrop" class="opt" data-i18n="nav.github">GitHub</a>
 	</div>
-	<button class="theme" type="button" data-theme-toggle aria-label="Switch between dark and light" title="Switch between dark and light"><svg class="sun" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1.5V3M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/></svg><svg class="moon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M13.5 9.5a5.5 5.5 0 0 1-7-7 5.5 5.5 0 1 0 7 7z"/></svg></button>
-	<a class="btn primary small local-only" href="dashboard.html">Dashboard</a>
+	<button class="theme" type="button" data-theme-toggle aria-label="Switch between dark and light" title="Switch between dark and light" data-i18n-attr="aria-label:nav.theme;title:nav.theme"><svg class="sun" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1.5V3M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/></svg><svg class="moon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M13.5 9.5a5.5 5.5 0 0 1-7-7 5.5 5.5 0 1 0 7 7z"/></svg></button>
+	<button class="theme lang" type="button" data-lang-toggle>日本語</button>
+	<a class="btn primary small local-only" href="dashboard.html" data-i18n="nav.dashboard">Dashboard</a>
 	<details class="account hosted-only">
-		<summary aria-label="Account menu"><span class="avatar" id="account-initial" aria-hidden="true"></span><span class="who" id="account-name"></span><svg class="chev" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+		<summary aria-label="Account menu" data-i18n-attr="aria-label:nav.accountMenu"><span class="avatar" id="account-initial" aria-hidden="true"></span><span class="who" id="account-name"></span><svg class="chev" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
 		<div class="menu">
-			<div class="who-line">Signed in as<b id="account-name-full"></b></div>
-			<a href="dashboard.html">Dashboard</a>
-			<a href="settings.html">Settings</a>
-			<a href="settings.html#account">Account</a>
-			<a href="/review/" class="staff-only">Review</a>
-			<form method="post" action="/logout"><button>Sign out</button></form>
+			<div class="who-line"><span data-i18n="nav.signedInAs">Signed in as</span><b id="account-name-full"></b></div>
+			<a href="dashboard.html" data-i18n="nav.dashboard">Dashboard</a>
+			<a href="settings.html" data-i18n="nav.settings">Settings</a>
+			<a href="settings.html#account" data-i18n="nav.account">Account</a>
+			<a href="/review/" class="staff-only" data-i18n="nav.review">Review</a>
+			<form method="post" action="/logout"><button data-i18n="nav.signOut">Sign out</button></form>
 		</div>
 	</details>
 </nav>
 
 <div class="wrap docs">
 <aside>
+	<p class="muted fine" data-not-english data-i18n="docs.notTranslated" hidden></p>
 	<div class="doc-search" role="search">
 		<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
-		<input id="doc-search" type="search" placeholder="Search the docs" aria-label="Search the docs" aria-controls="doc-results" autocomplete="off" spellcheck="false">
+		<input id="doc-search" type="search" placeholder="Search the docs" aria-label="Search the docs" aria-controls="doc-results" autocomplete="off" spellcheck="false" data-i18n-attr="placeholder:docs.searchLabel;aria-label:docs.searchLabel">
 		<kbd aria-hidden="true">Ctrl K</kbd>
 	</div>
-	<div class="doc-results" id="doc-results" role="listbox" aria-label="Search results" hidden></div>
+	<div class="doc-results" id="doc-results" role="listbox" aria-label="Search results" hidden data-i18n-attr="aria-label:docs.results"></div>
 	<details class="doc-toc" open>
-	<summary>Contents</summary>
+	<summary data-i18n="docs.contents">Contents</summary>
 	<div class="group">Getting started</div>
 	<a href="#quick-start">Quick start</a>
 	<a href="#install">Install</a>
@@ -175,8 +178,8 @@
 		<li><strong>Steering only.</strong> A third prompt in a row that only steers, such as "continue", "yes", "fix it", or "still broken". The first two count, and any prompt that asks for something new starts over.</li>
 	</ul>
 	<p>The report says how many prompts each check skipped, not which prompts.</p>
-	<p>The rules, applied to each session's prompts and agent output in time order: before a prompt, the last 5 minutes of the gap count (reading the reply, writing the prompt); while the agent works, the gap counts as long as it lies within 10 minutes of your last prompt. Work blocks closer than 15 minutes are shown as one. Time between prompts beyond those caps isn't counted, and commits earn no time by themselves. Reviewers see your commits, and whether GitHub has them as you claim, beside your time. Your site stamps each day's totals with the version of these rules (currently 1), and keeps every record, so a day can be counted again if the rules change.</p>
-	<p><code>teardrop calibrate</code> shows how the caps treat your own logs: how long your gaps before prompts and before agent output are, how many run past the caps, and your engaged total under other caps. It reads only your computer's logs and uploads nothing. Two things differ between your site and the local count: time on two computers at once counts once on your site, and a Claude Code reply you interrupt runs no hook, so its end reaches your site late and up to 10 minutes of it is unwitnessed.</p>
+	<p>The rules, applied to each session's prompts and agent output in time order: before a prompt, the last 5 minutes of the gap count (reading the reply, writing the prompt); while the agent works, the gap counts for up to 5 minutes after your last prompt: the first 3 minutes in full and the next 2 at half, so a prompt that starts a long agent run earns 4 minutes at most. Work blocks closer than 15 minutes are shown as one. Time between prompts beyond those caps isn't counted, and commits earn no time by themselves. Reviewers see your commits, and whether GitHub has them as you claim, beside your time. Your site stamps each day's totals with the version of these rules (currently 2), and keeps every record, so a day can be counted again if the rules change.</p>
+	<p><code>teardrop calibrate</code> shows how the caps treat your own logs: how long your gaps before prompts and before agent output are, how many run past the caps, and your engaged total under other caps. It reads only your computer's logs and uploads nothing. Two things differ between your site and the local count: time on two computers at once counts once on your site, and a Claude Code reply you interrupt runs no hook, so its end reaches your site late and up to 4 minutes of it is unwitnessed.</p>
 
 	<h2 id="tokens">Tokens</h2>
 	<p>Token counts come from the usage records Claude Code and Codex save with each response. A Claude Code response that's written several times, or copied into a resumed session, counts once. Codex counts are taken from the increase in its running totals. Amp counts come from the usage Amp hands the teardrop plugin when a turn ends, so they start with teardrop v0.6.0: Amp turns recorded before that show no tokens.</p>
@@ -389,13 +392,12 @@ npm run dev</code></pre>
 	<p>It asks once, then removes teardrop's hooks from Claude Code, Codex, Cursor, and Copilot, its Amp and OpenCode plugins, and the line the installer added to your shell profile (on Windows, the folder it added to your Path), leaving your other settings and lines as they were. It asks whether to keep the journal folder, which holds this computer's account key and any records not sent yet, and deletes the binary last. Windows can't delete a running program, so there it tells you to delete <code>teardrop.exe</code> once the window closes. <code>-yes</code> answers every question, deleting the journal folder unless you add <code>-keep-data</code>.</p>
 	<p>Your account on the site keeps what it has; remove the computer under Settings, Computers. Claude Code's longer history setting and teardrop's <code>.teardrop-backup</code> copies of settings files stay. To remove only the hooks and keep teardrop, run <code>teardrop setup -remove-hooks</code>.</p>
 </article>
-<a class="to-top" href="#" hidden><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 10l5-5 5 5"/></svg>Top</a>
+<a class="to-top" href="#" hidden><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 10l5-5 5 5"/></svg><span data-i18n="docs.top">Top</span></a>
 </div>
 
 <footer><div class="wrap">
-	<span>teardrop · AGPLv3 · made for <a href="https://hackclub.com">Hack Club</a></span>
-	<span><a href="index.html">Home</a> · <a href="https://github.com/part-avocado/teardrop/issues">Report a problem</a></span>
+	<span data-i18n="footer.creditDocs">teardrop · AGPLv3 · made for <a href="https://hackclub.com">Hack Club</a></span>
+	<span><a href="index.html" data-i18n="footer.home">Home</a> · <a href="https://github.com/part-avocado/teardrop/issues" data-i18n="footer.report">Report a problem</a></span>
 </div></footer>
-<script src="site.js"></script>
 </body>
 </html>

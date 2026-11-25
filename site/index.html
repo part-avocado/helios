@@ -3,8 +3,8 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>teardrop: see how much time you spend coding with AI</title>
-	<meta name="description" content="teardrop adds up the time you actually spend working with Claude Code, Codex, and Amp. Free and open source.">
+	<title data-i18n="home.title">teardrop: see how much time you spend coding with AI</title>
+	<meta name="description" content="teardrop adds up the time you actually spend working with Claude Code, Codex, and Amp. Free and open source." data-i18n-attr="content:home.description">
 	<link rel="icon" href="favicon.svg">
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -12,27 +12,29 @@
 	<link rel="stylesheet" href="base.css">
 	<link rel="stylesheet" href="home.css">
 	<script src="theme.js"></script>
+	<script src="i18n.js" data-scripts="site.js"></script>
 </head>
 <body>
-<nav class="nav" aria-label="Main">
+<nav class="nav" aria-label="Main" data-i18n-attr="aria-label:nav.main">
 	<a class="brand" href="index.html"><img src="favicon.svg" alt="">teardrop</a>
 	<div class="links">
-		<a href="#what-counts" class="opt">What counts</a>
-		<a href="#questions" class="opt">Questions</a>
-		<a href="docs.html">Docs</a>
-		<a href="https://github.com/part-avocado/teardrop" class="opt">GitHub</a>
+		<a href="#what-counts" class="opt" data-i18n="nav.whatCounts">What counts</a>
+		<a href="#questions" class="opt" data-i18n="nav.questions">Questions</a>
+		<a href="docs.html" data-i18n="nav.docs">Docs</a>
+		<a href="https://github.com/part-avocado/teardrop" class="opt" data-i18n="nav.github">GitHub</a>
 	</div>
-	<button class="theme" type="button" data-theme-toggle aria-label="Switch between dark and light" title="Switch between dark and light"><svg class="sun" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1.5V3M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/></svg><svg class="moon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M13.5 9.5a5.5 5.5 0 0 1-7-7 5.5 5.5 0 1 0 7 7z"/></svg></button>
-	<a class="btn primary small local-only" href="dashboard.html">Dashboard</a>
+	<button class="theme" type="button" data-theme-toggle aria-label="Switch between dark and light" title="Switch between dark and light" data-i18n-attr="aria-label:nav.theme;title:nav.theme"><svg class="sun" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1.5V3M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/></svg><svg class="moon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M13.5 9.5a5.5 5.5 0 0 1-7-7 5.5 5.5 0 1 0 7 7z"/></svg></button>
+	<button class="theme lang" type="button" data-lang-toggle>日本語</button>
+	<a class="btn primary small local-only" href="dashboard.html" data-i18n="nav.dashboard">Dashboard</a>
 	<details class="account hosted-only">
-		<summary aria-label="Account menu"><span class="avatar" id="account-initial" aria-hidden="true"></span><span class="who" id="account-name"></span><svg class="chev" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+		<summary aria-label="Account menu" data-i18n-attr="aria-label:nav.accountMenu"><span class="avatar" id="account-initial" aria-hidden="true"></span><span class="who" id="account-name"></span><svg class="chev" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
 		<div class="menu">
-			<div class="who-line">Signed in as<b id="account-name-full"></b></div>
-			<a href="dashboard.html">Dashboard</a>
-			<a href="settings.html">Settings</a>
-			<a href="settings.html#account">Account</a>
-			<a href="/review/" class="staff-only">Review</a>
-			<form method="post" action="/logout"><button>Sign out</button></form>
+			<div class="who-line"><span data-i18n="nav.signedInAs">Signed in as</span><b id="account-name-full"></b></div>
+			<a href="dashboard.html" data-i18n="nav.dashboard">Dashboard</a>
+			<a href="settings.html" data-i18n="nav.settings">Settings</a>
+			<a href="settings.html#account" data-i18n="nav.account">Account</a>
+			<a href="/review/" class="staff-only" data-i18n="nav.review">Review</a>
+			<form method="post" action="/logout"><button data-i18n="nav.signOut">Sign out</button></form>
 		</div>
 	</details>
 </nav>
@@ -40,23 +42,23 @@
 <main>
 <header class="hero"><div class="wrap">
 	<div>
-		<h1>See how much time you actually spend coding with AI.</h1>
-		<p class="lead">teardrop reads the logs Claude Code and Codex already write, and a small plugin does the same for Amp. It adds up the time you were really there. No timers to start, nothing to keep running.</p>
+		<h1 data-i18n="home.h1">See how much time you actually spend coding with AI.</h1>
+		<p class="lead" data-i18n="home.lead">teardrop reads the logs Claude Code and Codex already write, and a small plugin does the same for Amp. It adds up the time you were really there. No timers to start, nothing to keep running.</p>
 		<div class="install" id="install" data-tabs>
 			<div class="tabs" role="tablist">
 				<button data-tab="mac" role="tab">macOS</button>
 				<button data-tab="linux" role="tab">Linux</button>
 				<button data-tab="windows" role="tab">Windows</button>
 			</div>
-			<div class="tab-panel" data-tab="mac"><div class="cmd"><code>curl -fsSL https://raw.githubusercontent.com/part-avocado/teardrop/main/install.sh | sh</code><button class="copy" type="button">Copy</button></div></div>
-			<div class="tab-panel" data-tab="linux"><div class="cmd"><code>curl -fsSL https://raw.githubusercontent.com/part-avocado/teardrop/main/install.sh | sh</code><button class="copy" type="button">Copy</button></div></div>
-			<div class="tab-panel" data-tab="windows"><div class="cmd ps"><code>irm https://raw.githubusercontent.com/part-avocado/teardrop/main/install.ps1 | iex</code><button class="copy" type="button">Copy</button></div></div>
-			<p class="note">Checks the download's checksum, adds teardrop to your PATH, and runs <code>teardrop setup</code>. No admin rights needed.</p>
+			<div class="tab-panel" data-tab="mac"><div class="cmd"><code>curl -fsSL https://raw.githubusercontent.com/part-avocado/teardrop/main/install.sh | sh</code><button class="copy" type="button" data-i18n="common.copy">Copy</button></div></div>
+			<div class="tab-panel" data-tab="linux"><div class="cmd"><code>curl -fsSL https://raw.githubusercontent.com/part-avocado/teardrop/main/install.sh | sh</code><button class="copy" type="button" data-i18n="common.copy">Copy</button></div></div>
+			<div class="tab-panel" data-tab="windows"><div class="cmd ps"><code>irm https://raw.githubusercontent.com/part-avocado/teardrop/main/install.ps1 | iex</code><button class="copy" type="button" data-i18n="common.copy">Copy</button></div></div>
+			<p class="note" data-i18n="home.installNote">Checks the download's checksum, adds teardrop to your PATH, and runs <code>teardrop setup</code>. No admin rights needed.</p>
 		</div>
-		<p class="under">Free and open source. Made for <a href="https://hackclub.com">Hack Club</a>. New here? <a href="docs.html#quick-start">Read the quick start</a>.</p>
+		<p class="under" data-i18n="home.under">Free and open source. Made for <a href="https://hackclub.com">Hack Club</a>. New here? <a href="docs.html#quick-start" data-i18n="home.close.quick">Read the quick start</a>.</p>
 	</div>
 	<div>
-<pre class="term" aria-label="Example teardrop report"><span class="d">$</span> teardrop
+<pre class="term" aria-label="Example teardrop report" data-i18n-attr="aria-label:home.termLabel"><span class="d">$</span> teardrop
 WHEN           PROJECT  ENGAGED  SPAN    PROMPTS  TOOLS
 <span class="h">Fri Nov 20</span>
   09:00-09:41  cs2-web  38m      41m     9        claude-code
@@ -68,60 +70,59 @@ cs2-web  1h49m    3h02m         30
 notes    14m      1h40m         3
 
 <span class="g">Total engaged: 2h03m</span> across 2 projects and 5 sessions</pre>
-		<p class="caption">Run <code>teardrop</code> and this is what you get. An example day, not real data.</p>
+		<p class="caption" data-i18n="home.caption">Run <code>teardrop</code> and this is what you get. An example day, not real data.</p>
 	</div>
 </div></header>
 
-<section class="works"><div class="wrap">
+<section class="works"><div class="wrap" data-i18n="home.works">
 	Works today with <b>Claude Code</b>, <b>Codex</b> (the CLI and the IDE extension), and <b>Amp</b>. VS Code with Copilot and Cursor are planned, not built yet.
 </div></section>
 
 <section class="band" id="what-counts"><div class="wrap">
-	<h2>Only the time you were actually there counts.</h2>
-	<p class="lead">Writing prompts, reading replies, steering the agent: that's engaged time. A terminal left open overnight isn't.</p>
+	<h2 data-i18n="home.counts.h2">Only the time you were actually there counts.</h2>
+	<p class="lead" data-i18n="home.counts.lead">Writing prompts, reading replies, steering the agent: that's engaged time. A terminal left open overnight isn't.</p>
 	<div class="cards">
-		<div class="card"><h3>An agent on its own earns nothing</h3><p>Kick off a long task and go get lunch. The clock stops when you do.</p></div>
-		<div class="card"><h3>Two sessions on one project count once</h3><p>Running agents side by side doesn't double your hours.</p></div>
-		<div class="card"><h3>Junk prompts get skipped</h3><p>Prompts that don't reflect real work aren't counted. Your report lists them as SKIPPED, so you can see what was left out.</p></div>
-		<div class="card"><h3>Your prompt text is never stored</h3><p>teardrop keeps times and counts. Your prompts and chat logs never leave your computer.</p></div>
+		<div class="card"><h3 data-i18n="home.card1.h">An agent on its own earns nothing</h3><p data-i18n="home.card1.p">Kick off a long task and go get lunch. The clock stops when you do.</p></div>
+		<div class="card"><h3 data-i18n="home.card2.h">Two sessions on one project count once</h3><p data-i18n="home.card2.p">Running agents side by side doesn't double your hours.</p></div>
+		<div class="card"><h3 data-i18n="home.card3.h">Junk prompts get skipped</h3><p data-i18n="home.card3.p">Prompts that don't reflect real work aren't counted. Your report lists them as SKIPPED, so you can see what was left out.</p></div>
+		<div class="card"><h3 data-i18n="home.card4.h">Your prompt text is never stored</h3><p data-i18n="home.card4.p">teardrop keeps times and counts. Your prompts and chat logs never leave your computer.</p></div>
 	</div>
 </div></section>
 
 <section class="start" id="start"><div class="wrap">
-	<h2>Getting started</h2>
+	<h2 data-i18n="home.start.h2">Getting started</h2>
 	<ol class="how">
-		<li><h3>Install</h3><p>Paste <a href="#install">the command above</a> into a terminal. It picks the right build for your computer.</p></li>
-		<li><h3>Answer setup's questions</h3><p>The installer runs <code>teardrop setup</code>. It lists the tools it found and changes nothing without asking.</p></li>
-		<li><h3>Code as usual</h3><p>Run <code>teardrop</code> for your timeline, <code>teardrop -l</code> to keep it on screen, or <code>teardrop dashboard</code> for charts in your browser.</p></li>
+		<li><h3 data-i18n="home.step1.h">Install</h3><p data-i18n="home.step1.p">Paste <a href="#install">the command above</a> into a terminal. It picks the right build for your computer.</p></li>
+		<li><h3 data-i18n="home.step2.h">Answer setup's questions</h3><p data-i18n="home.step2.p">The installer runs <code>teardrop setup</code>. It lists the tools it found and changes nothing without asking.</p></li>
+		<li><h3 data-i18n="home.step3.h">Code as usual</h3><p data-i18n="home.step3.p">Run <code>teardrop</code> for your timeline, <code>teardrop -l</code> to keep it on screen, or <code>teardrop dashboard</code> for charts in your browser.</p></li>
 	</ol>
 </div></section>
 
 <section class="faq" id="questions"><div class="wrap">
-	<h2>Questions people ask</h2>
+	<h2 data-i18n="home.faq.h2">Questions people ask</h2>
 	<div class="grid">
-		<div><h3>Is it really free?</h3><p>Yep. teardrop is open source under AGPLv3, and there is no paid plan.</p></div>
-		<div><h3>Do I need an account?</h3><p>Nope. <code>teardrop</code> and <code>teardrop dashboard</code> run from your own computer. Sign in only if you want every computer's hours in one place.</p></div>
-		<div><h3>Does it read my prompts?</h3><p>It scores each prompt in memory to tell real work from noise, then keeps only the counts. The text is never stored, printed, or synced. <a href="docs.html#privacy">More on privacy</a>.</p></div>
-		<div><h3>Can someone just edit their numbers?</h3><p>Every sync and export is signed, and the website refuses a report that was edited. A signature alone can't prove the hours are real, so the site marks time as witnessed only when its records reached the site as it happened. Time sent later is kept apart, as unwitnessed.</p></div>
-		<div><h3>I use Cursor or Copilot. Does it work?</h3><p>Not yet. A VS Code extension is planned. <a href="https://github.com/part-avocado/teardrop">Follow along on GitHub</a>.</p></div>
+		<div><h3 data-i18n="home.faq1.h">Is it really free?</h3><p data-i18n="home.faq1.p">Yep. teardrop is open source under AGPLv3, and there is no paid plan.</p></div>
+		<div><h3 data-i18n="home.faq2.h">Do I need an account?</h3><p data-i18n="home.faq2.p">Nope. <code>teardrop</code> and <code>teardrop dashboard</code> run from your own computer. Sign in only if you want every computer's hours in one place.</p></div>
+		<div><h3 data-i18n="home.faq3.h">Does it read my prompts?</h3><p data-i18n="home.faq3.p">It scores each prompt in memory to tell real work from noise, then keeps only the counts. The text is never stored, printed, or synced. <a href="docs.html#privacy">More on privacy</a>.</p></div>
+		<div><h3 data-i18n="home.faq4.h">Can someone just edit their numbers?</h3><p data-i18n="home.faq4.p">Every sync and export is signed, and the website refuses a report that was edited. A signature alone can't prove the hours are real, so the site marks time as witnessed only when its records reached the site as it happened. Time sent later is kept apart, as unwitnessed.</p></div>
+		<div><h3 data-i18n="home.faq5.h">I use Cursor or Copilot. Does it work?</h3><p data-i18n="home.faq5.p">Not yet. A VS Code extension is planned. <a href="https://github.com/part-avocado/teardrop">Follow along on GitHub</a>.</p></div>
 	</div>
 </div></section>
 
 <section class="close"><div class="wrap">
-	<h2>Go see where your hours went.</h2>
-	<p>One command to install. Nothing to remember after that.</p>
+	<h2 data-i18n="home.close.h2">Go see where your hours went.</h2>
+	<p data-i18n="home.close.p">One command to install. Nothing to remember after that.</p>
 	<div class="actions">
-		<a class="btn primary" href="#install">Install teardrop</a>
+		<a class="btn primary" href="#install" data-i18n="home.close.install">Install teardrop</a>
 		<a class="btn" href="docs.html#quick-start">Read the quick start</a>
 	</div>
 </div></section>
 </main>
 
 <footer><div class="wrap">
-	<span>teardrop · AGPLv3 · made by <a href="https://github.com/part-avocado">part-avocado</a> for <a href="https://hackclub.com">Hack Club</a></span>
-	<span><a href="docs.html">Docs</a> · <a href="docs.html#privacy">Privacy</a> · <a href="https://github.com/part-avocado/teardrop">GitHub</a> · <a href="https://github.com/part-avocado/teardrop/issues">Report a problem</a></span>
+	<span data-i18n="footer.credit">teardrop · AGPLv3 · made by <a href="https://github.com/part-avocado">part-avocado</a> for <a href="https://hackclub.com">Hack Club</a></span>
+	<span><a href="docs.html" data-i18n="nav.docs">Docs</a> · <a href="docs.html#privacy" data-i18n="footer.privacy">Privacy</a> · <a href="https://github.com/part-avocado/teardrop" data-i18n="nav.github">GitHub</a> · <a href="https://github.com/part-avocado/teardrop/issues" data-i18n="footer.report">Report a problem</a></span>
 </div></footer>
 
-<script src="site.js"></script>
 </body>
 </html>
