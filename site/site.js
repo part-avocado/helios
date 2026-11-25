@@ -52,7 +52,7 @@ if (links.length) {
 // out of view. On a wide screen they stay open beside the page.
 const contents = document.querySelector('.doc-toc')
 if (contents) {
-	const phone = matchMedia('(max-width: 860px)')
+	const phone = matchMedia('(max-width: 700px)') // the width the contents move above the page at, in style.css
 	const fold = () => (contents.open = !phone.matches)
 	fold()
 	phone.addEventListener('change', fold)
