@@ -1,7 +1,7 @@
 // Signed reports from `teardrop sync` and `teardrop export`: checking them,
 // storing the latest one of each computer, and reading them back. Every report
 // is also kept as it arrived, in the REPORTS bucket, for reviewers.
-import { newKey, type User } from './auth.ts'
+import { noKey, type User } from './auth.ts'
 import { cloudComputer } from './events.ts'
 import { fromBase64Url, Refusal } from './http.ts'
 import { archiveLog, dayChanges, dayTotals, type Detail, type Entry, findings, logEntry, type LogEvent, logRemoval, logRow, parseDays, readArchive, writeArchive, parseStored, pastAdded, projectChanges, projectTotals, removedReport, type ReportBody, summarize } from './log.ts'
@@ -487,7 +487,7 @@ export async function deleteUser(env: Env, userID: number): Promise<void> {
 		// The new sync key is one no one has seen, so the old one stops working.
 		// Their profile goes: its handle is free for someone else, and their choices of what it shows are forgotten.
 		env.DB.prepare('DELETE FROM project_settings WHERE user_id = ?').bind(userID),
-		env.DB.prepare(`UPDATE users SET name = '', handle = NULL, profile_public = 1, api_key = ?, deleted_at = ? WHERE id = ?`).bind(newKey(), Date.now(), userID),
+		env.DB.prepare(`UPDATE users SET name = '', handle = NULL, profile_public = 1, api_key = ?, deleted_at = ? WHERE id = ?`).bind(noKey(), Date.now(), userID),
 		env.DB.prepare('DELETE FROM sync_keys WHERE user_id = ?').bind(userID),
 	])
 	// The archived part of their log stays too, without project names or report keys.

@@ -3,14 +3,14 @@
 // person's synced reports in D1, and the API the pages and the CLI use. The
 // review app, at /review/, is the files in ../site/review and the API under
 // /api/review/.
-import { clearSession, createSyncKey, finishSignIn, keyUser, reviewKeyUser, revokeSyncKey, rotateKey, sameOrigin, sessionUser, signOut, startSignIn, syncKeys, type User, userByID } from './auth.ts'
+import { clearSession, createSyncKey, finishSignIn, keyUser, reviewKeyUser, revokeSyncKey, sameOrigin, sessionUser, signOut, startSignIn, syncKeys, type User, userByID } from './auth.ts'
 import { cloudComputer, holdEvents, MAX_EVENTS_BYTES, readEvents } from './events.ts'
 import { json, jsonText, readText, redirect, Refusal } from './http.ts'
 import { checkGit } from './git.ts'
 import { connect, pollLogin, startLogin } from './connect.ts'
 import { relayRecords } from './records.ts'
 export { UserHub } from './hub.ts'
-import { ownProfile, updateProfile, visibleOwner } from './profile.ts'
+import { ownProfile, ownProjects, updateProfile, updateProject, visibleOwner } from './profile.ts'
 import { createUserKey, publicAPI, revokeUserKey, userKeys } from './public.ts'
 import { computerReportJSON, computers, deleteUser, keptReportJSON, MAX_REPORT_BYTES, removeComputer, reportsJSON, storeReport } from './reports.ts'
 import { fullLog, people, person, stats, summary } from './review.ts'
@@ -184,7 +184,7 @@ async function route(request: Request, env: Env): Promise<Response> {
 		// The computer their cloud threads sync as is named as such, since it is no machine of theirs.
 		const cloud = (await cloudComputer(env, user)).id
 		const all = (await computers(env, user.id)).map((c) => ({ ...c, cloud: c.id === cloud }))
-		return json({ name: user.name, slack_id: user.slack_id, handle: user.handle, profile_public: user.profile_public, admin: user.admin, level: user.level, ban: ownBan(user), api_key: user.api_key, created_at: user.created_at, computers: all })
+		return json({ name: user.name, slack_id: user.slack_id, handle: user.handle, profile_public: user.profile_public, admin: user.admin, level: user.level, ban: ownBan(user), created_at: user.created_at, computers: all })
 	}
 	// Their own live view: a WebSocket that hears of each record as it arrives, or its state once.
 	if (call === 'GET /api/live/ws' || call === 'GET /api/live') {
@@ -218,13 +218,28 @@ async function route(request: Request, env: Env): Promise<Response> {
 		res.headers.append('Set-Cookie', clearSession(request))
 		return res
 	}
-	if (call === 'POST /api/key') return json({ api_key: await rotateKey(env, user) })
 	// Sync keys beside the account's own: one per computer that ran `teardrop login`, and any made here.
 	if (call === 'GET /api/sync-keys') return json({ keys: await syncKeys(env, user) })
-	if (call === 'POST /api/sync-keys') return json(await createSyncKey(env, user, String((await jsonBody(request)).name ?? '')))
+	if (call === 'POST /api/sync-keys') {
+		// With replace, a key of the same name is revoked once the new one is made, as for Amp cloud threads.
+		const body = await jsonBody(request)
+		return json(await createSyncKey(env, user, String(body.name ?? ''), body.replace === true))
+	}
 	if (request.method === 'DELETE' && path.startsWith('/api/sync-keys/')) {
 		await revokeSyncKey(env, user, path.slice('/api/sync-keys/'.length))
 		return json({})
+	}
+	// Their projects: whether the profile shows each, and the GitHub repositories linked to it.
+	if (call === 'GET /api/projects') return json({ projects: await ownProjects(env, user) })
+	if (call === 'POST /api/projects') {
+		let body: Record<string, unknown> = {}
+		try {
+			body = JSON.parse(await readText(request, 64 << 10)) ?? {}
+		} catch {
+			throw new Refusal(400, 'Send the changes as a JSON object.')
+		}
+		await updateProject(env, user, body)
+		return json({ projects: await ownProjects(env, user) })
 	}
 	// Their public profile: its handle, whether it is public, and which projects it names.
 	if (call === 'GET /api/profile') return json(await ownProfile(env, user))
@@ -395,12 +410,12 @@ async function servePage(request: Request, env: Env, user: User | null): Promise
 				if (user.level != null) el.setAttribute('data-staff', '')
 			},
 		})
-		.on('#account-name, #account-name-full', {
+		.on('#account-name, #account-name-full, #side-name', {
 			element(el) {
 				el.setInnerContent(user.name || 'Account')
 			},
 		})
-		.on('#account-initial', {
+		.on('#account-initial, #side-initial', {
 			element(el) {
 				// The first letter or digit of their name.
 				el.setInnerContent(Array.from(user.name).find((c) => /[\p{L}\p{N}]/u.test(c)) ?? '?')

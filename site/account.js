@@ -97,13 +97,15 @@ function setupCommands() {
 	}
 }
 
-// renderSetup fills el with the steps that connect a computer to this
-// account: one command, then the code it shows, typed into a form that posts
-// to /connect, which still asks to allow the computer by its ID. key is the
-// visitor's sync key, shown only for the Amp cloud secret: a computer gets
-// one by `teardrop login`, so no command holds it. With again, for a person
-// who has a computer already, the agent's way is folded away.
-function renderSetup(el, key, again = false) {
+// renderSetup fills el with the flow that connects a computer to this
+// account, one step at a time: an opening card, then how to set it up (by
+// hand or by an agent), the command or prompt, what each tool needs, and
+// last the code the terminal shows, typed into a form that posts to
+// /connect, which still asks to allow the computer by its ID. Amp cloud
+// threads need a sync key pasted as a secret, so the tools step can make
+// one, named "Amp cloud", and shows it once. With again, for a person who
+// has a computer already, the opening card says "Add another computer".
+function renderSetup(el, again = false) {
 	const { sh, ps } = setupCommands()
 	const cmd = (text, kind = '') => `<div class="cmd ${kind}"><code>${esc(text)}</code><button class="copy" type="button">${t('common.copy')}</button></div>`
 	const promptBox = (text) => `<div class="prompt"><code>${esc(text)}</code><button class="copy" type="button">${t('common.copy')}</button></div>`
@@ -117,11 +119,13 @@ function renderSetup(el, key, again = false) {
 	// What to paste into Amp so its cloud threads count. The sync key is left
 	// out: Amp asks for a secret's value in a private dialog.
 	const cloudPrompt = t('setup.cloudPrompt', { origin: location.origin })
-	const steps = `<ol class="steps">
-		<li><div>
-			<h3>${t('setup.install.h')}</h3>
-			<p>${t('setup.install.p')}</p>
-			<div class="cmdbox setup-cmd" data-tabs>
+
+	let mode = 'self' // or 'agent'
+	let os = null // the tab picked on the install step, kept when coming back to it
+	const install = () => mode === 'agent'
+		? `<p>${t('setup.agent.p')}</p>${promptBox(prompt)}<p class="fine">${t('setup.agent.fine')}</p>`
+		: `<p>${t('setup.install.p')}</p>
+			<div class="cmdbox setup-cmd" data-tabs${os ? ` data-default="${os}"` : ''}>
 				<div class="tabs" role="tablist">
 					<button type="button" data-tab="mac" role="tab">${t('os.mac')}</button>
 					<button type="button" data-tab="linux" role="tab">${t('os.linux')}</button>
@@ -130,59 +134,113 @@ function renderSetup(el, key, again = false) {
 				<div class="tab-panel" data-tab="mac">${cmd(sh)}</div>
 				<div class="tab-panel" data-tab="linux">${cmd(sh)}</div>
 				<div class="tab-panel" data-tab="windows">${cmd(ps, 'ps')}</div>
-			</div>
-		</div></li>
-		<li><div>
-			<h3>${t('setup.connect.h')}</h3>
-			<p>${t('setup.connect.p')}</p>
-			<form class="code-form" method="post" action="/connect">
-				<input name="user_code" aria-label="${esc(t('setup.connect.label'))}" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX" maxlength="12" required>
-				<button class="btn primary">${t('setup.connect.go')}</button>
-			</form>
-			<p class="fine">${t('setup.connect.fine')}</p>
-		</div></li>
-	</ol>`
-	const agent = `<div class="setup-agent">
-		<p>${t('setup.agent.p')}</p>
-		${promptBox(prompt)}
-		<p class="fine">${t('setup.agent.fine')}</p>
-	</div>`
-	const notes = `<div class="setup-notes"><details class="setup-more">
-		<summary>${t('setup.tools.h')}</summary>
-		<p>${t('setup.tools.p')}</p>
-		<div class="cmdbox tools" data-tabs data-default="claude">
-			<div class="tabs" role="tablist">
-				<button type="button" data-tab="claude" role="tab">Claude Code</button>
-				<button type="button" data-tab="codex" role="tab">Codex</button>
-				<button type="button" data-tab="amp" role="tab">Amp</button>
-			</div>
-			<div class="tab-panel" data-tab="claude"><p>${t('setup.tools.claude')}</p></div>
-			<div class="tab-panel" data-tab="codex"><p>${t('setup.tools.codex')}</p></div>
-			<div class="tab-panel" data-tab="amp"><p>${t('setup.tools.amp1')}</p>${cmd('teardrop setup amp')}<p>${t('setup.tools.amp2')}</p></div>
-		</div>
-	</details>
-	<details class="setup-more" id="amp-cloud">
-		<summary>${t('setup.cloud.h')}</summary>
-		<p>${t('setup.cloud.p1')}</p>
-		${promptBox(cloudPrompt)}
-		<p>${t('setup.cloud.p2')}</p>
-		<div class="cmdbox">${cmd(key, 'plain')}</div>
-		<p>${t('setup.cloud.p3')}</p>
-	</details></div>`
-	el.innerHTML = again
-		? `${steps}<details class="setup-more"><summary>${t('setup.agent.h')}</summary>${agent}</details>${notes}`
-		: `<div class="seg setup-mode" role="group">
-				<button type="button" data-mode="self" aria-pressed="true">${t('setup.mode.self')}</button>
-				<button type="button" data-mode="agent" aria-pressed="false">${t('setup.mode.agent')}</button>
-			</div>
-			<div data-mode-panel="self">${steps}</div>
-			<div data-mode-panel="agent" hidden>${agent}</div>
-			${notes}`
-	for (const b of el.querySelectorAll('.setup-mode button')) {
-		b.addEventListener('click', () => {
-			for (const o of el.querySelectorAll('.setup-mode button')) o.setAttribute('aria-pressed', String(o === b))
-			for (const p of el.querySelectorAll('[data-mode-panel]')) p.hidden = p.dataset.modePanel !== b.dataset.mode
-		})
+			</div>`
+	// Each step: its title, what it shows, and the label of the button that
+	// moves on. A step without one moves on by itself: a choice, or a form.
+	const steps = [
+		{
+			h: () => t('setup.choose.h'),
+			body: () => `<p>${t('setup.choose.p')}</p>
+				<div class="setup-choices">
+					<button type="button" class="setup-choice" data-mode="self"><b>${t('setup.mode.self')}</b><span>${t('setup.choose.self')}</span></button>
+					<button type="button" class="setup-choice" data-mode="agent"><b>${t('setup.mode.agent')}</b><span>${t('setup.choose.agent')}</span></button>
+				</div>`,
+		},
+		{ h: () => t(mode === 'agent' ? 'setup.agentStep.h' : 'setup.install.h'), body: install, next: () => t(mode === 'agent' ? 'setup.pasted' : 'setup.ran') },
+		{
+			h: () => t('setup.tools.step.h'),
+			body: () => `<p>${t('setup.tools.step.p')}</p>
+				<div class="cmdbox tools" data-tabs data-default="claude">
+					<div class="tabs" role="tablist">
+						<button type="button" data-tab="claude" role="tab">Claude Code</button>
+						<button type="button" data-tab="codex" role="tab">Codex</button>
+						<button type="button" data-tab="amp" role="tab">Amp</button>
+					</div>
+					<div class="tab-panel" data-tab="claude"><p>${t('setup.tools.claude')}</p></div>
+					<div class="tab-panel" data-tab="codex"><p>${t('setup.tools.codex')}</p></div>
+					<div class="tab-panel" data-tab="amp"><p>${t('setup.tools.amp1')}</p>${cmd('teardrop setup amp')}<p>${t('setup.tools.amp2')}</p>
+						<details class="setup-more" id="amp-cloud">
+							<summary>${t('setup.cloud.h')}</summary>
+							<p>${t('setup.cloud.p1')}</p>
+							${promptBox(cloudPrompt)}
+							<p>${t('setup.cloud.p2')}</p>
+							<p><button class="btn small" type="button" data-amp-key>${t('setup.cloud.make')}</button></p>
+							<div class="cmdbox" data-amp-key-box hidden></div>
+							<p class="fine" data-amp-key-note hidden>${t('setup.cloud.made')}</p>
+							<p>${t('setup.cloud.p3')}</p>
+						</details>
+					</div>
+				</div>`,
+			next: () => t('setup.next'),
+		},
+		{
+			h: () => t('setup.connect.h'),
+			body: () => `<p>${t('setup.connect.p')}</p>
+				<form class="code-form" method="post" action="/connect">
+					<input name="user_code" aria-label="${esc(t('setup.connect.label'))}" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX" maxlength="12" required>
+					<button class="btn primary">${t('setup.connect.go')}</button>
+				</form>
+				<p class="fine">${t('setup.connect.fine')}</p>`,
+		},
+	]
+
+	// show puts step at on the page; -1 is the opening card.
+	const show = (at, focus = true) => {
+		if (at < 0) {
+			el.innerHTML = `<div class="setup-flow setup-intro">
+				<h2 tabindex="-1">${t(again ? 'setup.again.h' : 'setup.intro.h')}</h2>
+				<p class="muted">${t(again ? 'setup.again.p' : 'setup.intro.p')}</p>
+				<button class="btn primary" type="button" data-go="0">${t(again ? 'setup.again.go' : 'setup.intro.go')}</button>
+			</div>`
+		} else {
+			const step = steps[at]
+			el.innerHTML = `<div class="setup-flow">
+				<div class="setup-progress">
+					<span>${t('setup.progress', { n: at + 1, total: steps.length })}</span>
+					<ol aria-hidden="true">${steps.map((_, i) => `<li class="${i < at ? 'done' : i === at ? 'now' : ''}"></li>`).join('')}</ol>
+				</div>
+				<h3 tabindex="-1">${step.h()}</h3>
+				<div class="setup-body">${step.body()}</div>
+				<div class="setup-nav">
+					<button class="btn" type="button" data-go="${at - 1}">${t('setup.back')}</button>
+					${step.next ? `<button class="btn primary" type="button" data-go="${at + 1}">${step.next()}</button>` : ''}
+				</div>
+			</div>`
+		}
+		initTabs(el)
+		for (const b of el.querySelectorAll('.setup-cmd .tabs button')) b.addEventListener('click', () => (os = b.dataset.tab))
+		if (!focus) return
+		// The code is what the last step is for; elsewhere the step's title, so a screen reader reads it.
+		const code = el.querySelector('input[name="user_code"]')
+		;(code || el.querySelector('h2, h3')).focus()
 	}
-	initTabs(el)
+
+	el.onclick = async (e) => {
+		const choice = e.target.closest('[data-mode]')
+		if (choice) {
+			mode = choice.dataset.mode
+			return show(1)
+		}
+		const go = e.target.closest('[data-go]')
+		if (go) return show(Number(go.dataset.go))
+		// A new Amp cloud key replaces the last one, which stops working.
+		const ampButton = e.target.closest('[data-amp-key]')
+		if (!ampButton) return
+		ampButton.disabled = true
+		const note = el.querySelector('[data-amp-key-note]')
+		try {
+			const made = await api('/api/sync-keys', { method: 'POST', body: JSON.stringify({ name: 'Amp cloud', replace: true }) })
+			const box = el.querySelector('[data-amp-key-box]')
+			box.innerHTML = cmd(made.key, 'plain')
+			box.hidden = false
+			Object.assign(note, { textContent: t('setup.cloud.made'), hidden: false })
+			ampButton.textContent = t('setup.cloud.again')
+			document.dispatchEvent(new Event('sync-keys-changed')) // so a list of them shows it
+		} catch (err) {
+			Object.assign(note, { textContent: err.message, hidden: false })
+		} finally {
+			ampButton.disabled = false
+		}
+	}
+	show(-1, false)
 }

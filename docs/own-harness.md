@@ -14,6 +14,6 @@ Any tool can report to teardrop. Run `teardrop hook <tool>`, where the tool name
 | `prompt` | For `prompt`: scored for effort and repeats on the computer, then thrown away. Its text is never stored or sent. |
 | `tokens_in`, `tokens_out`, `lines_added`, `lines_removed` | Optional, on `turn_end` or `edit`. |
 
-teardrop always exits 0 and prints nothing, so it never gets in the tool's way. It writes the event to the local journal, and, once the computer is connected, sends it to your site as it happens. Your site credits only time whose records reached it within 5 minutes of when they happened. `teardrop hook -check <tool>` prints the record a payload would make and writes nothing, for testing an adapter.
+teardrop always exits 0 and prints nothing, so it never gets in the tool's way. It writes the event to the local journal, and, once the computer is connected, sends it to your site as it happens. `teardrop hook -check <tool>` prints the record a payload would make and writes nothing, for testing an adapter.
 
 For a tool with a hooks file in Claude Code's shape, point its prompt and stop hooks at `teardrop hook mytool`. For a tool with plugins, run the same command from the plugin, as teardrop's own Amp plugin does with `teardrop hook amp`.

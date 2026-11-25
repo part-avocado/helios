@@ -13,18 +13,18 @@ The [dashboard on the website](../site/dashboard.html) adds up the hours from ev
 2. Run the command the dashboard shows, then type the code your terminal prints on the site. That connects this computer to your account; do the same on each computer you code on.
 3. Keep working. The page fills in as soon as the first sync arrives, and teardrop syncs again each time a reply finishes in Claude Code or Amp, or you stop one. Run `teardrop sync` to update it right away.
 
-The [Projects](../site/projects.html) page, linked at the top of the site, lists every project you've worked on; open one to see that project on its own.
+The [Projects](../site/projects.html) page lists every project you've worked on; open one to see that project on its own. A project's page also has its settings: **Public**, whether your [public profile](#profile) names it, and the GitHub repositories linked to it, which you can add or remove.
 
 [Settings](../site/settings.html) has the rest:
 
 | Pane | What it's for |
 | --- | --- |
-| Setup | What to run to connect another computer; your sync keys, one per computer, each of which you can revoke alone; and a button to make a new account key, for Amp cloud threads, if it gets out. |
+| Setup | What to run to connect another computer, and your sync keys. A sync key only uploads stats: each computer gets its own, and Amp cloud threads get one named "Amp cloud". Revoke one and only it stops working. |
 | Computers | Each computer that syncs to you and when it last did. Remove one to drop its hours. |
 | Data | Upload a stats file from a computer that can't reach the website (make it with `teardrop export -o stats.json`, and upload it within 7 days), or download a copy of everything the site holds about you. |
 | Account | Your name, Slack ID, and member-since date from Hack Club Auth, sign out, and deleting your account. Deleting removes every computer and all of your stats from the site. |
 
-You can sign out from the menu at the top right of any page. A computer syncs to one account. To move it to another, remove it under Computers first.
+You can sign out from the sidebar, or on a narrow window from the menu at the top right. A computer syncs to one account. To move it to another, remove it under Computers first.
 
 ## On your computer, without an account
 
@@ -33,7 +33,7 @@ Run `teardrop dashboard` to open the same charts with live data from this comput
 <a id="profile"></a>
 ## Your public profile
 
-Every account has a public profile at `/@handle`, which anyone can open without signing in. It shows your handle, the month you joined, your hours in the past year, a year of days, and your projects. It never shows your name, your Slack ID, or a folder on your computer. A project that is a repository on a public host, such as `github.com/you/site`, is named and linked; any other project is only counted, as one of your other projects. Under Settings, Profile, you can change your handle, hide or name each project, or make the profile private. Settings, Profile also has a badge of your hours to paste into a README, linked to your profile. A private profile, like a banned or deleted account, answers "no such profile", so its address doesn't say that the account exists.
+Every account has a public profile at `/@handle`, which anyone can open without signing in. It shows your handle, the month you joined, your hours in the past year, a year of days, and your projects. It never shows your name, your Slack ID, or a folder on your computer. A project that is a repository on a public host, such as `github.com/you/site`, is public by default, named and linked to its repositories; any other project is only counted, as one of your other projects, until you make it public. Turn **Public** on or off on each project's page. Under Settings, Profile, you can change your handle or make the whole profile private. Settings, Profile also has a badge of your hours to paste into a README, linked to your profile. A private profile, like a banned or deleted account, answers "no such profile", so its address doesn't say that the account exists.
 
 Each account starts with a neutral handle, such as `u-3f9a0c12b4d1`, never one made from your name. When you change it, the old address stops working.
 
@@ -49,4 +49,4 @@ Every sync and export carries a verification key: an Ed25519 signature, made by 
 Each computer's key is created the first time it syncs or exports and kept in teardrop's data folder as `account.key`. Settings lists your computers by the ID of that key, such as `td-4283292a8f76`.
 
 > [!WARNING]
-> Verification proves a file wasn't edited after `teardrop export` made it. Because the account key lives on your computer, a file alone can't prove the numbers are real. For hours that count, [sync](sync.md): the site marks as witnessed only time whose records reached it as it happened.
+> Verification proves a file wasn't edited after `teardrop export` made it. Because the account key lives on your computer, a file alone can't prove the numbers are real. For hours that count, [sync](sync.md).

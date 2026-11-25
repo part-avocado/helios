@@ -63,20 +63,16 @@ function listComputers(computers) {
 		`<div class="item"><div class="grow muted">${t('settings.computers.none')}</div></div>`
 }
 
-// With a computer connected already, Setup is for adding another: the
-// command and the code, with the rest folded away.
+// With a computer connected already, Setup is for adding another.
 let another = false
-function showSetup(key) {
-	const h2 = $('setup').querySelector('h2'), lead = $('setup').querySelector('h2 + .muted')
-	h2.textContent = t(another ? 'settings.setup.again.h2' : 'settings.setup.h2')
-	lead.textContent = t(another ? 'settings.setup.again.lead' : 'settings.setup.lead')
-	renderSetup($('setup-steps'), key, another)
+function showSetup() {
+	renderSetup($('setup-steps'), another)
 }
 
 async function load() {
 	const me = await api('/api/me')
 	another = me.computers.length > 0
-	showSetup(me.api_key)
+	showSetup()
 	listComputers(me.computers)
 	$('me-name').textContent = me.name || t('common.notSet')
 	$('me-slack').textContent = me.slack_id || t('settings.account.noSlack')
@@ -85,21 +81,8 @@ async function load() {
 	showBan(me.ban)
 }
 
-$('new-key').addEventListener('click', async () => {
-	if (!(await ask(t('settings.acctKey.askTitle'), t('settings.acctKey.askText'), t('settings.acctKey.askGo')))) return
-	try {
-		const key = (await change('/api/key', 'POST')).api_key
-		showSetup(key)
-		// The new key in a popup, to copy to wherever the old one was.
-		$('new-key-value').textContent = key
-		$('key-dialog').showModal()
-		say($('key-msg'), t('settings.acctKey.made'), true)
-	} catch (e) {
-		say($('key-msg'), e.message, false)
-	}
-})
 
-// The public profile: its handle, whether anyone can see it, and which projects it names.
+// The public profile: its handle and whether anyone can see it. Which projects it shows is set on each project's page.
 function showProfile(p) {
 	const url = `${location.origin}/@${p.handle}`
 	$('profile-link').textContent = url.replace(/^https?:\/\//, '')
@@ -111,11 +94,6 @@ function showProfile(p) {
 	$('badge').hidden = !p.public
 	$('badge-img').src = p.public ? `${badge}?v=${Date.now()}` : ''
 	$('badge-md').textContent = `[![teardrop](${badge})](${url})`
-	$('profile-projects').innerHTML = p.projects.map((x) => `<div class="item">
-			<div class="grow"><b>${esc(x.name)}</b>
-				<div class="sub">${x.repo ? esc(x.repo) : t('settings.profile.folder')} · ${dur(x.engaged_seconds)}</div></div>
-			<label class="check"><input type="checkbox" data-project="${esc(x.key)}"${x.shown ? ' checked' : ''}> ${t('settings.profile.nameIt')}</label>
-		</div>`).join('') || `<div class="item"><div class="grow muted">${t('settings.profile.noProjects')}</div></div>`
 }
 const saveProfile = async (changes, done) => {
 	try {
@@ -135,10 +113,6 @@ $('handle-form').addEventListener('submit', (e) => {
 	during(e.target.querySelector('button'), () => saveProfile({ handle: $('handle').value }, t('settings.profile.handleSaved')))
 })
 $('profile-public').addEventListener('change', (e) => saveProfile({ public: e.target.checked }, e.target.checked ? t('settings.profile.nowPublic') : t('settings.profile.nowPrivate')))
-$('profile-projects').addEventListener('change', (e) => {
-	const key = e.target.dataset.project
-	if (key !== undefined) saveProfile({ projects: { [key]: e.target.checked } })
-})
 
 // lastUsed says when a key was last used, as HTML.
 const lastUsed = (k) => (k.last_used_at ? t('settings.key.lastUsed', { ago: esc(ago(k.last_used_at)) }) : t('settings.key.neverUsed'))
@@ -165,6 +139,7 @@ $('sync-key-form').addEventListener('submit', async (e) => {
 		say($('sync-key-msg'), err.message, false)
 	}
 })
+document.addEventListener('sync-keys-changed', () => listSyncKeys().catch(() => {}))
 $('sync-keys').addEventListener('click', async (e) => {
 	const d = e.target.closest('[data-revoke]')?.dataset
 	if (!d || !(await ask(t('settings.sync.revokeTitle'), t('settings.sync.revokeText', { name: d.name }), t('common.revoke')))) return
@@ -257,9 +232,9 @@ $('delete-account').addEventListener('click', async (e) => {
 
 // Without an account behind this copy of the site, there is nothing to set.
 if ('hosted' in document.documentElement.dataset) {
-	load().catch((e) => (say($('key-msg'), e.message, false), unloaded('setup-steps', 'computer-list', 'account')))
+	load().catch((e) => (say($('sync-key-msg'), e.message, false), unloaded('setup-steps', 'computer-list', 'account')))
 	listKeys().catch((e) => (say($('api-msg'), e.message, false), unloaded('api-keys')))
 	listSyncKeys().catch((e) => (say($('sync-key-msg'), e.message, false), unloaded('sync-keys')))
-	api('/api/profile').then(showProfile, (e) => (say($('profile-msg'), e.message, false), unloaded('profile-projects')))
+	api('/api/profile').then(showProfile, (e) => say($('profile-msg'), e.message, false))
 }
 else location.replace('dashboard.html')

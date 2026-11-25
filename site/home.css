@@ -43,14 +43,6 @@ main p a { text-decoration: underline; text-underline-offset: 3px; }
 .works { padding: 22px 0; border-top: 1px solid var(--line); font-size: 16px; color: var(--muted); }
 .works b { font-weight: 600; color: var(--text); }
 
-/* What counts */
-.band { padding: 80px 0; background: var(--panel); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-.band h2 { max-width: 16em; }
-.band .lead { max-width: 34em; margin-top: 16px; font-size: 18px; }
-.cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 40px; }
-.card { padding: 22px 24px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); }
-.card p { margin-top: 6px; color: var(--muted); }
-
 /* Getting started */
 .start { padding: 80px 0; }
 .how { list-style: none; margin: 36px 0 0; padding: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 32px; counter-reset: how; }
@@ -74,9 +66,9 @@ main p a { text-decoration: underline; text-underline-offset: 3px; }
 }
 @media (max-width: 860px) {
 	.hero { padding: 40px 0 56px; }
-	.hero .wrap, .cards, .how, .faq .grid { grid-template-columns: minmax(0, 1fr); }
+	.hero .wrap, .how, .faq .grid { grid-template-columns: minmax(0, 1fr); }
 	.hero .wrap { gap: 32px; }
-	.band, .start, .faq { padding: 56px 0; }
+	.start, .faq { padding: 56px 0; }
 	.how { gap: 24px; }
 	.faq .grid { gap: 28px; }
 	.term { font-size: 11px; padding: 16px; }

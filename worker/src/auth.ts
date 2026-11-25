@@ -62,6 +62,16 @@ async function load(env: Env, where: string, value: string | number): Promise<Us
 
 export const newKey = () => 'tdk_' + randomToken(24)
 
+/**
+ * noKey fills users.api_key, which once held each account's own sync key.
+ * Sync keys are all in sync_keys now, so this is a placeholder that no key
+ * matches: keyUser only looks up keys that start with tdk_.
+ */
+export const noKey = () => 'none_' + randomToken(24)
+
+/** The name an account's old key takes when it joins the person's other sync keys. */
+const OLD_KEY_NAME = 'Account key (from before)'
+
 async function hmacKey(env: Env): Promise<CryptoKey> {
 	return crypto.subtle.importKey('raw', new TextEncoder().encode(env.SESSION_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify'])
 }
@@ -109,7 +119,7 @@ async function saveUser(env: Env, hcaID: string, slackID: string, name: string):
 			handle = coalesce(users.handle, excluded.handle)
 		 RETURNING id`,
 	)
-		.bind(hcaID, slackID, name, newKey(), Date.now())
+		.bind(hcaID, slackID, name, noKey(), Date.now())
 		.first<{ id: number }>()
 	return (await load(env, 'u.id = ?2', row!.id))!
 }
@@ -134,20 +144,41 @@ export const userByHandle = (env: Env, handle: string) => load(env, 'u.handle = 
 export async function keyUser(request: Request, env: Env): Promise<User | null> {
 	const key = /^Bearer (tdk_[A-Za-z0-9_-]+)$/.exec(request.headers.get('Authorization') ?? '')?.[1]
 	if (!key) return null
-	// The account's own key, else one of its other sync keys.
+	// An account's own key from before there were sync keys joins its other
+	// sync keys the first time it is used, and keeps working.
 	const own = await load(env, 'u.api_key = ?2', key)
-	if (own) return own
+	if (own) {
+		await adoptOldKey(env, own)
+		return own
+	}
 	const row = await env.DB.prepare('SELECT id, user_id FROM sync_keys WHERE hash = ?').bind(await keyHash(key)).first<{ id: number; user_id: number }>()
 	if (!row) return null
 	await env.DB.prepare('UPDATE sync_keys SET last_used_at = ?1 WHERE id = ?2 AND (last_used_at IS NULL OR last_used_at < ?1 - 60000)').bind(Date.now(), row.id).run()
 	return load(env, 'u.id = ?2', row.user_id)
 }
 
-/** The most sync keys one person has beside the account's own. */
+/**
+ * adoptOldKey moves an account's own sync key, from before there were sync
+ * keys, into sync_keys, where only its hash is kept and it can be revoked
+ * like any other. It goes over the limit rather than stop working.
+ */
+async function adoptOldKey(env: Env, user: User): Promise<void> {
+	if (!user.api_key.startsWith('tdk_')) return
+	await env.DB.batch([
+		env.DB.prepare('INSERT OR IGNORE INTO sync_keys (user_id, name, hash, hint, created_at, last_used_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)').bind(
+			user.id, OLD_KEY_NAME, await keyHash(user.api_key), user.api_key.slice(0, 9), user.created_at, Date.now(),
+		),
+		env.DB.prepare('UPDATE users SET api_key = ?1 WHERE id = ?2 AND api_key = ?3').bind(noKey(), user.id, user.api_key),
+	])
+	user.api_key = ''
+}
+
+/** The most sync keys one person has. */
 const MAX_SYNC_KEYS = 50
 
-/** syncKeys lists a person's sync keys beside the account's own, newest first, without the keys. */
+/** syncKeys lists a person's sync keys, newest first, without the keys. */
 export async function syncKeys(env: Env, user: User) {
+	await adoptOldKey(env, user)
 	const { results } = await env.DB.prepare('SELECT id, name, hint, created_at, last_used_at FROM sync_keys WHERE user_id = ? ORDER BY id DESC').bind(user.id).all()
 	return results
 }
@@ -217,13 +248,6 @@ export async function reviewKeyUser(request: Request, env: Env): Promise<User | 
 	// When it was last used is noted at most once a minute.
 	await env.DB.prepare('UPDATE review_keys SET last_used_at = ?1 WHERE id = ?2 AND (last_used_at IS NULL OR last_used_at < ?1 - 60000)').bind(Date.now(), row.id).run()
 	return load(env, 'u.slack_id = ?2', row.slack_id)
-}
-
-/** rotateKey replaces the person's sync key, so the old one stops working. */
-export async function rotateKey(env: Env, user: User): Promise<string> {
-	const key = newKey()
-	await env.DB.prepare('UPDATE users SET api_key = ? WHERE id = ?').bind(key, user.id).run()
-	return key
 }
 
 /** localPath returns next if it is a path on this site, and otherwise the dashboard. */

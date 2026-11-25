@@ -85,16 +85,12 @@ function render() {
 			total += v
 		}
 	}
-	// What each check skipped, so someone whose prompts read as mashing finds out.
-	const skipped = [0, 0, 0]
+	// How many prompts earned no time, in all.
+	let noise = 0
 	for (const p of report.projects || []) {
 		if (only && p.project?.key !== only) continue
-		skipped[0] += p.noise_prompts || 0
-		skipped[1] += p.repeat_prompts || 0
-		skipped[2] += p.autopilot_prompts || 0
+		noise += (p.noise_prompts || 0) + (p.repeat_prompts || 0) + (p.autopilot_prompts || 0)
 	}
-	const noise = skipped[0] + skipped[1] + skipped[2]
-	const why = ['mashed', 'repeats', 'steering'].map((name, i) => (skipped[i] ? t(`dash.why.${name}`, { n: skipped[i] }) : '')).filter(Boolean).join(t('dash.sep'))
 
 	// Streak: consecutive days with activity, ending today (or yesterday, if nothing yet today).
 	const allDays = new Set(scoped.map((b) => dayKey(b.s)))
@@ -119,8 +115,7 @@ function render() {
 	$('s-top').title = top?.name || '' // in full, where the card cuts a long name short
 	$('s-top-hint').textContent = top ? dur(top.engaged) : ''
 	$('s-prompts').textContent = count(prompts)
-	$('s-prompts-hint').textContent = noise ? t('dash.skipped', { n: noise, why }) : t('dash.noneSkipped')
-	$('s-prompts-hint').title = noise ? t('dash.skipHint') : ''
+	$('s-prompts-hint').textContent = noise ? t('dash.skipped', { n: noise }) : t('dash.noneSkipped')
 	$('s-tokens').textContent = count(tin + tout)
 	$('s-tokens-hint').textContent = t('dash.tokenHint', { read: count(tin), written: count(tout) })
 
@@ -159,6 +154,7 @@ function render() {
 		$('no-data').innerHTML = hosted ? t('dash.noDataHosted') : t('dash.noDataLocal')
 	}
 	syncURL(only && (projects.get(only)?.name || scoped[0]?.project.name || only))
+	showProjectSettings()
 }
 
 // syncURL puts the project picked and the range in the address, leaving the
@@ -284,7 +280,7 @@ let noteAsked = false // whether profileNote has been asked for, once there are 
 // showSetup nudges a signed-in visitor with nothing synced to connect a computer.
 async function showSetup() {
 	if (!setupReady) {
-		renderSetup($('setup-steps'), (await api('/api/me')).api_key)
+		renderSetup($('setup-steps'))
 		setupReady = true
 	}
 	reveal('setup')
@@ -390,6 +386,75 @@ $('content').addEventListener('click', (e) => {
 })
 
 initTips($('content'))
+
+// A project's page shows its owner that project's settings: whether their
+// public profile shows it, and the GitHub repositories linked to it.
+let owned = null // the visitor's projects from /api/projects, once asked for
+let profile = null // their handle and whether their profile is public
+async function showProjectSettings() {
+	const panel = $('project-settings')
+	if (!hosted || viewing || !only) return void (panel.hidden = true)
+	if (!owned) {
+		owned = []
+		try {
+			const [mine, me] = await Promise.all([api('/api/projects'), api('/api/me')])
+			owned = mine.projects
+			profile = { handle: me.handle, public: me.profile_public }
+		} catch {
+			owned = null
+			return void (panel.hidden = true)
+		}
+	}
+	const p = owned.find((x) => x.key === only)
+	panel.hidden = !p
+	if (!p) return
+	$('ps-public').checked = p.shown
+	const url = `${location.origin}/@${profile.handle}`
+	const link = `<a href="${esc(url)}">${esc(url.replace(/^https?:\/\//, ''))}</a>`
+	$('ps-public-hint').innerHTML = !p.shown ? t('project.public.off') : profile.public ? t('project.public.on', { link }) : t('project.public.profilePrivate', { link })
+	$('ps-repos').innerHTML = p.repos.map((r) => `<div class="item">
+			<div class="grow"><a href="https://${esc(r)}" rel="nofollow noopener">${esc(r)}</a></div>
+			<button class="btn small danger" type="button" data-remove="${esc(r)}">${t('project.repos.remove')}</button>
+		</div>`).join('') || `<div class="item"><div class="grow muted">${t('project.repos.none')}</div></div>`
+}
+
+function psSay(text, ok) {
+	$('ps-msg').textContent = text
+	$('ps-msg').className = 'msg ' + (ok ? 'ok' : 'bad')
+	$('ps-msg').hidden = false
+}
+
+// saveProject sends changes to the project on this page, then shows what is saved.
+async function saveProject(changes, done) {
+	const key = only
+	try {
+		owned = (await api('/api/projects', { method: 'POST', body: JSON.stringify({ key, ...changes }) })).projects
+		if (done) psSay(done, true)
+		else $('ps-msg').hidden = true
+		return true
+	} catch (e) {
+		psSay(e.message, false)
+		return false
+	} finally {
+		showProjectSettings()
+	}
+}
+
+$('ps-public').addEventListener('change', (e) => saveProject({ public: e.target.checked }, e.target.checked ? t('project.public.nowOn') : t('project.public.nowOff')))
+$('ps-add').addEventListener('submit', async (e) => {
+	e.preventDefault()
+	const p = owned?.find((x) => x.key === only)
+	if (!p) return
+	const button = e.target.querySelector('button')
+	button.disabled = true
+	if (await saveProject({ repos: [...p.repos, $('ps-repo').value] }, t('project.repos.added'))) $('ps-repo').value = ''
+	button.disabled = false
+})
+$('ps-repos').addEventListener('click', (e) => {
+	const r = e.target.closest('[data-remove]')?.dataset.remove
+	const p = owned?.find((x) => x.key === only)
+	if (r && p) saveProject({ repos: p.repos.filter((x) => x !== r) }, t('project.repos.removed', { repo: r }))
+})
 
 // Profiles are public by default, so each person is told once, with the
 // address of theirs and where to change it: once there is something on it,

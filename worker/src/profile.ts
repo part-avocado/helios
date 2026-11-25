@@ -19,20 +19,43 @@ export async function visibleOwner(env: Env, handle: string): Promise<User | nul
 	return user && user.profile_public && !user.ban ? user : null
 }
 
-/** shownProjects returns a person's choices of which projects their profile names, by project key. */
-async function shownProjects(env: Env, userID: number): Promise<Map<string, boolean>> {
-	const { results } = await env.DB.prepare('SELECT project_key, shown FROM project_settings WHERE user_id = ?').bind(userID).all<{ project_key: string; shown: number }>()
-	return new Map(results.map((r) => [r.project_key, r.shown === 1]))
+/** A person's choices for one project: whether their profile names it, and the repositories linked to it. Either may be unset. */
+interface Choice {
+	shown?: boolean
+	repos?: string[]
+}
+
+/** projectChoices returns a person's choices for their projects, by project key. */
+async function projectChoices(env: Env, userID: number): Promise<Map<string, Choice>> {
+	const { results } = await env.DB.prepare('SELECT project_key, shown, repos FROM project_settings WHERE user_id = ?').bind(userID).all<{ project_key: string; shown: number; repos: string | null }>()
+	return new Map(results.map((r) => [r.project_key, { shown: r.shown === 1, ...(r.repos != null ? { repos: JSON.parse(r.repos) as string[] } : {}) }]))
 }
 
 /** isShown says whether a profile names a project: by its owner's choice, or else when it is a public repository. */
-const isShown = (key: string, choices: Map<string, boolean>) => choices.get(key) ?? repo(key) !== null
+const isShown = (key: string, choices: Map<string, Choice>) => choices.get(key)?.shown ?? repo(key) !== null
+
+/** reposOf is the repositories linked to a project: its owner's list, or else the one its key names. */
+export const reposOf = (key: string, choices: Map<string, Choice>): string[] => choices.get(key)?.repos ?? (repo(key) ? [repo(key)!] : [])
+
+/** How many repositories one project may link. */
+const MAX_REPOS = 10
+
+/**
+ * githubRepo reads a GitHub repository as typed: github.com/owner/name, a
+ * https:// or git@ address of one, or owner/name. It returns
+ * github.com/owner/name, or null when it is none of those.
+ */
+export function githubRepo(text: string): string | null {
+	const m = /^(?:(?:https?:\/\/)?(?:www\.)?github\.com[/:]|git@github\.com:)?([A-Za-z0-9][A-Za-z0-9-]{0,38})\/([\w.-]{1,100}?)(?:\.git)?\/?$/.exec(text.trim())
+	if (!m || m[2] === '.' || m[2] === '..') return null
+	return `github.com/${m[1]}/${m[2]}`
+}
 
 /** profileJSON answers GET /api/public/v1/users/{handle}. */
 export async function profileJSON(env: Env, handle: string): Promise<Response> {
 	const user = await visibleOwner(env, handle)
 	if (!user) throw new Refusal(404, 'No such profile.')
-	const [projects, days, choices, theirs, git] = await Promise.all([personProjects(env, user.id), personDays(env, user.id), shownProjects(env, user.id), computers(env, user.id), projectCommits(env, user.id)])
+	const [projects, days, choices, theirs, git] = await Promise.all([personProjects(env, user.id), personDays(env, user.id), projectChoices(env, user.id), computers(env, user.id), projectCommits(env, user.id)])
 	const perDay: Record<string, number> = {}
 	for (const computer of days) for (const [date, s] of Object.entries(computer)) perDay[date] = (perDay[date] ?? 0) + s
 	const named = projects.filter((p) => isShown(p.key, choices))
@@ -44,9 +67,11 @@ export async function profileJSON(env: Env, handle: string): Promise<Response> {
 		engaged_seconds: theirs.reduce((sum, c) => sum + c.engaged_seconds, 0),
 		days: Object.keys(perDay).sort().map((date) => ({ date, engaged_seconds: perDay[date] })),
 		projects: named.map((p) => {
-			const g = repo(p.key) ? git.get(p.key) : undefined
-			// Only a public repository's commits are linked, newest first.
-			return { name: p.name, repo: repo(p.key), engaged_seconds: p.engaged_seconds, ...(g ? { checked: g.checked, commits: g.commits.slice(0, 5).map((c) => ({ sha: c.sha, t: c.t, found: c.found ?? null })) } : {}) }
+			const repos = reposOf(p.key, choices)
+			// Commits come from the repository the project's key names, so they are
+			// listed, newest first, only while that is still its first repository.
+			const g = repo(p.key) && repos[0] === repo(p.key) ? git.get(p.key) : undefined
+			return { name: p.name, repo: repos[0] ?? null, repos, engaged_seconds: p.engaged_seconds, ...(g ? { checked: g.checked, commits: g.commits.slice(0, 5).map((c) => ({ sha: c.sha, t: c.t, found: c.found ?? null })) } : {}) }
 		}),
 		other_projects: { count: unnamed.length, engaged_seconds: unnamed.reduce((sum, p) => sum + p.engaged_seconds, 0) },
 	})
@@ -75,8 +100,9 @@ export async function profileBadge(env: Env, handle: string, project: string | n
 	if (!user) throw new Refusal(404, 'No such profile.')
 	let label = 'teardrop', seconds: number
 	if (project) {
-		const [projects, choices] = await Promise.all([personProjects(env, user.id), shownProjects(env, user.id)])
-		const p = projects.find((x) => isShown(x.key, choices) && (repo(x.key) === project || x.name === project))
+		const [projects, choices] = await Promise.all([personProjects(env, user.id), projectChoices(env, user.id)])
+		const asked = githubRepo(project)?.toLowerCase()
+		const p = projects.find((x) => isShown(x.key, choices) && (repo(x.key) === project || x.name === project || reposOf(x.key, choices).some((r) => r.toLowerCase() === asked)))
 		if (!p) throw new Refusal(404, 'That profile names no such project.')
 		label = `teardrop: ${p.name}`
 		seconds = p.engaged_seconds
@@ -98,12 +124,49 @@ export async function profileBadge(env: Env, handle: string, project: string | n
 
 /** ownProfile is what the owner sees of their profile in Settings: every project, and whether it is named. */
 export async function ownProfile(env: Env, user: User) {
-	const [projects, choices] = await Promise.all([personProjects(env, user.id), shownProjects(env, user.id)])
-	return {
-		handle: user.handle,
-		public: user.profile_public,
-		projects: projects.map((p) => ({ key: p.key, name: p.name, repo: repo(p.key), engaged_seconds: p.engaged_seconds, shown: isShown(p.key, choices) })),
+	return { handle: user.handle, public: user.profile_public, projects: await ownProjects(env, user) }
+}
+
+/** ownProjects is each of the owner's projects, with whether their profile shows it and the repositories linked to it. */
+export async function ownProjects(env: Env, user: User) {
+	const [projects, choices] = await Promise.all([personProjects(env, user.id), projectChoices(env, user.id)])
+	return projects.map((p) => ({ key: p.key, name: p.name, repo: reposOf(p.key, choices)[0] ?? null, repos: reposOf(p.key, choices), engaged_seconds: p.engaged_seconds, shown: isShown(p.key, choices) }))
+}
+
+/**
+ * updateProject changes one of the owner's projects: whether their profile
+ * shows it (public), and the GitHub repositories linked to it (repos, an
+ * array that replaces the list). Each field is optional.
+ */
+export async function updateProject(env: Env, user: User, body: Record<string, unknown>): Promise<void> {
+	const key = body.key
+	if (typeof key !== 'string') throw new Refusal(400, 'Say which project with its key.')
+	if (!(await personProjects(env, user.id)).some((p) => p.key === key)) throw new Refusal(404, 'No such project.')
+	const choices = await projectChoices(env, user.id)
+	let shown = isShown(key, choices)
+	let repos: string[] | null = choices.get(key)?.repos ?? null
+	if (body.public !== undefined) {
+		if (typeof body.public !== 'boolean') throw new Refusal(400, 'Say whether the project is public with true or false.')
+		shown = body.public
 	}
+	if (body.repos !== undefined) {
+		if (!Array.isArray(body.repos)) throw new Refusal(400, 'Send repos as a list, such as ["github.com/you/site"].')
+		const seen = new Set<string>()
+		repos = []
+		for (const r of body.repos) {
+			const one = typeof r === 'string' ? githubRepo(r) : null
+			if (!one) throw new Refusal(400, `${String(r).slice(0, 80)} is not a GitHub repository. Write it as github.com/owner/name.`)
+			if (seen.has(one.toLowerCase())) continue
+			seen.add(one.toLowerCase())
+			repos.push(one)
+		}
+		if (repos.length > MAX_REPOS) throw new Refusal(400, `A project links up to ${MAX_REPOS} repositories.`)
+	}
+	await env.DB.prepare(
+		'INSERT INTO project_settings (user_id, project_key, shown, repos) VALUES (?1, ?2, ?3, ?4) ON CONFLICT (user_id, project_key) DO UPDATE SET shown = ?3, repos = ?4',
+	)
+		.bind(user.id, key, Number(shown), repos && JSON.stringify(repos))
+		.run()
 }
 
 /**

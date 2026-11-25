@@ -139,6 +139,26 @@ html[data-theme="light"] .theme .moon { display: block; }
 .account .menu a, .account .menu button { display: block; width: 100%; padding: 9px 12px; border: 0; border-radius: 6px; background: none; text-align: left; font: 500 14px var(--sans); color: var(--text); cursor: pointer; }
 .account .menu a:hover, .account .menu button:hover { background: var(--panel-2); text-decoration: none; }
 
+/* The app's own pages (body.app) put the account menu in a sidebar for someone
+   signed in, once the window is wide enough. Narrower, the menu stays in the bar. */
+.appnav { display: none; }
+@media (min-width: 861px) {
+	html[data-hosted] body.app { display: grid; grid-template-columns: 232px minmax(0, 1fr); }
+	html[data-hosted] body.app > .nav { grid-column: 1 / -1; padding: 0 24px; }
+	html[data-hosted] body.app > main { grid-column: 2; min-width: 0; width: 100%; }
+	html[data-hosted] body.app .nav :is(.account, .app-only, .settings-link, .staff-only) { display: none; }
+	html[data-hosted] body.app .appnav { grid-column: 1; grid-row: 2; display: flex; flex-direction: column; gap: 4px; position: sticky; top: 64px; align-self: start; height: calc(100vh - 64px); overflow-y: auto; padding: 20px 12px; border-right: 1px solid var(--line); }
+}
+.appnav .who-line { display: flex; align-items: center; gap: 10px; padding: 4px 8px 16px; margin-bottom: 8px; border-bottom: 1px solid var(--line); font-size: 12px; line-height: 1.4; color: var(--muted); }
+.appnav .who-line > span:last-child { min-width: 0; }
+.appnav .who-line b { display: block; font-size: 14px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.appnav .avatar { flex: none; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 8px; background: var(--accent); color: var(--on-accent); font-size: 14px; font-weight: 700; text-transform: uppercase; }
+.appnav-links { display: grid; gap: 2px; }
+.appnav a, .appnav button { display: block; width: 100%; padding: 9px 12px; border: 0; border-radius: 8px; background: none; text-align: left; font: 500 15px var(--sans); color: var(--muted); cursor: pointer; }
+.appnav a:hover, .appnav button:hover { color: var(--text); background: var(--panel-2); text-decoration: none; }
+.appnav a[aria-current="page"] { color: var(--text); background: var(--panel-2); }
+.appnav form { margin: auto 0 0; padding-top: 12px; border-top: 1px solid var(--line); }
+
 /* A command to copy, alone or under tabs for each OS */
 .tab-panel[hidden] { display: none; }
 .cmd { display: flex; align-items: center; gap: 12px; padding: 10px 10px 10px 16px; }

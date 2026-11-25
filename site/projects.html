@@ -13,11 +13,10 @@
 	<script src="theme.js"></script>
 	<script src="i18n.js" data-scripts="site.js account.js charts.js reports.js projects.js"></script>
 </head>
-<body>
+<body class="app">
 <nav class="nav" aria-label="Main" data-i18n-attr="aria-label:nav.main">
 	<a class="brand" href="index.html"><img src="favicon.svg" alt="">teardrop</a>
 	<div class="links">
-		<a href="index.html#what-counts" class="opt local-only" data-i18n="nav.whatCounts">What counts</a>
 		<a href="dashboard.html" class="app-only" data-i18n="nav.dashboard">Dashboard</a>
 		<a href="projects.html" class="app-only active" aria-current="page" data-i18n="nav.projects">Projects</a>
 		<a href="docs.html" class="docs-link" data-i18n="nav.docs">Docs</a>
@@ -41,6 +40,17 @@
 		</div>
 	</details>
 </nav>
+<aside class="appnav hosted-only" aria-label="Account" data-i18n-attr="aria-label:nav.account">
+	<div class="who-line"><span class="avatar" id="side-initial" aria-hidden="true"></span><span><span data-i18n="nav.signedInAs">Signed in as</span><b id="side-name"></b></span></div>
+	<div class="appnav-links">
+		<a href="dashboard.html" data-i18n="nav.dashboard">Dashboard</a>
+		<a href="projects.html" aria-current="page" data-i18n="nav.projects">Projects</a>
+		<a href="settings.html" data-i18n="nav.settings">Settings</a>
+		<a href="settings.html#account" data-i18n="nav.account">Account</a>
+		<a href="/review/" class="staff-only" data-i18n="nav.review">Review</a>
+	</div>
+	<form method="post" action="/logout"><button data-i18n="nav.signOut">Sign out</button></form>
+</aside>
 
 <main class="wrap dash">
 	<div class="ban-banner" id="ban-banner" role="alert" hidden>

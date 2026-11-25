@@ -79,14 +79,10 @@ Syncs and exports carry a verification key: an Ed25519 signature by this
 install's account key over the numbers, the time it was made, and a 7-day
 expiry. The website refuses reports that were edited, have no key, or have
 expired. The account key lives on your machine, so a file alone can't prove its numbers
-are real. For hours that count, sync (below): the site marks as witnessed
-only time whose records reached it as it happened.
+are real. For hours that count, sync (below).
 
-**ENGAGED** counts the time you spend working with your AI tools: writing
-prompts, reading replies, and steering the agent. An agent left running on
-its own doesn't earn time, and parallel sessions on one project count once.
-Prompts that don't reflect real work aren't counted; they're listed as
-**SKIPPED**. Prompt text is never stored.
+**ENGAGED** is the time you spend working with your AI tools. Prompt text is
+never stored.
 
 ## Supported tools
 
@@ -180,9 +176,7 @@ key from Settings still works.
 
 `sync` sends records: one per prompt and turn end, with its time, word
 counts, tokens, and lines, never its text. The first sync sends the past
-year; later ones send only what changed since the last. Turns your hooks
-already sent count as witnessed; turns from transcripts no hook saw arrive
-late and are shown but not credited. teardrop remembers
+year; later ones send only what changed since the last. teardrop remembers
 the server and the key (which can only upload stats), so hooks sync in the
 background when a reply finishes in Claude Code or Amp, or when you stop
 one. Amp reports a stopped reply at once. Claude Code runs no hook then, so
@@ -191,11 +185,8 @@ dashboard adds up every computer you
 connect. Settings lists them, makes a new key, and takes a
 `teardrop export` file from a computer that can't reach the site.
 
-The site splits time in two: time whose records reached it within 5 minutes
-of when they happened is witnessed; time that arrived late, such as history
-from before the hooks were set up, is unwitnessed and kept apart. teardrop
-credits nothing itself. Programs that pay or credit hours read both, per
-project and per day, through the protected stats API (below), much like
+teardrop credits nothing itself. Programs that pay or credit hours read time
+per project and per day through the protected stats API (below), much like
 Hackatime's API, and decide what counts.
 
 Every account has a public profile at `/@handle`, which anyone can open
@@ -301,8 +292,7 @@ It answers with the person, their ban if any, and witnessed and unwitnessed
 seconds and prompts in total, per project, and per day, between `start` and
 `end` (days on their own clock, both included, both optional). `project`
 narrows it to names, separated by commas, and `flags=true` also reads the
-records behind it (at most 400 days) and lists what scripted, made-up records
-leave behind. A reviewer's key sees project names only; a neoadmin's also
+records behind it (at most 400 days) and lists flags for someone to look at. A reviewer's key sees project names only; a neoadmin's also
 sees keys and may look people up by account number (`id`). The person's hub
 writes what it holds first, so the answer is up to the moment. What to
 credit is the program's call.
@@ -321,8 +311,8 @@ Each account may send 1,000 uploads in a burst, which come back one a second
 (`RECENT_RECORDS_PER_DAY`), and 1,000,000 older ones, which a first sync of a
 year sends (`OLD_RECORDS_PER_DAY`). Past a limit the site answers 429 with
 `Retry-After`, and teardrop keeps the records to send later. The limits are
-about ten times the heaviest honest use; records held back past 5 minutes
-arrive late and aren't credited, so lower them with care. A record claiming
+about ten times the heaviest honest use; records held back arrive late, so
+lower them with care. A record claiming
 more than 200 million tokens or a million lines is cut to that and flagged
 for review. `node scripts/cost-model.ts` prints what an account at every
 limit costs. `node scripts/loadtest.ts`, with `npx wrangler dev` running,
@@ -372,7 +362,7 @@ good. D1 grows only by day totals, past 10 GB in about year 6.
 ## Privacy
 
 teardrop reads timestamps, token counts, line counts, and working
-directories. Prompt text is scored in memory and dropped; it is never stored
+directories. Prompt text is read in memory to count its words and dropped; it is never stored
 or printed, and `sync` never uploads it. In Amp's cloud, the cloud plugin
 sends your site each prompt's time, thread, folder, repository, and word
 counts, without its text. Every harness's hooks send the same kind of record
@@ -384,7 +374,7 @@ and prompt text never leave your machine.
 teardrop is licensed under the GNU Affero General Public License v3.0. See
 [LICENSE](LICENSE). The bundled English word list is from SCOWL; see
 [internal/textscore/WORDS-LICENSE](internal/textscore/WORDS-LICENSE). The
-letter-pair table the mash check uses (`internal/textscore/letterpairs.bin`)
+letter-pair table in `internal/textscore/letterpairs.bin`
 holds statistics computed from Hermit Dave's
 [FrequencyWords](https://github.com/hermitdave/FrequencyWords) lists, which
 are CC BY-SA 4.0; `scripts/letter-pairs.py` rebuilds it.

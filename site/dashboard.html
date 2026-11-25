@@ -13,11 +13,10 @@
 	<script src="theme.js"></script>
 	<script src="i18n.js" data-scripts="site.js account.js charts.js tables.js reports.js dashboard.js"></script>
 </head>
-<body>
+<body class="app">
 <nav class="nav" aria-label="Main" data-i18n-attr="aria-label:nav.main">
 	<a class="brand" href="index.html"><img src="favicon.svg" alt="">teardrop</a>
 	<div class="links">
-		<a href="index.html#what-counts" class="opt local-only" data-i18n="nav.whatCounts">What counts</a>
 		<a href="dashboard.html" class="app-only active" aria-current="page" data-i18n="nav.dashboard">Dashboard</a>
 		<a href="projects.html" class="app-only" data-i18n="nav.projects">Projects</a>
 		<a href="docs.html" class="docs-link" data-i18n="nav.docs">Docs</a>
@@ -41,6 +40,17 @@
 		</div>
 	</details>
 </nav>
+<aside class="appnav hosted-only" aria-label="Account" data-i18n-attr="aria-label:nav.account">
+	<div class="who-line"><span class="avatar" id="side-initial" aria-hidden="true"></span><span><span data-i18n="nav.signedInAs">Signed in as</span><b id="side-name"></b></span></div>
+	<div class="appnav-links">
+		<a href="dashboard.html" aria-current="page" data-i18n="nav.dashboard">Dashboard</a>
+		<a href="projects.html" data-i18n="nav.projects">Projects</a>
+		<a href="settings.html" data-i18n="nav.settings">Settings</a>
+		<a href="settings.html#account" data-i18n="nav.account">Account</a>
+		<a href="/review/" class="staff-only" data-i18n="nav.review">Review</a>
+	</div>
+	<form method="post" action="/logout"><button data-i18n="nav.signOut">Sign out</button></form>
+</aside>
 
 <main class="wrap dash">
 	<div class="ban-banner" id="ban-banner" role="alert" hidden>
@@ -65,8 +75,6 @@
 
 	<!-- Signed in, with nothing synced yet. Its code form posts to /connect, which asks to allow the computer. -->
 	<div id="setup" class="empty" hidden>
-		<h2 data-i18n="dash.setup.h2">Let's get agentic.</h2>
-		<p class="muted" data-i18n="dash.setup.lead">Paste one command into a terminal, then type the code it shows here.</p>
 		<div id="setup-steps"></div>
 		<p class="waiting" role="status"><span class="dot live"></span><span data-i18n="dash.setup.waiting">Waiting for your first sync. This page updates on its own.</span></p>
 		<p class="muted fine" data-i18n="dash.setup.upload">Can't reach this site from that computer? <a href="settings.html#data">Upload a stats file</a> instead.</p>
@@ -98,6 +106,21 @@
 
 	<div id="content" hidden>
 		<div class="chips" id="chips" hidden></div>
+		<!-- One project's own settings, on its page (?project=), for its owner. -->
+		<section class="panel project-settings" id="project-settings" hidden>
+			<div class="ps-head">
+				<h2 data-i18n="project.settings.h2">Project settings</h2>
+				<label class="check"><input type="checkbox" id="ps-public"> <span data-i18n="project.public">Public</span></label>
+			</div>
+			<p class="muted fine" id="ps-public-hint"></p>
+			<h3 data-i18n="project.repos.h3">GitHub repositories</h3>
+			<div class="list" id="ps-repos"></div>
+			<form class="key-form" id="ps-add">
+				<input id="ps-repo" autocomplete="off" spellcheck="false" placeholder="github.com/owner/name" aria-label="GitHub repository" data-i18n-attr="aria-label:project.repos.label" required>
+				<button class="btn small" data-i18n="project.repos.add">Add</button>
+			</form>
+			<p class="msg" id="ps-msg" role="status" hidden></p>
+		</section>
 		<p class="note-bar" id="no-data" hidden></p>
 		<div class="stats six">
 			<div class="stat"><div class="label" data-i18n="common.engaged">Engaged</div><div class="value" id="s-total">-</div><div class="hint" id="s-total-hint"></div></div>

@@ -10,6 +10,8 @@ const viewing = hosted ? params.get('user') : null
 let report = null
 let days = rangeFrom(params)
 let query = params.get('q') || ''
+// The GitHub repositories the visitor linked to each of their projects, by key, once loaded.
+let linked = new Map()
 
 // A project named by its repository, such as github.com/owner/name, links to it.
 const REPO = /^(github\.com|gitlab\.com|codeberg\.org|bitbucket\.org)\/[\w.-]+\/[\w.-]+$/
@@ -61,12 +63,13 @@ function dashURL(key) {
 }
 
 function card(p, total, max) {
-	const repo = repoOf(p.key)
+	const repos = linked.get(p.key) ?? (repoOf(p.key) ? [repoOf(p.key)] : [])
+	const repo = repos[0]
 	const tools = [...p.tools].sort((a, b) => b[1] - a[1]).map(([tool]) => `<span class="tag">${esc(tool === 'unknown' ? t('dash.unknownTool') : tool)}</span>`).join('')
 	const share = total ? Math.round((p.engaged / total) * 100) : 0
 	return `<article class="project-card">
 		<h2><a class="open" href="${esc(dashURL(p.key))}" title="${esc(t('projects.open', { name: p.name }))}">${esc(p.name)}</a></h2>
-		<p class="key">${repo ? `<a class="repo" href="https://${esc(repo)}" rel="nofollow noopener" title="${esc(t('projects.repo', { repo }))}"><span>${esc(repo)}</span>${LINK}</a>` : `<span title="${esc(p.key)}">${esc(p.key)}</span>`}</p>
+		<p class="key">${repo ? `<a class="repo" href="https://${esc(repo)}" rel="nofollow noopener" title="${esc(t('projects.repo', { repo }))}"><span>${esc(repo)}</span>${LINK}</a>${repos.length > 1 ? ` <span class="muted">+${repos.length - 1}</span>` : ''}` : `<span title="${esc(p.key)}">${esc(p.key)}</span>`}</p>
 		<div class="time"><b>${dur(p.engaged)}</b><span class="muted">${t('projects.share', { pct: share + '%' })}</span></div>
 		<div class="track" aria-hidden="true"><div class="fill" style="width:${max ? (p.engaged / max) * 100 : 0}%"></div></div>
 		<dl class="facts-row">
@@ -127,7 +130,12 @@ async function loadHosted() {
 	if (viewing) {
 		$('title').textContent = body.person.name ? t('projects.for', { name: body.person.name }) : t('projects.theirs')
 		document.querySelector('.nav .links .active')?.classList.remove('active')
-	} else showBan(body.ban)
+	} else {
+		showBan(body.ban)
+		try {
+			linked = new Map((await api('/api/projects')).projects.map((p) => [p.key, p.repos]))
+		} catch {}
+	}
 	if (!body.computers.length) {
 		report = null
 		$('status').textContent = ''
