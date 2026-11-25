@@ -1,4 +1,5 @@
 # teardrop
+[![Latest Build](https://github.com/part-avocado/teardrop/actions/workflows/ci.yml/badge.svg)](https://github.com/part-avocado/teardrop/actions/workflows/ci.yml)
 
 See how much time you actually spend working with AI coding tools, per project.
 teardrop reads the logs Claude Code and Codex already write, so there is
