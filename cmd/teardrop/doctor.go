@@ -156,9 +156,26 @@ func diagnose(claudeDir, codexDir string, client *http.Client, releases string) 
 	if err == nil {
 		key, err = syncKey("", server)
 	}
+	// A disposable machine sends as the "cloud" computer once both secrets
+	// are set. With one missing, its hooks keep a journal that goes with it.
+	flag := cloudFlag()
+	var missing []string
+	for _, v := range []string{"TEARDROP_SERVER", "TEARDROP_KEY"} {
+		if os.Getenv(v) == "" {
+			missing = append(missing, v)
+		}
+	}
+	switch {
+	case cloudEnv():
+		add(finding{"Cloud mode", levelOK, "on, since " + flag + " is set: hooks send each event straight to the site, as the computer \"cloud\"", ""})
+	case flag != "":
+		add(finding{"Cloud mode", levelNote, "off: " + flag + " is set, but " + strings.Join(missing, " and ") + map[bool]string{false: " is not", true: " are not"}[len(missing) > 1], "Add " + strings.Join(missing, " and ") + " as a secret of this environment, and its hooks send time to your site without a sign-in. Without, this machine is counted as a computer of its own."})
+	}
 	switch {
 	case err != nil:
 		add(finding{"Site", levelFix, err.Error(), ""})
+	case key == "" && flag != "":
+		add(finding{"Site", levelFix, server + " is set, but no sync key", "Add TEARDROP_KEY, a sync key from the site's Settings page, as a secret of this environment."})
 	case key == "":
 		add(finding{"Site", levelFix, server + " is set, but no sync key", "Run `teardrop login -server " + server + "`."})
 	default:
@@ -171,6 +188,9 @@ func diagnose(claudeDir, codexDir string, client *http.Client, releases string) 
 			} else {
 				add(finding{"Clock", levelOK, "matches the site's", ""})
 			}
+		case status == http.StatusUnauthorized && os.Getenv("TEARDROP_KEY") != "":
+			// A login would save a key that the one in the environment still overrides.
+			add(finding{"Site", levelFix, server + " does not know the sync key in TEARDROP_KEY", "Replace TEARDROP_KEY with a sync key from the site's Settings page, or unset it and run `teardrop login -server " + server + "`."})
 		case status == http.StatusUnauthorized:
 			add(finding{"Site", levelFix, server + " does not know this computer's sync key", "Run `teardrop login -server " + server + "` to connect it again."})
 		case status == http.StatusUpgradeRequired:
@@ -196,7 +216,9 @@ func diagnose(claudeDir, codexDir string, client *http.Client, releases string) 
 	} else {
 		add(finding{"Waiting", levelOK, "nothing", ""})
 	}
-	if server != "" {
+	// A cloud machine never syncs: its hooks send everything, and a sync
+	// would make it an account key of its own, for a computer soon gone.
+	if server != "" && !cloudEnv() {
 		if info, err := os.Stat(filepath.Join(dataDir(), "last-sync")); err != nil {
 			add(finding{"Last sync", levelNote, "never", "Run `teardrop sync`."})
 		} else if time.Since(info.ModTime()) > 72*time.Hour {

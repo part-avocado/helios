@@ -17,9 +17,18 @@ const dur = (sec) => {
 // liveFeed follows a person's live state: whether they are at it now, and
 // today's witnessed time. It holds a WebSocket open to wsPath, which the site
 // pushes to as each prompt or turn end arrives, and without one asks path
-// every 30 seconds while the tab is visible. onState gets each state.
-function liveFeed(path, wsPath, onState) {
-	let socket = null, timer = 0, retry = 1000
+// every 30 seconds while the tab is visible. onState gets each state. The
+// site says nothing when work stops, so "working now" is dropped here, 5
+// minutes after the record it came from, the longest one record keeps it up.
+const LIVE_FOR = 5 * 60000
+function liveFeed(path, wsPath, report) {
+	let socket = null, timer = 0, retry = 1000, stale = 0
+	const onState = (s) => {
+		clearTimeout(stale)
+		// By this clock: for half a minute at least and 5 minutes at most, should it and the record's clock disagree.
+		if (s && s.working) stale = setTimeout(() => report({ ...s, working: null }), Math.min(LIVE_FOR, Math.max(30000, s.working.since + LIVE_FOR - Date.now())))
+		report(s)
+	}
 	const ask = async () => {
 		clearTimeout(timer)
 		if (!socket && document.visibilityState === 'visible') {
@@ -87,6 +96,8 @@ async function api(path, init) {
 }
 
 const INSTALL = 'https://raw.githubusercontent.com/part-avocado/teardrop/main/install'
+// The name of the sync key made for cloud sessions.
+const CLOUD_KEY = 'Cloud sessions'
 // setupCommands are the one line to paste on each OS: install (or update),
 // then connect to this site. install.ps1 puts teardrop on this session's
 // PATH; install.sh only on a new terminal's, so its own path is named.
@@ -101,9 +112,10 @@ function setupCommands() {
 // account, one step at a time: an opening card, then how to set it up (by
 // hand or by an agent), the command or prompt, what each tool needs, and
 // last the code the terminal shows, typed into a form that posts to
-// /connect, which still asks to allow the computer by its ID. Amp cloud
-// threads need a sync key pasted as a secret, so the tools step can make
-// one, named "Amp cloud", and shows it once. With again, for a person who
+// /connect, which still asks to allow the computer by its ID. Cloud
+// sessions, such as Amp's cloud threads, need a sync key pasted as a secret,
+// so the tools step can make one, named "Cloud sessions", and shows it once
+// (CLOUD_KEY; it was "Amp cloud" once). With again, for a person who
 // has a computer already, the opening card says "Add another computer".
 function renderSetup(el, again = false) {
 	const { sh, ps } = setupCommands()
@@ -223,13 +235,16 @@ function renderSetup(el, again = false) {
 		}
 		const go = e.target.closest('[data-go]')
 		if (go) return show(Number(go.dataset.go))
-		// A new Amp cloud key replaces the last one, which stops working.
+		// A new key for cloud sessions replaces the last one, which stops working.
 		const ampButton = e.target.closest('[data-amp-key]')
 		if (!ampButton) return
 		ampButton.disabled = true
 		const note = el.querySelector('[data-amp-key-note]')
 		try {
-			const made = await api('/api/sync-keys', { method: 'POST', body: JSON.stringify({ name: 'Amp cloud', replace: true }) })
+			const made = await api('/api/sync-keys', { method: 'POST', body: JSON.stringify({ name: CLOUD_KEY, replace: true }) })
+			// So is one made when the key was still named after Amp.
+			const { keys } = await api('/api/sync-keys').catch(() => ({ keys: [] }))
+			for (const k of keys) if (k.name === 'Amp cloud') await api('/api/sync-keys/' + k.id, { method: 'DELETE' }).catch(() => {})
 			const box = el.querySelector('[data-amp-key-box]')
 			box.innerHTML = cmd(made.key, 'plain')
 			box.hidden = false

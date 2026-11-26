@@ -12,6 +12,10 @@ export const MAX_REPORT_BYTES = 16 << 20
 const CLOCK_SKEW = 5 * 60_000
 /** How long a report's key stays valid. */
 const KEY_LIFETIME = 7 * 86400_000
+/** How many bytes of reports one account may send in a day, unless REPORT_BYTES_PER_DAY says otherwise: 16 of the largest. Each is kept in R2. */
+const REPORT_BYTES_PER_DAY = 16 * MAX_REPORT_BYTES
+/** How many reports whose key doesn't match are kept in full per account, the newest. Older ones keep their log row. */
+const KEPT_FORGED = 20
 
 interface Payload {
 	kind?: string
@@ -25,6 +29,8 @@ interface Payload {
 
 /** A refusal that reviewers should see, because the teardrop CLI never causes it. */
 class FlaggedRefusal extends Refusal {}
+/** A report whose key does not match its contents. */
+class ForgedRefusal extends FlaggedRefusal {}
 
 const refuse = (why: string) => new Refusal(400, `Report refused: ${why}`)
 
@@ -59,9 +65,25 @@ export async function storeReport(env: Env, user: User, body: string, event: Log
 		if (!(e instanceof Refusal)) throw e
 		const refused: Entry = { ...entry, refusal: e.message, flagged: Number(e instanceof FlaggedRefusal), prev_generated_at: null, prev_since: null, prev_engaged_seconds: null, prev_teardrop_version: null, past_added_seconds: null }
 		await env.DB.batch(logEntry(env, user.id, refused))
+		if (e instanceof ForgedRefusal) await dropOldForged(env, user.id, e.message).catch((e) => console.error('could not drop old forged reports', e))
 		await archiveLog(env, user.id).catch((e) => console.error('could not archive the log', e))
 		throw e
 	}
+}
+
+/**
+ * dropOldForged deletes the kept copies of all but a person's newest
+ * KEPT_FORGED reports whose key didn't match. Anyone with a sync key can send
+ * such a file, as often as they like, so they are not kept for good. Their
+ * log rows stay, and say what each claimed.
+ */
+async function dropOldForged(env: Env, userID: number, refusal: string): Promise<void> {
+	const { results } = await env.DB.prepare(`SELECT id, report_key FROM account_log WHERE user_id = ? AND refusal = ? AND report_key IS NOT NULL ORDER BY id DESC LIMIT 200 OFFSET ${KEPT_FORGED}`)
+		.bind(userID, refusal)
+		.all<{ id: number; report_key: string }>()
+	if (!results.length) return
+	await forget(env, results.map((r) => r.report_key))
+	await env.DB.prepare('UPDATE account_log SET report_key = NULL WHERE user_id = ?1 AND id IN (SELECT value FROM json_each(?2))').bind(userID, JSON.stringify(results.map((r) => r.id))).run()
 }
 
 async function store(env: Env, user: User, body: string, entry: Entry): Promise<string> {
@@ -92,11 +114,17 @@ async function store(env: Env, user: User, body: string, entry: Entry): Promise<
 	const since = String(p.since ?? '').slice(0, 32)
 	// A refused report's contents are logged too, so a reviewer sees what it claimed.
 	const held = summarize(p.report, bytes.length)
+	// Every report is kept, so an account sends only so many bytes of them a day. One past that is logged without what it held.
+	const cap = Number(env.REPORT_BYTES_PER_DAY) > 0 ? Number(env.REPORT_BYTES_PER_DAY) : REPORT_BYTES_PER_DAY
+	const today = await env.DB.prepare(`SELECT COALESCE(SUM(json_extract(detail, '$.bytes')), 0) AS n FROM account_log WHERE user_id = ? AND at > ? AND event IN ('sync', 'upload')`)
+		.bind(user.id, now - 86400_000)
+		.first<{ n: number }>()
+	if ((today?.n ?? 0) + bytes.length > cap) throw new Refusal(429, 'Report refused: this account has sent more reports today than the site keeps in a day. Try again tomorrow.', { 'Retry-After': '3600' })
 	Object.assign(entry, { computer_id: id, generated_at: Number.isFinite(generated) ? generated : null, teardrop_version: version, since, engaged_seconds: engaged, detail: JSON.stringify(held) })
 	// Refused or not, it is kept as it arrived. A failure further down leaves
 	// a file that no log row names, which costs a little space and nothing else.
 	entry.report_key = await keep(env, user.id, id, now, body)
-	if (!valid || !publicKey) throw new FlaggedRefusal(400, 'Report refused: its key does not match its contents, so it was changed after it was made.')
+	if (!valid || !publicKey) throw new ForgedRefusal(400, 'Report refused: its key does not match its contents, so it was changed after it was made.')
 
 	const expires = Date.parse(p.expires_at ?? '')
 	if (!(generated <= now + CLOCK_SKEW)) throw refuse('it says it was made in the future. Check the clock on your computer.')
@@ -109,12 +137,26 @@ async function store(env: Env, user: User, body: string, entry: Entry): Promise<
 
 	const taken = new FlaggedRefusal(409, 'This computer already syncs to another account. Remove it there, under Settings, then Computers, and sync again.')
 	const stale = new Refusal(409, 'The server already has a newer report from this computer.')
-	const existing = await env.DB.prepare('SELECT user_id, public_key, generated_at, engaged_seconds, teardrop_version, since, days, projects, report_key FROM computers WHERE id = ?')
+	let existing = await env.DB.prepare('SELECT user_id, public_key, generated_at, engaged_seconds, teardrop_version, since, days, projects, report_key FROM computers WHERE id = ?')
 		.bind(id)
 		.first<{ user_id: number; public_key: string; generated_at: number; engaged_seconds: number; teardrop_version: string; since: string; days: string; projects: string; report_key: string | null }>()
-	const existingKey = existing?.report_key ?? null
-	if (existing && (existing.user_id !== user.id || existing.public_key !== p.account)) throw taken
-	if (existing && existing.generated_at >= generated) throw stale
+	const existingKey = existing && existing.user_id === user.id ? existing.report_key : null
+	// A computer that sends records has its time worked out from them, under
+	// its own ID or its stand-in (computerAlias). A report from it would count
+	// the same time again, so it is not taken.
+	const sends = await env.DB.prepare('SELECT 1 AS yes FROM prompt_days WHERE user_id = ?1 AND computer_id IN (?2, ?3) LIMIT 1').bind(user.id, id, await computerAlias(user.id, id)).first()
+	if (sends || (existing?.user_id === user.id && existing.since === RECORDS)) {
+		throw new Refusal(409, 'Report refused: this computer sends its time to the site as it happens, so its reports are no longer taken. Its time is on your dashboard already.')
+	}
+	// Another account's row made from records alone only named this ID. The
+	// report is signed with the ID's key, so the computer is this account's.
+	const named = existing && existing.user_id !== user.id && existing.public_key === '' && existing.since === RECORDS ? existing : null
+	if (existing && !named && (existing.user_id !== user.id || existing.public_key !== p.account)) throw taken
+	if (existing && !named && existing.generated_at >= generated) throw stale
+	if (named) {
+		await env.DB.prepare(`DELETE FROM computers WHERE id = ? AND user_id = ? AND public_key = ''`).bind(id, named.user_id).run()
+		existing = null
+	}
 
 	// Compare the report with the one it replaces. A computer that was removed
 	// and comes back is compared with what it had when it left.
@@ -204,14 +246,45 @@ export async function keptReportJSON(env: Env, entryID: string): Promise<string 
  * computers: [{"id", "synced_at", "report": <the signed payload>}]. The stored
  * payloads are spliced in as they are, without parsing them.
  */
-export async function reportsJSON(env: Env, userID: number): Promise<string> {
-	const { results } = await env.DB.prepare('SELECT id, synced_at FROM computers WHERE user_id = ? ORDER BY id').bind(userID).all<{ id: string; synced_at: number }>()
+export async function reportsJSON(env: Env, userID: number, skip = ''): Promise<string> {
+	const { results } = await env.DB.prepare('SELECT id, synced_at FROM computers WHERE user_id = ? AND id != ? ORDER BY id').bind(userID, skip).all<{ id: string; synced_at: number }>()
 	const items: string[] = []
 	for (const c of results) {
 		const payload = await latestPayload(env, c.id)
 		if (payload) items.push(`{"id":${JSON.stringify(c.id)},"synced_at":${c.synced_at},"report":${payload}}`)
 	}
+	// Cloud sessions that send records have no computers row: they are shown as a computer named "cloud".
+	const cloud = await cloudRecords(env, userID)
+	if (cloud) items.push(`{"id":"${CLOUD}","synced_at":${cloud.synced_at},"report":${await recordPayload(env, userID, CLOUD, cloud.synced_at)}}`)
 	return `[${items.join(',')}]`
+}
+
+/**
+ * dashboardJSON is what a person's dashboard reads, as the members of a JSON
+ * object, for the caller to put between braces with its own:
+ * `"days":[…],"computers":[…]`. The computers' reports draw the charts. The days are the person's totals as every other page
+ * counts them (personTotals): time on two computers at once counts once, and
+ * a day is capped once, not once per computer. An old Amp-cloud report whose
+ * time is also in the records is left out (duplicateCloud).
+ */
+export async function dashboardJSON(env: Env, userID: number): Promise<string> {
+	const dup = await duplicateCloud(env, userID)
+	const totals = await personTotals(env, userID, dup)
+	const perDay: Record<string, number> = {}
+	for (const computer of totals.days) for (const [date, s] of Object.entries(computer)) perDay[date] = (perDay[date] ?? 0) + s
+	const days = Object.keys(perDay).sort().map((date) => ({ date, engaged_seconds: perDay[date] }))
+	return `"days":${JSON.stringify(days)},"computers":${await reportsJSON(env, userID, dup)}`
+}
+
+/** The name records from cloud sessions are kept under (records.ts), and the ID of the computer they are shown as. */
+const CLOUD = 'cloud'
+
+/** cloudRecords sums a person's day totals from cloud sessions' records, or returns null when they have none. */
+async function cloudRecords(env: Env, userID: number): Promise<{ synced_at: number; engaged_seconds: number } | null> {
+	const row = await env.DB.prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(witnessed_seconds + unwitnessed_seconds), 0) AS engaged_seconds, COALESCE(MAX(updated_at), 0) AS synced_at FROM prompt_days WHERE user_id = ? AND computer_id = ?`)
+		.bind(userID, CLOUD)
+		.first<{ n: number; engaged_seconds: number; synced_at: number }>()
+	return row?.n ? { synced_at: row.synced_at, engaged_seconds: row.engaged_seconds } : null
 }
 
 /**
@@ -230,15 +303,29 @@ async function latestPayload(env: Env, computerID: string): Promise<string | nul
 	return results.length ? results.map((r) => r.data).join('') : null
 }
 
+/**
+ * duplicateCloud returns the id of a person's old Amp-cloud report computer
+ * when the same cloud time is also in their records (the cloud plugin sends
+ * both), so it is left out of their totals and counts once; '' when it isn't.
+ */
+async function duplicateCloud(env: Env, userID: number): Promise<string> {
+	const sends = await env.DB.prepare(`SELECT 1 AS yes FROM prompt_days WHERE user_id = ? AND computer_id = 'cloud' LIMIT 1`).bind(userID).first()
+	return sends ? (await cloudComputer(env, { id: userID } as User)).id : ''
+}
+
 /** The `since` of a computer that sends records, not reports: its view is worked out from them. */
 const RECORDS = 'records'
 
-type DayRow = { day: string; s: number; projects: string; blocks: string; updated_at: number }
+type DayRow = { day: string; s: number; projects: string; updated_at: number }
 
-const recordDays = (env: Env, userID: number, computerID: string) =>
-	env.DB.prepare(`SELECT day, witnessed_seconds + unwitnessed_seconds AS s, projects, blocks, updated_at FROM prompt_days WHERE user_id = ? AND computer_id = ? ORDER BY day DESC LIMIT 400`)
+/** recordDays reads a computer's day totals, or with '' the account's own, the newest 400. With blocks, each day's work blocks too, which are large. */
+function recordDays(env: Env, userID: number, computerID: string, blocks: true): Promise<D1Result<DayRow & { blocks: string }>>
+function recordDays(env: Env, userID: number, computerID: string): Promise<D1Result<DayRow>>
+function recordDays(env: Env, userID: number, computerID: string, blocks = false) {
+	return env.DB.prepare(`SELECT day, witnessed_seconds + unwitnessed_seconds AS s, projects, ${blocks ? 'blocks, ' : ''}updated_at FROM prompt_days WHERE user_id = ? AND computer_id = ? ORDER BY day DESC LIMIT 400`)
 		.bind(userID, computerID)
-		.all<DayRow>()
+		.all()
+}
 
 const nameOf = (key: string) => key.split(/[\\/]/).filter(Boolean).pop()?.slice(0, 80) || 'unnamed'
 
@@ -252,7 +339,7 @@ type DayBlock = [number, number, number, number, number, number, number, number,
  * the site worked it out itself.
  */
 async function recordPayload(env: Env, userID: number, computerID: string, syncedAt: number): Promise<string> {
-	const { results } = await recordDays(env, userID, computerID)
+	const { results } = await recordDays(env, userID, computerID, true)
 	const projects = new Map<string, number>()
 	const blocks: object[] = []
 	for (const d of results) {
@@ -271,6 +358,28 @@ async function recordPayload(env: Env, userID: number, computerID: string, synce
 }
 
 /**
+ * storedBlocks gathers the work blocks in a computer's day totals by project,
+ * in the shape the computers table keeps (StoredBlocks). As blockTable does
+ * for a report, it keeps the newest blocks only, so they fit in one D1 value;
+ * each project's first start, last end, and engaged total count every block.
+ */
+function storedBlocks(days: { blocks: string }[]): StoredBlocks {
+	const stored: StoredBlocks = {}
+	for (const d of days) {
+		for (const [start, end, engaged, prompts, tin, tout, added, removed, key] of (parseStored<DayBlock[]>(d.blocks) ?? [])) {
+			const p = (stored[key] ??= [nameOf(key), start, end, 0, []])
+			p[1] = Math.min(p[1], start)
+			p[2] = Math.max(p[2], end)
+			p[3] += engaged
+			p[4].push([start, end, engaged, prompts, tin, tout, added, removed, 0])
+		}
+	}
+	const newest = Object.values(stored).flatMap((p) => p[4]).sort((a, b) => a[0]! - b[0]!).at(-BLOCKS_PER_COMPUTER)?.[0] ?? 0
+	for (const p of Object.values(stored)) p[4] = p[4].filter((b) => b[0]! >= newest).sort((a, b) => a[0]! - b[0]!).slice(-BLOCKS_PER_PROJECT)
+	return stored
+}
+
+/**
  * refreshRecordComputer updates the computers row of a computer that sends
  * records from its day totals, after the hub writes them, so every list of a
  * person's computers, days, and projects includes it. A computer that synced
@@ -280,27 +389,19 @@ async function recordPayload(env: Env, userID: number, computerID: string, synce
 export async function refreshRecordComputer(env: Env, userID: number, computerID: string): Promise<void> {
 	if (!/^td-[0-9a-f]{12}$/.test(computerID)) return
 	const [{ results }, old] = await Promise.all([
-		recordDays(env, userID, computerID),
+		recordDays(env, userID, computerID, true),
 		env.DB.prepare('SELECT user_id, report_key FROM computers WHERE id = ?').bind(computerID).first<{ user_id: number; report_key: string | null }>(),
 	])
 	if (!results.length || (old && old.user_id !== userID)) return
 	const days: Record<string, number> = {}
 	const projects: Record<string, [string, number]> = {}
-	const stored: Record<string, [string, number, number, number, number[][]]> = {}
 	for (const d of results) {
 		if (d.s > 0) days[d.day] = d.s
 		for (const [key, [w, u]] of Object.entries(JSON.parse(d.projects) as Record<string, [number, number, number]>)) {
 			if (w + u) projects[key] = [nameOf(key), (projects[key]?.[1] ?? 0) + w + u]
 		}
-		for (const [start, end, engaged, prompts, tin, tout, added, removed, key] of JSON.parse(d.blocks) as DayBlock[]) {
-			const p = (stored[key] ??= [nameOf(key), start, end, 0, []])
-			p[1] = Math.min(p[1], start)
-			p[2] = Math.max(p[2], end)
-			p[3] += engaged
-			p[4].push([start, end, engaged, prompts, tin, tout, added, removed, 0])
-		}
 	}
-	for (const p of Object.values(stored)) p[4].sort((a, b) => a[0]! - b[0]!)
+	const stored = storedBlocks(results)
 	const synced = Math.max(...results.map((d) => d.updated_at))
 	const engaged = results.reduce((n, d) => n + d.s, 0)
 	await env.DB.prepare(
@@ -336,28 +437,66 @@ export interface Computer {
 	engaged_seconds: number
 }
 
-/** personDays returns, for each of a person's computers, its latest report's engaged seconds by date. */
-export async function personDays(env: Env, userID: number): Promise<Record<string, number>[]> {
-	const { results } = await env.DB.prepare('SELECT days FROM computers WHERE user_id = ?').bind(userID).all<{ days: string }>()
-	return results.map((c) => parseDays(c.days))
+/** A person's totals: their engaged seconds, each computer's engaged seconds by date, and each project's engaged seconds, the largest first. */
+export interface PersonTotals {
+	engaged_seconds: number
+	days: Record<string, number>[]
+	projects: { key: string; name: string; engaged_seconds: number }[]
 }
 
 /**
- * personProjects adds up each project's engaged seconds over a person's
- * computers, the largest first. Time on one project on two computers at once
- * counts for both, as it does in their total.
+ * personTotals adds up a person's time: their synced reports, and the
+ * account's own rollup of every computer that sends records, where the same
+ * time sent under two computer IDs counts once and time on two projects at
+ * once is shared between them. A report from a computer that also has
+ * records is left out, whatever its row says, and so is an old Amp-cloud
+ * report whose time is in the records (dup, from duplicateCloud; worked out
+ * here when not given), so no time counts twice.
  */
-export async function personProjects(env: Env, userID: number): Promise<{ key: string; name: string; engaged_seconds: number }[]> {
-	const { results } = await env.DB.prepare('SELECT projects FROM computers WHERE user_id = ?').bind(userID).all<{ projects: string }>()
+export async function personTotals(env: Env, userID: number, dup?: string): Promise<PersonTotals> {
+	const [{ results }, rolled] = await Promise.all([
+		env.DB.prepare(
+			`SELECT engaged_seconds, days, projects FROM computers WHERE user_id = ?1 AND since != ?2 AND id != ?3
+			 AND NOT EXISTS (SELECT 1 FROM prompt_days p WHERE p.user_id = ?1 AND p.computer_id = computers.id)`,
+		).bind(userID, RECORDS, dup ?? (await duplicateCloud(env, userID))).all<{ engaged_seconds: number; days: string; projects: string }>(),
+		recordDays(env, userID, ''),
+	])
 	const all = new Map<string, { key: string; name: string; engaged_seconds: number }>()
-	for (const computer of results) {
-		for (const [key, [name, seconds]] of Object.entries(parseStored<Record<string, [string, number]>>(computer.projects) ?? {})) {
-			const project = all.get(key) ?? { key, name, engaged_seconds: 0 }
-			project.engaged_seconds += seconds
-			all.set(key, project)
-		}
+	const add = (key: string, name: string, seconds: number) => {
+		const project = all.get(key) ?? { key, name, engaged_seconds: 0 }
+		project.engaged_seconds += seconds
+		all.set(key, project)
 	}
-	return [...all.values()].sort((a, b) => b.engaged_seconds - a.engaged_seconds)
+	for (const computer of results) {
+		for (const [key, [name, seconds]] of Object.entries(parseStored<Record<string, [string, number]>>(computer.projects) ?? {})) add(key, name, seconds)
+	}
+	const days: Record<string, number> = {}
+	for (const d of rolled.results) {
+		if (d.s > 0) days[d.day] = d.s
+		for (const [key, [w, u]] of Object.entries(JSON.parse(d.projects) as Record<string, [number, number, number]>)) if (w + u) add(key, nameOf(key), w + u)
+	}
+	return {
+		engaged_seconds: results.reduce((n, c) => n + c.engaged_seconds, 0) + rolled.results.reduce((n, d) => n + d.s, 0),
+		days: [...results.map((c) => parseDays(c.days)), days],
+		projects: [...all.values()].sort((a, b) => b.engaged_seconds - a.engaged_seconds),
+	}
+}
+
+/** personDays returns, for each of a person's report computers, its latest report's engaged seconds by date, and last the same for all their records. */
+export const personDays = async (env: Env, userID: number) => (await personTotals(env, userID)).days
+
+/** personProjects adds up each project's engaged seconds over a person's computers, the largest first. */
+export const personProjects = async (env: Env, userID: number) => (await personTotals(env, userID)).projects
+
+/** personEngaged is a person's engaged seconds. */
+export const personEngaged = async (env: Env, userID: number) => (await personTotals(env, userID)).engaged_seconds
+
+/** cappedDays lists the days a person's records added up to more than the 16 hours a day is credited, newest first, with what they added up to. */
+export async function cappedDays(env: Env, userID: number): Promise<{ day: string; uncapped_seconds: number }[]> {
+	const { results } = await env.DB.prepare(`SELECT day, uncapped_seconds FROM prompt_days WHERE user_id = ? AND computer_id = '' AND uncapped_seconds IS NOT NULL ORDER BY day DESC LIMIT 400`)
+		.bind(userID)
+		.all<{ day: string; uncapped_seconds: number }>()
+	return results
 }
 
 /** How many work blocks of one project are kept for the graphs, the newest. A year of daily work is a few thousand. */
@@ -414,13 +553,18 @@ function blockTable(report: ReportBody | undefined): StoredBlocks {
  * project, the project with the most engaged time first. They are read from
  * what was kept when each report arrived. A computer that last synced before
  * that was kept has its report read once, and what it held is kept then.
+ * Cloud sessions that send records have no computers row, so theirs are read
+ * from their day totals, as one more computer; an old Amp-cloud report whose
+ * time is in those records is left out, as in the totals (duplicateCloud).
  */
 export async function projectBlocks(env: Env, userID: number): Promise<{ key: string; name: string; engaged_seconds: number; first_active: number; last_active: number; blocks: BlockRow[] }[]> {
-	const { results } = await env.DB.prepare('SELECT id, blocks FROM computers WHERE user_id = ? ORDER BY synced_at DESC, id').bind(userID).all<{ id: string; blocks: string }>()
+	const [{ results }, cloud] = await Promise.all([
+		env.DB.prepare('SELECT id, blocks FROM computers WHERE user_id = ? ORDER BY synced_at DESC, id').bind(userID).all<{ id: string; blocks: string }>(),
+		recordDays(env, userID, CLOUD, true),
+	])
+	const dup = cloud.results.length ? (await cloudComputer(env, { id: userID } as User)).id : ''
 	const all = new Map<string, { key: string; name: string; engaged_seconds: number; first_active: number; last_active: number; blocks: BlockRow[] }>()
-	for (const [computer, row] of results.entries()) {
-		// One report at a time, so only one is ever held.
-		const stored = row.blocks ? parseStored<StoredBlocks>(row.blocks) : await fillBlocks(env, row.id)
+	const add = (computer: number, stored: StoredBlocks | null) => {
 		for (const [key, [name, first, last, engaged, blocks]] of Object.entries(stored ?? {})) {
 			const project = all.get(key) ?? { key, name, engaged_seconds: 0, first_active: first, last_active: last, blocks: [] }
 			project.engaged_seconds += engaged
@@ -430,6 +574,12 @@ export async function projectBlocks(env: Env, userID: number): Promise<{ key: st
 			all.set(key, project)
 		}
 	}
+	for (const [computer, row] of results.entries()) {
+		if (row.id === dup) continue
+		// One report at a time, so only one is ever held.
+		add(computer, row.blocks ? parseStored<StoredBlocks>(row.blocks) : await fillBlocks(env, row.id))
+	}
+	if (cloud.results.length) add(results.length, storedBlocks(cloud.results))
 	for (const project of all.values()) project.blocks = project.blocks.sort((a, b) => a[0] - b[0]).slice(-BLOCKS_PER_PROJECT)
 	return [...all.values()].sort((a, b) => b.engaged_seconds - a.engaged_seconds)
 }
@@ -442,29 +592,70 @@ async function fillBlocks(env: Env, computerID: string): Promise<StoredBlocks> {
 	return table
 }
 
+/**
+ * computers lists a person's computers, the latest to sync first. Cloud
+ * sessions that send records show as one named "cloud"; the old Amp-cloud
+ * report computer is then left out, since its time is in those records and
+ * the two would read as two computers (duplicateCloud).
+ */
 export async function computers(env: Env, userID: number): Promise<Computer[]> {
 	const { results } = await env.DB.prepare(
 		'SELECT id, synced_at, generated_at, teardrop_version, engaged_seconds FROM computers WHERE user_id = ? ORDER BY synced_at DESC',
 	)
 		.bind(userID)
 		.all<Computer>()
-	return results
+	// Cloud sessions that send records, as a computer named "cloud".
+	const cloud = await cloudRecords(env, userID)
+	if (!cloud) return results
+	const dup = (await cloudComputer(env, { id: userID } as User)).id
+	const shown = results.filter((c) => c.id !== dup)
+	shown.push({ id: CLOUD, synced_at: cloud.synced_at, generated_at: cloud.synced_at, teardrop_version: RECORDS, engaged_seconds: cloud.engaged_seconds })
+	return shown.sort((a, b) => b.synced_at - a.synced_at)
 }
+
+/** How many days of one computer's records the hub is asked to forget at a time, so each call stays well within what one may read and write. */
+const FORGET_DAYS = 30
 
 /**
  * removeComputer forgets one of a person's computers and its latest report,
- * and notes that in their log. The reports kept for reviewers stay.
+ * and notes that in their log. The reports kept for reviewers stay. A
+ * computer that sends records, their cloud sessions included, has its
+ * records and day totals removed too, and the account's days worked out
+ * again without them: otherwise the next flush would bring it back.
  */
 export async function removeComputer(env: Env, userID: number, id: string): Promise<boolean> {
-	const latest = await env.DB.prepare('SELECT report_key FROM computers WHERE id = ? AND user_id = ?').bind(id, userID).first<{ report_key: string | null }>()
+	if (!/^td-[0-9a-f]{12}$|^cloud$/.test(id)) return false
+	const { results: days } = await env.DB.prepare('SELECT day FROM prompt_days WHERE user_id = ? AND computer_id = ? ORDER BY day').bind(userID, id).all<{ day: string }>()
+	const hub = env.HUB.get(env.HUB.idFromName(String(userID)))
+	// Asked once even with no day in D1: the hub may hold records it has not written yet.
+	let records = 0
+	for (let at = 0; at < Math.max(days.length, 1); at += FORGET_DAYS) records += await hub.forgetComputer(userID, id, days.slice(at, at + FORGET_DAYS).map((d) => d.day))
+	if (days.length) await env.DB.prepare('DELETE FROM prompt_days WHERE user_id = ? AND computer_id = ?').bind(userID, id).run()
+	// The row to delete. "cloud" has none of its own, but the old Amp-cloud
+	// report computer is the same sessions, hidden behind it (see computers):
+	// it goes too, with the events its report is counted from, or the next
+	// cloud thread would count them again and bring it back.
+	const row = id === CLOUD ? (await cloudComputer(env, { id: userID } as User)).id : id
+	const latest = await env.DB.prepare('SELECT report_key FROM computers WHERE id = ? AND user_id = ?').bind(row, userID).first<{ report_key: string | null }>()
 	if (latest?.report_key) await env.REPORTS.delete(latest.report_key)
 	// Deleting the computer deletes its report pieces with it (ON DELETE CASCADE).
 	const results = await env.DB.batch([
-		...logRemoval(env, userID, id),
-		env.DB.prepare('DELETE FROM computers WHERE id = ? AND user_id = ?').bind(id, userID),
+		...logRemoval(env, userID, row),
+		env.DB.prepare('DELETE FROM computers WHERE id = ? AND user_id = ?').bind(row, userID),
+		...(id === CLOUD ? [env.DB.prepare('DELETE FROM relayed_events WHERE user_id = ?').bind(userID)] : []),
 	])
 	await archiveLog(env, userID).catch((e) => console.error('could not archive the log', e))
-	return results.at(-1)!.meta.changes > 0
+	return results[1]!.meta.changes > 0 || days.length > 0 || records > 0
+}
+
+/**
+ * computerAlias is the name one account's records are kept under when they
+ * name a computer ID that another account's computer holds: an ID of the
+ * same shape, made from the account and the ID named.
+ */
+export async function computerAlias(userID: number, computerID: string): Promise<string> {
+	const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`computer ${userID} ${computerID}`)))
+	return 'td-' + [...digest.slice(0, 6)].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
 /**
@@ -489,6 +680,10 @@ export async function deleteUser(env: Env, userID: number): Promise<void> {
 		env.DB.prepare('DELETE FROM project_settings WHERE user_id = ?').bind(userID),
 		env.DB.prepare(`UPDATE users SET name = '', handle = NULL, profile_public = 1, api_key = ?, deleted_at = ? WHERE id = ?`).bind(noKey(), Date.now(), userID),
 		env.DB.prepare('DELETE FROM sync_keys WHERE user_id = ?').bind(userID),
+		// Their projects' commits, and what is left of signing in elsewhere and of `teardrop login`.
+		env.DB.prepare('DELETE FROM project_git WHERE user_id = ?').bind(userID),
+		env.DB.prepare('DELETE FROM sign_in_codes WHERE user_id = ?').bind(userID),
+		env.DB.prepare('DELETE FROM cli_logins WHERE user_id = ?').bind(userID),
 	])
 	// The archived part of their log stays too, without project names or report keys.
 	const { results: archives } = await env.DB.prepare('SELECT key FROM log_archives WHERE user_id = ?').bind(userID).all<{ key: string }>()

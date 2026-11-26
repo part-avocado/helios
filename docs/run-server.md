@@ -29,6 +29,8 @@ The bucket needs R2 turned on for your Cloudflare account, which you do once und
 
 To deploy from your computer instead, run `npx wrangler login` in `worker`, then `npm run deploy`, and add the secrets in the dashboard or with `npx wrangler secret put <NAME>`.
 
+Deploy with `npm run deploy`, not `npx wrangler deploy` alone: it applies the D1 migrations before the new code goes live. The code reads columns that migrations add, so the order matters. Migration `0026_capped_days.sql` adds `prompt_days.uncapped_seconds`, which every flush of a day's records writes; code deployed before it is applied fails each flush until it is, and the records wait in the meantime. If you deploy by hand, run `npx wrangler d1 migrations apply DB --remote` first.
+
 | Setting | Meaning |
 | --- | --- |
 | `SESSION_SECRET` | Signs sign-in cookies. Changing it signs everyone out. |
@@ -36,7 +38,8 @@ To deploy from your computer instead, run `npx wrangler login` in `worker`, then
 | `ADMINS` | Slack user IDs of the superadmins, separated by commas. They add everyone else who reviews, in [the review app](#review-app). |
 | `GITHUB_TOKEN` | Optional secret. Lets the hourly check ask GitHub which claimed commits exist, when GitHub dates them, and whose they are. Without it, commits are linked but not checked, and the review app says so. |
 | `MIN_VERSION` | Optional variable, such as `v0.6.0`. Older teardrops, and ones too old to say their version, are told to run `teardrop update` and can't sync until they do. Their records wait on their computers and arrive late, so late that their time isn't credited, so raise it only for a fix that needs it. Empty answers every version. |
-| `UPLOAD_BURST`, `RECENT_RECORDS_PER_DAY`, `OLD_RECORDS_PER_DAY` | What one account may send: 1,000 uploads at once, which come back one a second; 30,000 records a day dated in the last two days; and 1,000,000 older ones a day, for a first sync of a year. Past one, the site answers 429 and teardrop keeps the records to send later. The defaults are about ten times the heaviest honest use. Records held back more than 5 minutes arrive late and aren't credited, so lower them with care. |
+| `UPLOAD_BURST`, `RECENT_RECORDS_PER_DAY`, `OLD_RECORDS_PER_DAY` | What one account may send: 1,000 uploads at once, which come back one a second; 30,000 records a day dated in the last two days; and 100,000 older ones a day, for a first sync of a year (set `OLD_RECORDS_PER_DAY` higher if you need to import more). Past one, the site answers 429 and teardrop keeps the records to send later. The defaults are about ten times the heaviest honest use. Records held back more than 5 minutes arrive late and aren't credited, so lower them with care. |
+| `REPORT_BYTES_PER_DAY` | Optional variable: how many bytes of signed reports one account may upload a day, 256 MB when empty. Past it, the site answers 429. Only each account's newest 20 reports that failed their signature check are kept in full. |
 
 To change a secret later, edit it in the dashboard. For your own domain, add a [custom domain](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/) to the Worker and use it in the redirect URI. Cloudflare accepts uploads of up to 100 MB.
 
@@ -81,7 +84,7 @@ curl -H "Authorization: Bearer tdr_..." "https://your-site/api/review/stats?slac
 | `project` | Optional. Project names, separated by commas, or keys for neoadmins and superadmins. Without it, every project. |
 | `flags` | Optional. `true` reads the records behind the answer, at most 400 days of them, and lists flags for someone to look at. |
 
-The answer has `person` (`slack_id`, `name`, `created_at`, `deleted_at`), `ban` (`reason` and `at`, or `null`), `witnessed_seconds`, `unwitnessed_seconds`, and `prompts`; `projects`, most witnessed time first, each with `name`, `key`, the same three counts, `first_day`, and `last_day`; `days`, each `date` with the same three counts; and `flags` when asked, each with `kind` and `text`. Time on two projects at once counts once in the totals and in each project. The answer is up to the moment. Which time to credit, whether to count unwitnessed time, and how to treat a ban or a flag are the program's to decide.
+The answer has `person` (`slack_id`, `name`, `created_at`, `deleted_at`), `ban` (`reason` and `at`, or `null`), `witnessed_seconds`, `unwitnessed_seconds`, and `prompts`; `projects`, most witnessed time first, each with `name`, `key`, the same three counts, `first_day`, and `last_day`; `days`, each `date` with the same three counts; and `flags` when asked, each with `kind` and `text`. Time on two projects at once counts once in the totals, and is split equally between those projects, so a person's projects add up to their total. The answer is up to the moment. Which time to credit, whether to count unwitnessed time, and how to treat a ban or a flag are the program's to decide.
 
 <a id="public-api"></a>
 ## Public API

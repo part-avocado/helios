@@ -34,7 +34,15 @@ func ClaudeParser() Parser {
 			if out.Cwd == "" {
 				out.Cwd = rec.Cwd
 			}
-			if rec.SessionID != "" && !rec.IsSidechain {
+			// A subagent's records (isSidechain, under <session>/subagents/) are the
+			// agent talking to itself. They would add engaged time, tokens and edits
+			// no person is behind, and a prompt that fans out to many subagents
+			// would inflate all three. The main thread already records the call and
+			// result, which brackets that time.
+			if rec.IsSidechain {
+				return
+			}
+			if rec.SessionID != "" {
 				out.ID = rec.SessionID
 			}
 			var msg struct {

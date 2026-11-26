@@ -322,7 +322,7 @@ async function loadHosted() {
 	const last = Math.max(...body.computers.map((c) => c.synced_at))
 	const stale = Date.now() - last > 3 * DAY
 	const from = tn('common.computer', body.computers.length)
-	show(merge(body.computers), `<span class="dot${stale ? ' old' : ''}"></span>${t('dash.status.synced', { ago: esc(ago(last)), from })}` +
+	show(merge(body.computers, body.days), `<span class="dot${stale ? ' old' : ''}"></span>${t('dash.status.synced', { ago: esc(ago(last)), from })}` +
 		(viewing ? ` · <a href="/review/#/person/id:${encodeURIComponent(viewing)}">${t('dash.status.review')}</a> · <a href="/review/#/people">${t('dash.status.allPeople')}</a>` : body.ban ? ` · <b>${t('dash.status.paused')}</b>` : stale ? ` · ${t('dash.status.runSync')}` : ''))
 	again(5 * 60000)
 }

@@ -335,24 +335,44 @@ func checkFileHooks(only func(string) bool, yes, remove bool) {
 		}
 	}
 	if dir := filepath.Join(home, ".copilot"); only("GitHub Copilot") && exists(dir) {
-		path := filepath.Join(dir, "hooks", "teardrop.json")
-		if remove {
-			os.Remove(path)
-			return
+		checkCopilot(dir, exe, yes, remove)
+	}
+}
+
+// checkCopilot installs, updates, or removes teardrop's hooks file in
+// Copilot's folder, and says which it did.
+func checkCopilot(dir, exe string, yes, remove bool) {
+	path := filepath.Join(dir, "hooks", "teardrop.json")
+	if remove {
+		switch err := os.Remove(path); {
+		case err == nil:
+			fmt.Printf("\n  Removed teardrop hooks from Copilot (%s)\n", path)
+		case !errors.Is(err, os.ErrNotExist):
+			fmt.Printf("\n  Could not remove %s: %v\n", path, err)
 		}
-		want := copilotHooks(exe)
-		if old, _ := os.ReadFile(path); string(old) == string(want) {
-			fmt.Printf("\n  Copilot hooks: installed (%s)\n", path)
-			return
-		}
-		if !yes && !confirm("\n  Add teardrop hooks to GitHub Copilot? This writes "+path+" [Y/n] ") {
-			return
-		}
-		os.MkdirAll(filepath.Dir(path), 0o700)
-		if err := os.WriteFile(path, want, 0o600); err != nil {
-			fmt.Printf("  Could not write %s: %v\n", path, err)
-		} else {
-			fmt.Println("  Added. New Copilot sessions will use them.")
-		}
+		return
+	}
+	want := copilotHooks(exe)
+	old, err := os.ReadFile(path)
+	had := err == nil
+	if string(old) == string(want) {
+		fmt.Printf("\n  Copilot hooks: installed (%s)\n", path)
+		return
+	}
+	if !had && !yes && !confirm("\n  Add teardrop hooks to GitHub Copilot? This writes "+path+" [Y/n] ") {
+		fmt.Println("  Skipped. Run `teardrop setup` again to change your mind.")
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		fmt.Printf("\n  Could not write %s: %v\n", path, err)
+		return
+	}
+	switch err := os.WriteFile(path, want, 0o600); {
+	case err != nil:
+		fmt.Printf("\n  Could not write %s: %v\n", path, err)
+	case had:
+		fmt.Printf("\n  Updated the teardrop hook path in %s\n", path)
+	default:
+		fmt.Println("  Added. New Copilot sessions will use them.")
 	}
 }

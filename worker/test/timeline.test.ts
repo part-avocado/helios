@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { honest, SCRIPTS } from '../scripts/simulate.ts'
-import { credit, flags, nextClock, type Rec, union } from '../src/timeline.ts'
+import { credit, flags, nextClock, nextOffset, type OffsetPin, splitProjects, capDay, DAY_CAP, type Rec, RULES, union } from '../src/timeline.ts'
 
 const cases = JSON.parse(readFileSync(new URL('../../internal/timeline/testdata/credit.json', import.meta.url), 'utf8')) as { name: string; events: [number, string][]; engaged: number }[]
 
@@ -110,4 +110,75 @@ test('witnessing corrects a record by its pin, but by 5 minutes at most', () => 
 	// A pin of 20 minutes moves it 5 at most: 11 minutes late stays unwitnessed, 10 is on time.
 	assert.equal(stretch(11 * M, 20 * M), 0)
 	assert.equal(stretch(10 * M, 20 * M), 60_000)
+})
+
+test('nextOffset: the calendar moves only when the pinned offset stops being sent and a new one holds', () => {
+	const D = 86_400_000
+	assert.deepEqual(nextOffset(null, 540, 0), { pin: 540, seen: 0 })
+	assert.deepEqual(nextOffset({ pin: 540, seen: 0 }, 840, 0), { pin: 540, seen: 0, cand: 840, since: 0 })
+	// A second computer, or flipping between two offsets, keeps the pin however long it goes on.
+	let s: OffsetPin = { pin: 540, seen: 0 }
+	for (let d = 0; d < 10; d++) s = nextOffset(nextOffset(s, 840, d * D), 540, d * D + 1000)
+	assert.equal(s.pin, 540)
+	// Travel: the old offset goes quiet, the new one holds.
+	const away = nextOffset({ pin: 540, seen: 0, cand: 840, since: D }, 840, 3 * D)
+	assert.equal(away.pin, 540, 'not yet: three days since the pin was last sent, but the new offset only two days old')
+	assert.deepEqual(nextOffset({ pin: 540, seen: 0, cand: 840, since: 0 }, 840, 3 * D), { pin: 840, seen: 3 * D })
+})
+
+test('splitProjects: time on two projects at once is shared, and the projects add up to the whole', () => {
+	const m = (n: number) => n * 60_000
+	const split = splitProjects(new Map([
+		['a', [{ start: 0, end: m(10), witnessed: true }]],
+		['b', [{ start: m(5), end: m(15), witnessed: true }]],
+	]))
+	assert.deepEqual(split.get('a'), { witnessed: m(7.5), unwitnessed: 0 })
+	assert.deepEqual(split.get('b'), { witnessed: m(7.5), unwitnessed: 0 })
+	// One after the other, each keeps its own.
+	const apart = splitProjects(new Map([
+		['a', [{ start: 0, end: m(10), witnessed: true }]],
+		['b', [{ start: m(10), end: m(20), witnessed: false }]],
+	]))
+	assert.deepEqual([apart.get('a'), apart.get('b')], [{ witnessed: m(10), unwitnessed: 0 }, { witnessed: 0, unwitnessed: m(10) }])
+})
+
+test('capDay: a day is credited at most 16 hours, cutting unwitnessed time first, and projects keep adding up', () => {
+	const H = 3600_000
+	const t = { witnessed: 12 * H, unwitnessed: 8 * H, prompts: 0, tokens_in: 0, tokens_out: 0, lines_added: 0, lines_removed: 0, projects: { a: { witnessed: 12 * H, unwitnessed: 8 * H, prompts: 0 } } }
+	capDay(t, 24 * H)
+	assert.deepEqual([t.witnessed, t.unwitnessed, t.projects.a!.witnessed, t.projects.a!.unwitnessed], [12 * H, 4 * H, 12 * H, 4 * H])
+	assert.equal(t.witnessed + t.unwitnessed, DAY_CAP)
+})
+
+test('nextOffset: a stale candidate is dropped when the pin is sent again, so one batch after a break moves nothing', () => {
+	const D = 86_400_000
+	let s: OffsetPin = nextOffset({ pin: 540, seen: 0 }, 0, 0)
+	for (let d = 1; d <= 30; d++) s = nextOffset(s, 540, d * D)
+	assert.equal(nextOffset(s, 0, 34 * D).pin, 540)
+})
+
+test('capDay keeps what a cut day held, and a cut day is flagged as a long one', () => {
+	const H = 3600_000
+	const whole = () => ({ witnessed: 3 * H, unwitnessed: 15 * H, prompts: 0, tokens_in: 0, tokens_out: 0, lines_added: 0, lines_removed: 0, projects: {} })
+	assert.equal(capDay(whole(), 24 * H).uncapped, 18 * H)
+	assert.equal(capDay({ ...whole(), unwitnessed: 13 * H }, 24 * H).uncapped, undefined, 'a day at the cap is not cut')
+	// Witnessed time alone can't pass 16 hours any more, so the flag also reads what the day's records held.
+	const cut = flags([], [{ day: '2026-11-20', witnessed_seconds: 3 * 3600, uncapped_seconds: 18 * 3600 }, { day: '2026-11-21', witnessed_seconds: 16 * 3600 }, { day: '2026-11-22', witnessed_seconds: 15 * 3600, uncapped_seconds: null }])
+	assert.deepEqual(cut.map((f) => f.kind), ['long-day'])
+	assert.match(cut[0]!.text, /on 2026-11-20 \(its records held 18 hours\), 2026-11-21\.$/)
+	assert.equal(RULES, 3)
+})
+
+test('an interrupted turn earns its gap as watching, up to 3 minutes, and silent prompts can\'t be padded', () => {
+	const rec = (s: number, human: boolean, extra: Partial<Rec> = {}): Rec => ({ t: s * 1000, arrived: s * 1000, tool: 'x', session: 's', project: 'p', human, ...extra })
+	const earned = (recs: Rec[]) => union(credit(recs)).witnessed / 1000
+	assert.equal(earned([rec(0, true), rec(40, true)]), 40)
+	assert.equal(earned([rec(0, true), rec(3600, true)]), 180)
+	// Real prompts every 5 minutes for an hour with no agent output: 60%, well under 90%.
+	assert.equal(earned(Array.from({ length: 13 }, (_, i) => rec(i * 300, true))), 36 * 60)
+	// A gibberish prompt in the middle counts as agent output: the watch window once, and no compose time after it.
+	const noise = { judged: 10, real: 0, sim: '12345' }
+	assert.equal(earned([rec(0, true), rec(299, true, noise), rec(300, true), rec(599, true, noise), rec(600, true)]), 2 * 240 - 1)
+	// A first prompt after a skipped one earns nothing.
+	assert.equal(earned([rec(0, true, noise), rec(100, true)]), 0)
 })

@@ -41,8 +41,11 @@ async function verify(file) {
 const verifiedNote = (p) =>
 	`<span class="tag ok" title="${esc(t('dash.verifiedTitle'))}"><svg class="ico" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>${t('dash.verified')}</span> ${t('dash.verifiedNote', { id: esc(p.accountID), date: esc(new Date(p.expires_at).toLocaleDateString(LANG)) })}`
 
-// merge adds up the latest report of each of a person's computers.
-function merge(computers) {
+// merge puts together the latest report of each of a person's computers.
+// days are the account's own per-day totals, when the site sends them: there,
+// time on two computers at once counts once, which adding the computers up
+// can't know.
+function merge(computers, days) {
 	const reports = computers.map((c) => c.report.report || {})
 	const perDay = new Map()
 	for (const r of reports) for (const d of r.days || []) perDay.set(d.date, (perDay.get(d.date) || 0) + d.engaged_seconds)
@@ -50,7 +53,7 @@ function merge(computers) {
 		blocks: reports.flatMap((r) => r.blocks || []),
 		projects: reports.flatMap((r) => r.projects || []),
 		// Without per-day totals from every computer, render() adds up blocks instead.
-		days: reports.every((r) => Array.isArray(r.days)) ? [...perDay].map(([date, engaged_seconds]) => ({ date, engaged_seconds })) : undefined,
+		days: Array.isArray(days) ? days : reports.every((r) => Array.isArray(r.days)) ? [...perDay].map(([date, engaged_seconds]) => ({ date, engaged_seconds })) : undefined,
 	}
 }
 

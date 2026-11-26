@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/part-avocado/teardrop/internal/sources"
@@ -40,6 +41,10 @@ func syncRecords(transcripts []sources.Raw, journal []sources.JournalEvent, reso
 		}
 		p, _ := resolve(sources.Raw{Tool: ev.Tool, ID: ev.Session, Cwd: ev.Cwd, GitURL: ev.Git})
 		ev.Git, ev.Cwd = p.Key, ""
+		// Before v0.12 a Copilot CLI session was named by its folder's path.
+		if folder, ok := strings.CutPrefix(ev.Session, "cwd:"); ok {
+			ev.Session = folderSession(folder)
+		}
 		out = append(out, ev)
 	}
 	for _, r := range transcripts {
@@ -172,14 +177,16 @@ func whoami(client *http.Client, server, key string) (account, int, error) {
 // when it is too small to matter. The site refuses records dated more than 5
 // minutes ahead of it, and credits only records that reach it within 5
 // minutes of when they say they happened. A site that corrects clocks pins
-// one correction per computer, up to an hour, and follows a change only after
-// it holds for a day.
+// one offset per computer, follows a change only after it holds for a day,
+// and moves that computer's records by the pin, but by 5 minutes at most
+// (MOST_CORRECTED in worker/src/timeline.ts): a clock further off is not
+// made whole.
 func clockWarning(skew time.Duration) string {
 	off := plural(int(skew.Abs().Round(time.Minute)/time.Minute), "minute")
 	if skew.Abs() < 2*time.Minute {
 		return ""
 	}
-	if skew.Abs() <= time.Hour {
+	if skew.Abs() <= 5*time.Minute {
 		dir := "ahead of"
 		if skew < 0 {
 			dir = "behind"
@@ -187,9 +194,9 @@ func clockWarning(skew time.Duration) string {
 		return fmt.Sprintf("Your clock is %s %s the site's. The site corrects this computer's records by the offset it measured when they first arrived; if your clock changes, it takes a day to follow, and records sent meanwhile may not count. An older site doesn't correct at all. Set your clock to update automatically.", off, dir)
 	}
 	if skew > 0 {
-		return fmt.Sprintf("Your clock is %s ahead of the site's. Past 5 minutes ahead, the site refuses your records as dated in the future, and none of your time counts. Set your clock to update automatically.", off)
+		return fmt.Sprintf("Your clock is %s ahead of the site's. The site corrects a computer's clock by 5 minutes at most, and refuses records that are still dated more than 5 minutes ahead of it, so that time doesn't count. Set your clock to update automatically.", off)
 	}
-	return fmt.Sprintf("Your clock is %s behind the site's. Past 5 minutes behind, your records look like they arrived late, so the site keeps them but credits none of their time. Set your clock to update automatically.", off)
+	return fmt.Sprintf("Your clock is %s behind the site's. The site corrects a computer's clock by 5 minutes at most; past that, your records look like they arrived late, so the site keeps them but may credit none of their time. Set your clock to update automatically.", off)
 }
 
 // computerHeader names this computer and its clock's UTC offset, which decides its records' days.

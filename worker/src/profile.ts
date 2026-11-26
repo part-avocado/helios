@@ -6,7 +6,7 @@ import { type User, userByHandle } from './auth.ts'
 import { json, Refusal } from './http.ts'
 import { projectCommits } from './git.ts'
 import { repo } from './public.ts'
-import { computers, personDays, personProjects } from './reports.ts'
+import { personEngaged, personProjects, personTotals } from './reports.ts'
 
 /** A handle: 3 to 30 lowercase letters, digits, and hyphens, starting and ending with a letter or digit. */
 const HANDLE = /^[a-z0-9](?:[a-z0-9-]{1,28})[a-z0-9]$/
@@ -55,7 +55,8 @@ export function githubRepo(text: string): string | null {
 export async function profileJSON(env: Env, handle: string): Promise<Response> {
 	const user = await visibleOwner(env, handle)
 	if (!user) throw new Refusal(404, 'No such profile.')
-	const [projects, days, choices, theirs, git] = await Promise.all([personProjects(env, user.id), personDays(env, user.id), projectChoices(env, user.id), computers(env, user.id), projectCommits(env, user.id)])
+	// The totals are read once, for the projects, the days, and the total.
+	const [{ projects, days, engaged_seconds }, choices, git] = await Promise.all([personTotals(env, user.id), projectChoices(env, user.id), projectCommits(env, user.id)])
 	const perDay: Record<string, number> = {}
 	for (const computer of days) for (const [date, s] of Object.entries(computer)) perDay[date] = (perDay[date] ?? 0) + s
 	const named = projects.filter((p) => isShown(p.key, choices))
@@ -64,7 +65,7 @@ export async function profileJSON(env: Env, handle: string): Promise<Response> {
 		handle: user.handle,
 		joined: new Date(user.created_at).toISOString().slice(0, 7),
 		// As in their own total: time on two projects at once counts once.
-		engaged_seconds: theirs.reduce((sum, c) => sum + c.engaged_seconds, 0),
+		engaged_seconds,
 		days: Object.keys(perDay).sort().map((date) => ({ date, engaged_seconds: perDay[date] })),
 		projects: named.map((p) => {
 			const repos = reposOf(p.key, choices)
@@ -107,7 +108,7 @@ export async function profileBadge(env: Env, handle: string, project: string | n
 		label = `teardrop: ${p.name}`
 		seconds = p.engaged_seconds
 	} else {
-		seconds = (await computers(env, user.id)).reduce((sum, c) => sum + c.engaged_seconds, 0)
+		seconds = await personEngaged(env, user.id)
 	}
 	const value = hoursText(seconds)
 	// Widths as for 11px Verdana, near enough: about 7 pixels a character.
@@ -186,6 +187,7 @@ export async function updateProfile(env: Env, user: User, body: Record<string, u
 		if (typeof body.public !== 'boolean') throw new Refusal(400, 'Say whether the profile is public with true or false.')
 		changes.push(env.DB.prepare('UPDATE users SET profile_public = ? WHERE id = ?').bind(Number(body.public), user.id))
 	}
+	const hidden = body.public === false
 	if (body.projects !== undefined) {
 		const projects = body.projects
 		if (!projects || typeof projects !== 'object' || Array.isArray(projects)) throw new Refusal(400, 'Send projects as an object of project keys to true or false.')
@@ -207,4 +209,6 @@ export async function updateProfile(env: Env, user: User, body: Record<string, u
 		if (/UNIQUE/.test(String(e))) throw new Refusal(409, 'That handle is taken. Try another.')
 		throw e
 	}
+	// A profile made private stops showing visitors who have it open whether its owner is at work.
+	if (hidden) await env.HUB.get(env.HUB.idFromName(String(user.id))).closePublic()
 }

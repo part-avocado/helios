@@ -10,7 +10,7 @@ import { createTestHarness, experimental_readRawConfig, unstable_splitSqlQuery }
 
 const DAY = 86400_000
 
-type Hub = { flush(): Promise<string[]>; holdWrites(): Promise<void>; writing(): Promise<number>; releaseWrites(): Promise<void>; failNextWrite(): Promise<void>; crash(): Promise<void>; holdReads(t: number): Promise<void>; reading(): Promise<number>; releaseRead(all?: boolean): Promise<void>; flushAsReadEnds(): Promise<string[]>; failNextRead(): Promise<void>; alarmAt(): Promise<number | null>; clearAlarm(): Promise<void>; fireAlarm(): Promise<void> }
+type Hub = { flush(): Promise<string[]>; holdWrites(): Promise<void>; writing(): Promise<number>; releaseWrites(): Promise<void>; failNextWrite(): Promise<void>; crash(): Promise<void>; holdReads(t: number): Promise<void>; reading(): Promise<number>; releaseRead(all?: boolean): Promise<void>; flushAsReadEnds(): Promise<string[]>; failNextRead(): Promise<void>; alarmAt(): Promise<number | null>; clearAlarm(): Promise<void>; fireAlarm(): Promise<void>; forgetComputer(user: number, computer: string, days: string[]): Promise<number> }
 
 test('the hub loses no record while it writes a day', async () => {
 	// The deployed config, run with the test entry.
@@ -203,6 +203,47 @@ test('the hub loses no record while it writes a day', async () => {
 		await hub().releaseRead(true)
 		assert.equal((await (await batch).json() as { records: number }).records, 2)
 		assert.ok((await hub().alarmAt()) != null, 'a flush is due for the record kept after the alarm')
+
+		// A computer ID another account holds is kept under a stand-in, and stays
+		// under it after that account lets the ID go and the hub restarts: its
+		// records are never split between two names.
+		const all = async <T>(sql: string, ...v: unknown[]) => (await (env.DB.prepare(sql).bind(...v) as unknown as { all(): Promise<{ results: T[] }> }).all()).results
+		const pc = 'td-0000000000b7'
+		await env.DB.prepare(`INSERT INTO users (hca_id, api_key, created_at) VALUES ('someone else', 'no key', 0)`).run()
+		await env.DB.prepare(`INSERT INTO computers (id, user_id, public_key, signature, generated_at, synced_at) SELECT ?, id, 'k', 's', 0, 0 FROM users WHERE hca_id = 'someone else'`).bind(pc).first()
+		const asPC = async (t: number, session: string) => {
+			const res = await site.fetch('/api/v1/events', { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'X-Teardrop-UTC-Offset': '0', 'X-Teardrop-Computer': pc }, body: JSON.stringify({ t: new Date(t).toISOString(), tool: 'cursor', event: 'turn_end', session, project: 'p' }) })
+			assert.equal(res.status, 200)
+		}
+		const names = async () => (await all<{ computer_id: string }>(`SELECT DISTINCT computer_id FROM prompt_days WHERE user_id = ? AND computer_id LIKE 'td-%' ORDER BY computer_id`, id)).map((r) => r.computer_id)
+		await asPC(Date.now() - 60_000, 'stand-in 1')
+		await hub().flush()
+		const standIn = await names()
+		assert.equal(standIn.length, 1)
+		assert.notEqual(standIn[0], pc)
+		await env.DB.prepare('DELETE FROM computers WHERE id = ?').bind(pc).first()
+		await hub().crash().catch(() => {})
+		await asPC(Date.now() - 50_000, 'stand-in 2')
+		await hub().flush()
+		assert.deepEqual(await names(), standIn, 'the stand-in is still the name once the ID is free and the hub has restarted')
+
+		// Removing a computer reads its sealed days back one after another. A
+		// flush that comes meanwhile waits its turn, rather than forget the days
+		// already read back and leave the computer's records in R2.
+		const [f1, f2] = [noon - 31 * DAY, noon - 30 * DAY]
+		await send(f1, 'forgotten 1')
+		await send(f2, 'forgotten 2')
+		await hub().flush()
+		assert.deepEqual([await inR2(f1), await inR2(f2)], [['forgotten 1'], ['forgotten 2']])
+		await hub().holdReads(f2)
+		const forgetting = hub().forgetComputer(id, 'cloud', [dayOn(f1), dayOn(f2)])
+		for (let i = 0; i < 200 && !(await hub().reading()); i++) await new Promise((r) => setTimeout(r, 10))
+		assert.equal(await hub().reading(), 1, 'the second day\'s read reached the hold')
+		const meanwhile = hub().flush()
+		await new Promise((r) => setTimeout(r, 300))
+		await hub().releaseRead(true)
+		await Promise.all([forgetting, meanwhile])
+		assert.deepEqual([await inR2(f1), await inR2(f2)], [[], []], 'both days were written again without the computer')
 	} finally {
 		await site.close()
 		rmSync(config, { force: true })

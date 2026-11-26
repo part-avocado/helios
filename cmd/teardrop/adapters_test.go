@@ -32,7 +32,7 @@ func TestHookRecord(t *testing.T) {
 		{name: "a person quoting a tag", tool: "claude-code", payload: `{"session_id":"abc","cwd":"/w","hook_event_name":"UserPromptSubmit","prompt":"why does the <task-notification> tag show up in my log?"}`, kind: "prompt", session: "abc", cwd: "/w", human: true},
 		{name: "Codex hook", tool: "codex", payload: `{"session_id":"019a","cwd":"/w","hook_event_name":"Stop"}`, kind: "turn_end", session: "019a", cwd: "/w"},
 		{name: "Codex notify", tool: "codex", payload: `{"type":"agent-turn-complete","thread-id":"019a","turn-id":"1","cwd":"/w","input-messages":["hi"]}`, kind: "turn_end", session: "019a", cwd: "/w"},
-		{name: "Copilot CLI names no session or event", tool: "copilot", event: "userPromptSubmitted", payload: `{"timestamp":1704614400000,"cwd":"/w","prompt":"fix the flaky test"}`, kind: "prompt", session: "cwd:/w", cwd: "/w", human: true},
+		{name: "Copilot CLI names no session or event", tool: "copilot", event: "userPromptSubmitted", payload: `{"timestamp":1704614400000,"cwd":"/w","prompt":"fix the flaky test"}`, kind: "prompt", session: folderSession("/w"), cwd: "/w", human: true},
 		{name: "VS Code Copilot", tool: "copilot", payload: `{"sessionId":"s1","hookEventName":"Stop","cwd":"/w"}`, kind: "turn_end", session: "s1", cwd: "/w"},
 		{name: "Cursor prompt", tool: "cursor", payload: `{"conversation_id":"c1","generation_id":"g1","hook_event_name":"beforeSubmitPrompt","workspace_roots":["/w"],"prompt":"refactor this"}`, kind: "prompt", session: "c1", cwd: "/w", human: true},
 		{name: "Cursor edit", tool: "cursor", payload: `{"conversation_id":"c1","hook_event_name":"afterFileEdit","file_path":"/w/a.go","edits":[{"old_string":"a\nb","new_string":"a\nc\nd"}]}`, kind: "edit", session: "c1", added: 2, removed: 1},
@@ -278,4 +278,42 @@ func TestSyncRecords(t *testing.T) {
 	if later := syncRecords([]sources.Raw{transcript}, journal, resolve, m(5)); len(later) != 2 || later[0].Event != "prompt" {
 		t.Errorf("after the cutoff: %+v", later)
 	}
+}
+
+// Copilot CLI names no session, so its folder stands in for one. The
+// session's name goes to the site, which must not learn the folder's path.
+func TestFolderSessionHidesTheFolder(t *testing.T) {
+	const folder = "/home/ada/secret-client/app"
+	var in hookInput
+	json.Unmarshal([]byte(`{"cwd":"`+folder+`","prompt":"fix the flaky test"}`), &in)
+	ev, _, ok := hookRecord("copilot", "userPromptSubmitted", in, time.Now())
+	if !ok || strings.Contains(ev.Session, "secret-client") || ev.Session != folderSession(folder) || ev.Session == folderSession(folder+"2") {
+		t.Fatalf("session %q, ok %v", ev.Session, ok)
+	}
+	// A journal line from before sessions were hashed is sent hashed too.
+	old := sources.JournalEvent{Time: time.Now(), Tool: "copilot", Event: "userPromptSubmitted", Human: true, Session: "cwd:" + folder, Cwd: folder}
+	resolve := func(sources.Raw) (timeline.Project, string) { return timeline.Project{Key: "github.com/ada/app"}, "" }
+	recs := syncRecords(nil, []sources.JournalEvent{old}, resolve, time.Now().Add(-time.Hour))
+	if b, _ := json.Marshal(recs); len(recs) != 1 || strings.Contains(string(b), "secret-client") || recs[0].Session != folderSession(folder) {
+		t.Errorf("sync would send %s", b)
+	}
+}
+
+func TestCheckCopilot(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), ".copilot")
+	os.MkdirAll(dir, 0o700)
+	path := filepath.Join(dir, "hooks", "teardrop.json")
+	checkCopilot(dir, "/opt/teardrop", true, false)
+	if got := fileHookExes(path, "bash", "copilot"); len(got) != len(copilotEvents) || got[0] != "/opt/teardrop" {
+		t.Fatalf("installed hooks run %v", got)
+	}
+	checkCopilot(dir, "/new/teardrop", false, false) // an update asks nothing
+	if got := fileHookExes(path, "bash", "copilot"); len(got) != len(copilotEvents) || got[0] != "/new/teardrop" {
+		t.Errorf("updated hooks run %v", got)
+	}
+	checkCopilot(dir, "", true, true)
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("the hooks file was not removed")
+	}
+	checkCopilot(dir, "", true, true) // nothing to remove is no error
 }

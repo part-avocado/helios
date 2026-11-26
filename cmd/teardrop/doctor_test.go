@@ -90,6 +90,9 @@ func TestDoctor(t *testing.T) {
 			t.Setenv("CODEX_HOME", filepath.Join(root, "no-codex"))
 			t.Setenv("TEARDROP_SERVER", "")
 			t.Setenv("TEARDROP_KEY", "")
+			for _, v := range []string{"TEARDROP_CLOUD", "CLAUDE_CODE_REMOTE", "CODESPACES"} {
+				t.Setenv(v, "") // the tests may themselves run in a cloud session
+			}
 			t.Setenv("PATH", "") // so the Amp CLI, if this machine has one, is not found
 
 			if c.whoami != nil {
@@ -136,6 +139,84 @@ func TestDoctor(t *testing.T) {
 			}
 			if strings.Contains(out.String(), "tdk_secret") {
 				t.Errorf("doctor printed the sync key:\n%s", &out)
+			}
+		})
+	}
+}
+
+// A disposable machine is told about its secrets, not to log in or sync:
+// either would make it a computer of its own, with a key that goes with it.
+func TestDoctorInTheCloud(t *testing.T) {
+	site := func(t *testing.T, key string) string {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("Authorization") != "Bearer "+key {
+				http.Error(w, "This server needs your sync key.", http.StatusUnauthorized)
+				return
+			}
+			fmt.Fprintf(w, `{"name":"Ada","handle":"ada","time":%q}`, time.Now().Format(time.RFC3339Nano))
+		}))
+		t.Cleanup(ts.Close)
+		return ts.URL
+	}
+	for _, c := range []struct {
+		name          string
+		flag          string // the variable that marks the machine as a cloud one
+		server, key   bool   // whether each secret is set; the key is the right one unless stale
+		stale         bool
+		finding       string
+		level         int
+		detail, fix   string
+		noLastSync    bool
+		noLoginAdvice bool
+	}{
+		{name: "both secrets", flag: "CLAUDE_CODE_REMOTE", server: true, key: true, finding: "Cloud mode", level: levelOK, detail: "on, since CLAUDE_CODE_REMOTE is set", noLastSync: true},
+		{name: "no key", flag: "CODESPACES", server: true, finding: "Cloud mode", level: levelNote, detail: "CODESPACES is set, but TEARDROP_KEY is not", fix: "Add TEARDROP_KEY as a secret"},
+		{name: "no key, so no login", flag: "CODESPACES", server: true, finding: "Site", level: levelFix, detail: "no sync key", fix: "Add TEARDROP_KEY", noLoginAdvice: true},
+		{name: "no secrets", flag: "TEARDROP_CLOUD", finding: "Cloud mode", level: levelNote, detail: "TEARDROP_SERVER and TEARDROP_KEY are not", fix: "Add TEARDROP_SERVER and TEARDROP_KEY"},
+		{name: "a key the site forgot", flag: "CLAUDE_CODE_REMOTE", server: true, key: true, stale: true, finding: "Site", level: levelFix, detail: "does not know the sync key in TEARDROP_KEY", fix: "Replace TEARDROP_KEY", noLastSync: true},
+		// The same on a machine that is kept, such as an SSH box set up by its environment.
+		{name: "a stale key on an SSH box", server: true, key: true, stale: true, finding: "Site", level: levelFix, detail: "does not know the sync key in TEARDROP_KEY", fix: "Replace TEARDROP_KEY"},
+		{name: "not a cloud machine", server: true, key: true, finding: "Last sync", level: levelNote, detail: "never", fix: "teardrop sync"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			root := t.TempDir()
+			t.Setenv("HOME", root)
+			t.Setenv("USERPROFILE", root)
+			t.Setenv("XDG_CONFIG_HOME", root)
+			t.Setenv("TEARDROP_DATA_DIR", filepath.Join(root, "data"))
+			t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(root, "no-claude"))
+			t.Setenv("CODEX_HOME", filepath.Join(root, "no-codex"))
+			t.Setenv("PATH", "")
+			for _, v := range []string{"TEARDROP_CLOUD", "CLAUDE_CODE_REMOTE", "CODESPACES", "TEARDROP_SERVER", "TEARDROP_KEY"} {
+				t.Setenv(v, "")
+			}
+			if c.flag != "" {
+				t.Setenv(c.flag, "true")
+			}
+			if c.server {
+				t.Setenv("TEARDROP_SERVER", site(t, "tdk_secret"))
+			}
+			if c.key {
+				t.Setenv("TEARDROP_KEY", map[bool]string{false: "tdk_secret", true: "tdk_stale"}[c.stale])
+			}
+			findings := diagnose("", "", &http.Client{Timeout: 5 * time.Second}, "http://127.0.0.1:1")
+			var got *finding
+			for i := range findings {
+				if findings[i].Name == c.finding {
+					got = &findings[i]
+				}
+				if c.noLastSync && findings[i].Name == "Last sync" {
+					t.Errorf("a cloud machine was told about its last sync: %+v", findings[i])
+				}
+				if c.noLoginAdvice && strings.Contains(findings[i].Fix, "teardrop login") {
+					t.Errorf("a cloud machine was told to log in: %+v", findings[i])
+				}
+			}
+			if got == nil || got.Level != c.level || !strings.Contains(got.Detail, c.detail) || !strings.Contains(got.Fix, c.fix) {
+				t.Fatalf("got %+v, want %s at level %d with %q and fix %q in %+v", got, c.finding, c.level, c.detail, c.fix, findings)
+			}
+			if _, err := os.Stat(filepath.Join(root, "data", "account.key")); err == nil {
+				t.Error("doctor made an account key")
 			}
 		})
 	}

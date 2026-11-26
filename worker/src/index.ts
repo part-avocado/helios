@@ -12,7 +12,7 @@ import { relayRecords } from './records.ts'
 export { UserHub } from './hub.ts'
 import { ownProfile, ownProjects, updateProfile, updateProject, visibleOwner } from './profile.ts'
 import { createUserKey, publicAPI, revokeUserKey, userKeys } from './public.ts'
-import { computerReportJSON, computers, deleteUser, keptReportJSON, MAX_REPORT_BYTES, removeComputer, reportsJSON, storeReport } from './reports.ts'
+import { computerReportJSON, computers, dashboardJSON, deleteUser, keptReportJSON, MAX_REPORT_BYTES, removeComputer, reportsJSON, storeReport } from './reports.ts'
 import { fullLog, people, person, stats, summary } from './review.ts'
 import { authorize } from './signin.ts'
 import { addReviewer, banMessage, bans, createKey, issueBan, keys, liftBan, need, removeReviewer, revokeKey, team } from './staff.ts'
@@ -36,13 +36,34 @@ export default {
 } satisfies ExportedHandler<Env>
 
 /**
+ * What a page may load: scripts, data, and sockets from this site only, and
+ * nothing from a plugin, so text that got into a page as markup can't run or
+ * send what the page shows elsewhere. Styles may also be written in the page:
+ * the charts and the review app's graphs set style attributes in the markup
+ * they build. The typefaces come from Google Fonts.
+ */
+const CONTENT_POLICY = [
+	"default-src 'self'",
+	"script-src 'self'",
+	"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+	"font-src 'self' https://fonts.gstatic.com",
+	"img-src 'self' data:",
+	"connect-src 'self'",
+	"object-src 'none'",
+	"base-uri 'self'",
+	"frame-ancestors 'none'",
+].join('; ')
+
+/**
  * guard adds the headers that stop another site from showing these pages in
- * a frame, a browser from guessing a response's type, and a link out of the
- * site from carrying the address the visitor was on.
+ * a frame, a page from loading scripts that are not this site's, a browser
+ * from guessing a response's type, and a link out of the site from carrying
+ * the address the visitor was on.
  */
 function guard(res: Response): Response {
 	const out = new Response(res.body, res) // a copy, since a fetched response's headers can't be changed
 	out.headers.set('X-Frame-Options', 'DENY')
+	out.headers.set('Content-Security-Policy', CONTENT_POLICY)
 	out.headers.set('X-Content-Type-Options', 'nosniff')
 	out.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
 	return out
@@ -65,6 +86,7 @@ async function liveView(env: Env, userID: number, request: Request, tag: 'owner'
 	else if (new URL(request.url).pathname.endsWith('/ws')) throw new Refusal(426, 'Open this as a WebSocket.')
 	const res = await hub.fetch('https://hub/live', { headers })
 	if (res.webSocket) return res
+	if (res.status === 429) throw new Refusal(429, 'Too many people are watching this profile live. Try again in a moment.', { 'Retry-After': '30' })
 	return new Response(res.body, { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } })
 }
 
@@ -183,7 +205,7 @@ async function route(request: Request, env: Env): Promise<Response> {
 	if (call === 'GET /api/me') {
 		// The computer their cloud threads sync as is named as such, since it is no machine of theirs.
 		const cloud = (await cloudComputer(env, user)).id
-		const all = (await computers(env, user.id)).map((c) => ({ ...c, cloud: c.id === cloud }))
+		const all = (await computers(env, user.id)).map((c) => ({ ...c, cloud: c.id === cloud || c.id === 'cloud' }))
 		return json({ name: user.name, slack_id: user.slack_id, handle: user.handle, profile_public: user.profile_public, admin: user.admin, level: user.level, ban: ownBan(user), created_at: user.created_at, computers: all })
 	}
 	// Their own live view: a WebSocket that hears of each record as it arrives, or its state once.
@@ -194,13 +216,13 @@ async function route(request: Request, env: Env): Promise<Response> {
 	if (call === 'GET /api/report') {
 		// Neoadmins and superadmins can read anyone's reports; everyone else only their own.
 		const other = url.searchParams.get('user')
-		if (!other) return jsonText(`{"ban":${JSON.stringify(ownBan(user))},"computers":${await reportsJSON(env, user.id)}}`)
+		if (!other) return jsonText(`{"ban":${JSON.stringify(ownBan(user))},${await dashboardJSON(env, user.id)}}`)
 		need(user, 1)
 		const person = /^\d+$/.test(other)
 			? await env.DB.prepare('SELECT id, name, slack_id FROM users WHERE id = ?').bind(Number(other)).first<{ id: number }>()
 			: null
 		if (!person) throw new Refusal(404, 'No such person.')
-		return jsonText(`{"person":${JSON.stringify(person)},"computers":${await reportsJSON(env, person.id)}}`)
+		return jsonText(`{"person":${JSON.stringify(person)},${await dashboardJSON(env, person.id)}}`)
 	}
 	if (call === 'POST /api/reports') {
 		if (user.ban) throw new Refusal(403, banMessage())
@@ -221,7 +243,7 @@ async function route(request: Request, env: Env): Promise<Response> {
 	// Sync keys beside the account's own: one per computer that ran `teardrop login`, and any made here.
 	if (call === 'GET /api/sync-keys') return json({ keys: await syncKeys(env, user) })
 	if (call === 'POST /api/sync-keys') {
-		// With replace, a key of the same name is revoked once the new one is made, as for Amp cloud threads.
+		// With replace, a key of the same name is revoked once the new one is made, as for the key cloud sessions use.
 		const body = await jsonBody(request)
 		return json(await createSyncKey(env, user, String(body.name ?? ''), body.replace === true))
 	}

@@ -8,6 +8,10 @@
 #   TEARDROP_INSTALL_DIR=<dir>    install here instead of ~/.local/bin
 #   TEARDROP_NO_MODIFY_PATH=1     don't add the install dir to your shell profile
 #   TEARDROP_NO_SETUP=1           don't run `teardrop setup` afterwards
+#   TEARDROP_CLOUD=1              for a cloud environment or Codespace: set up Claude Code
+#                                 and every other tool found, without asking. Also set
+#                                 TEARDROP_SERVER and TEARDROP_KEY as secrets there; hooks
+#                                 then send time straight to the site.
 #
 # Rerunning it updates teardrop in place.
 set -eu
@@ -46,6 +50,9 @@ sha256() {
 		sha256sum "$1" | cut -d' ' -f1
 	elif command -v shasum >/dev/null 2>&1; then
 		shasum -a 256 "$1" | cut -d' ' -f1
+	elif command -v openssl >/dev/null 2>&1; then
+		# Prints "SHA2-256(file)= <hex>", or "SHA256(file)= <hex>" when older.
+		openssl dgst -sha256 "$1" | awk '{ print $NF }'
 	fi
 }
 
@@ -95,7 +102,7 @@ main() {
 	[ -n "$want" ] || fail "checksums.txt has no entry for $asset"
 	got=$(sha256 "$tmp/$asset")
 	if [ -z "$got" ]; then
-		say "Warning: no sha256sum or shasum found, so the download was not verified."
+		fail "sha256sum, shasum, or openssl is needed to verify the download. Nothing was installed."
 	elif [ "$got" != "$want" ]; then
 		fail "the download is corrupted (checksum mismatch). Nothing was installed; try again."
 	fi
@@ -119,10 +126,22 @@ main() {
 	if [ -z "${TEARDROP_NO_SETUP:-}" ]; then
 		say ""
 		# When piped from curl, stdin is this script, so setup asks on the terminal instead.
-		if (exec </dev/tty) 2>/dev/null; then
+		case "$(printf '%s' "${TEARDROP_CLOUD:-}" | tr '[:upper:]' '[:lower:]')" in 1 | true) cloud=1 ;; *) cloud= ;; esac
+		if [ -n "$cloud" ]; then
+			if [ -z "${TEARDROP_SERVER:-}" ] || [ -z "${TEARDROP_KEY:-}" ]; then
+				say "Warning: TEARDROP_CLOUD is set, but TEARDROP_SERVER and TEARDROP_KEY are not both set."
+				say "Add them as secrets of this environment, or its hooks will send nothing to your site."
+				say ""
+			fi
+			# Naming claude makes its folder on a fresh container; the second run
+			# sets up every other tool found, such as Codex, Copilot, or Cursor.
+			"$target" setup -yes claude </dev/null || true
+			"$target" setup -yes </dev/null || true
+		elif (exec </dev/tty) 2>/dev/null; then
 			"$target" setup </dev/tty || true
 		else
-			"$target" setup || true
+			# No terminal to ask on: setup lists what it found and changes nothing.
+			"$target" setup </dev/null || true
 		fi
 	fi
 	if [ "$added" = 1 ]; then

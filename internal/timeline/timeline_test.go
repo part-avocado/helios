@@ -85,3 +85,31 @@ func TestDays(t *testing.T) {
 		t.Errorf("Days = %v, want %v", got, want)
 	}
 }
+
+// A prompt straight after a prompt is an interrupted turn: it earns the gap
+// as watching, up to WatchFull, and prompts with no output can't be padded.
+func TestInterruptedTurn(t *testing.T) {
+	sec := func(s int, k Kind) Event { return Event{Time: t0.Add(time.Duration(s) * time.Second), Kind: k} }
+	for _, c := range []struct {
+		name string
+		ev   []Event
+		want time.Duration
+	}{
+		{"a short interrupted turn earns its gap", []Event{sec(0, Human), sec(40, Human)}, 40 * time.Second},
+		{"a long one earns WatchFull, not the watch window or compose time", []Event{sec(0, Human), sec(3600, Human)}, 3 * time.Minute},
+		{"a skipped prompt in the middle earns the watch window once, and no compose time", []Event{sec(0, Human), sec(299, Noise), sec(300, Human), sec(599, Noise), sec(600, Human)}, 2*4*time.Minute - time.Second},
+		{"a first prompt after a skipped one earns nothing", []Event{sec(0, Noise), sec(100, Human)}, 0},
+	} {
+		if got := Total(Credit(c.ev, DefaultRules)); got != c.want {
+			t.Errorf("%s: %v, want %v", c.name, got, c.want)
+		}
+	}
+	// Real prompts every 5 minutes for an hour, with no agent output: 60%, well under 90%.
+	var ev []Event
+	for i := 0; i <= 12; i++ {
+		ev = append(ev, at(5*i, Human))
+	}
+	if got := Total(Credit(ev, DefaultRules)); got != 36*time.Minute {
+		t.Errorf("prompts every 5 minutes earned %v of an hour, want 36m", got)
+	}
+}

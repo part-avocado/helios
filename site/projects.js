@@ -144,7 +144,7 @@ async function loadHosted() {
 	}
 	const last = Math.max(...body.computers.map((c) => c.synced_at))
 	const stale = Date.now() - last > 3 * 86400000
-	report = merge(body.computers)
+	report = merge(body.computers, body.days)
 	$('status').innerHTML = `<span class="dot${stale ? ' old' : ''}"></span>${t('dash.status.synced', { ago: esc(ago(last)), from: tn('common.computer', body.computers.length) })}`
 	render()
 	again(loadHosted, 5 * 60000)

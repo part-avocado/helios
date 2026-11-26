@@ -172,6 +172,7 @@ func (j *journal) read(f io.Reader, path string) error {
 		e := timeline.Event{Time: ev.Time, Kind: timeline.Agent}
 		if !ev.Human {
 			e.In, e.Out = max(0, ev.In), max(0, ev.Out)
+			e.Added, e.Removed = max(0, ev.Added), max(0, ev.Removed)
 			r.Events = append(r.Events, e)
 			return
 		}

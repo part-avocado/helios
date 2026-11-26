@@ -76,7 +76,11 @@
 		// and late time isn't credited.
 		"UPLOAD_BURST": "1000",
 		"RECENT_RECORDS_PER_DAY": "30000",
-		"OLD_RECORDS_PER_DAY": "1000000",
+		"OLD_RECORDS_PER_DAY": "100000",
+		// How many bytes of signed reports one account may send in a day
+		// (src/reports.ts); each is kept in R2. Empty is 16 of the largest
+		// report, 256 MB.
+		"REPORT_BYTES_PER_DAY": "",
 		// Local testing only: signs every visitor in as this Slack user ID. Set
 		// it in .dev.vars. It is ignored on any address but localhost.
 		"DEV_LOGIN": ""
@@ -113,7 +117,8 @@
 			"MIN_VERSION": "",
 			"UPLOAD_BURST": "1000",
 			"RECENT_RECORDS_PER_DAY": "30000",
-			"OLD_RECORDS_PER_DAY": "1000000",
+			"OLD_RECORDS_PER_DAY": "100000",
+			"REPORT_BYTES_PER_DAY": "",
 			"DEV_LOGIN": ""
 		},
 		"ratelimits": [{ "name": "LOGINS", "namespace_id": "1002", "simple": { "limit": 10, "period": 60 } }],
