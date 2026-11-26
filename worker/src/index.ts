@@ -14,6 +14,7 @@ import { ownProfile, ownProjects, updateProfile, updateProject, visibleOwner } f
 import { createUserKey, publicAPI, revokeUserKey, userKeys } from './public.ts'
 import { computerReportJSON, computers, dashboardJSON, deleteUser, keptReportJSON, MAX_REPORT_BYTES, removeComputer, reportsJSON, storeReport } from './reports.ts'
 import { fullLog, people, person, stats, summary } from './review.ts'
+import { authorizeConnector, mcp, metadata, register, token } from './mcp.ts'
 import { authorize } from './signin.ts'
 import { addReviewer, banMessage, bans, createKey, issueBan, keys, liftBan, need, removeReviewer, revokeKey, team } from './staff.ts'
 
@@ -122,6 +123,17 @@ async function route(request: Request, env: Env): Promise<Response> {
 	if (missing.length && !env.DEV_LOGIN) {
 		throw new Refusal(503, `This server is not set up yet. Add ${missing.join(', ')} under the Worker's Settings, Variables and Secrets, in the Cloudflare dashboard.`)
 	}
+
+	// The connector chat apps add (mcp.ts): its OAuth, and the MCP server.
+	if (request.method === 'GET' && path.startsWith('/.well-known/oauth-protected-resource')) return metadata(url, 'resource')
+	if (request.method === 'GET' && path.startsWith('/.well-known/oauth-authorization-server')) return metadata(url, 'server')
+	if (request.method === 'OPTIONS' && (path === '/oauth/register' || path === '/oauth/token')) {
+		return new Response(null, { status: 204, headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Allow-Methods': 'POST, OPTIONS' } })
+	}
+	if (call === 'POST /oauth/register') return register(request, env)
+	if (path === '/oauth/authorize' && (request.method === 'GET' || request.method === 'POST')) return authorizeConnector(request, env, url)
+	if (call === 'POST /oauth/token') return token(request, env)
+	if (path === '/mcp') return mcp(request, env, url)
 
 	// The CLI, which sends a sync key.
 	if (call === 'POST /api/v1/reports') {

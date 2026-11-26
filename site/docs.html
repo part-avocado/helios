@@ -72,6 +72,9 @@
 	<a href="#amp-cloud">Amp cloud threads</a>
 	<a href="#copilot-cursor">Copilot and Cursor</a>
 	<a href="#opencode">OpenCode</a>
+	<a href="#antigravity">Antigravity</a>
+	<a href="#cloud">Remote sessions</a>
+	<a href="#connectors">Connectors for Claude and other chat apps</a>
 	<a href="#own-harness">Add your own harness</a>
 	<a href="#lines">Lines of code</a>
 	<div class="group">Reference</div>
@@ -141,8 +144,10 @@
 		<li><strong>Add the Amp plugin.</strong> See <a href="#amp">Amp</a>.</li>
 		<li><strong>Add the OpenCode plugin.</strong> See <a href="#opencode">OpenCode</a>.</li>
 		<li><strong>Add Copilot and Cursor hooks.</strong> See <a href="#copilot-cursor">Copilot and Cursor</a>.</li>
+		<li><strong>Add Antigravity hooks.</strong> See <a href="#antigravity">Antigravity</a>.</li>
 	</ul>
-	<p>To set up one tool only, name it: <code>teardrop setup claude</code>, <code>codex</code>, <code>amp</code>, <code>opencode</code>, <code>copilot</code>, or <code>cursor</code>. You can name more than one. Setup offers the Amp plugin even on a computer where Amp isn't installed yet, so it is in place when Amp is.</p>
+	<p>For cloud sessions of a repository, such as Claude Code on the web or Codex cloud, run <code>teardrop setup -project</code> in it instead. See <a href="#cloud">Remote sessions</a>.</p>
+	<p>To set up one tool only, name it: <code>teardrop setup claude</code>, <code>codex</code>, <code>amp</code>, <code>opencode</code>, <code>antigravity</code>, <code>copilot</code>, or <code>cursor</code>. You can name more than one. Setup offers the Amp plugin even on a computer where Amp isn't installed yet, so it is in place when Amp is.</p>
 	<div class="callout note"><p class="callout-title"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"/></svg>Note</p><p>Setup never changes anything without a yes. It keeps your own hooks and settings, saves a backup the first time it edits a file, and is safe to run again. Pass <code>-yes</code> to accept everything without prompts.</p></div>
 
 	<h2 id="report">The report</h2>
@@ -250,6 +255,66 @@
 	<h2 id="opencode">OpenCode</h2>
 	<p><code>teardrop setup</code> (or <code>teardrop setup opencode</code>) writes a plugin to <code>~/.config/opencode/plugins/teardrop.ts</code>, or the <code>plugins</code> folder of <code>$OPENCODE_CONFIG_DIR</code> when that is set. OpenCode 1 and 2 both load it. It runs <code>teardrop hook opencode</code> when you send a prompt and when a turn ends, finished, failed, or stopped, recording the time and folder, never the prompt text. Prompts in a subagent's session come from the agent, so they aren't counted as yours. OpenCode keeps its history in a database teardrop doesn't read, so time before the plugin was added doesn't count.</p>
 
+	<h2 id="antigravity">Antigravity</h2>
+	<p><code>teardrop setup</code> (or <code>teardrop setup antigravity</code>) offers to add a <code>teardrop</code> group to Antigravity's global hooks file, <code>~/.gemini/config/hooks.json</code>. The App, the CLI, and the IDE all read it. Your other hook groups are kept.</p>
+	<p>The group runs <code>teardrop hook antigravity</code> on three events:</p>
+	<table>
+		<tr><th>Event</th><th>Recorded as</th></tr>
+		<tr><td><code>SessionStart</code></td><td>the session starting</td></tr>
+		<tr><td><code>PreInvocation</code>, on an execution's first model call</td><td>your prompt, scored for effort and repeats, then thrown away</td></tr>
+		<tr><td><code>Stop</code></td><td>the turn ending</td></tr>
+	</table>
+	<p>Antigravity runs <code>PreInvocation</code> before every model call. Only the first call of an execution follows a prompt of yours, so teardrop skips the rest. Antigravity's hooks report no tokens, so its turns show no token counts.</p>
+	<p>Each hook prints <code>{}</code>, which is what Antigravity needs from a hook that changes nothing. To check that it loaded them, open the agent side panel, then Customizations, then Hooks. In the CLI, run <code>/hooks</code>.</p>
+	<p><code>teardrop setup -remove-hooks antigravity</code> takes the group out again. For Antigravity on a remote machine, see <a href="#cloud">Remote sessions</a>.</p>
+
+	<h2 id="cloud">Remote sessions</h2>
+	<p>Some agents work on a machine that goes away: Claude Code on the web, Codex cloud tasks, a Codespace, or OpenCode or Antigravity on a remote VM. There teardrop runs in cloud mode, which <a href="#claude-code-in-the-cloud-codespaces-and-remote-machines">Claude Code in the cloud</a> describes. Each hook event goes straight to your site, and every cloud machine counts as one computer, called "cloud". Cloud mode is on when <code>TEARDROP_SERVER</code> and <code>TEARDROP_KEY</code> are set with <code>TEARDROP_CLOUD=1</code>, <code>CLAUDE_CODE_REMOTE=true</code> (Claude Code on the web sets it), or <code>CODESPACES=true</code>.</p>
+	<p>A cloud machine starts from your repository and has no teardrop of its own. So commit hooks that install it:</p>
+	<pre><code>teardrop setup -project            # Claude Code, Codex, Antigravity, and OpenCode
+teardrop setup codex -project      # or only the tools you name</code></pre>
+	<table>
+		<tr><th>File</th><th>For</th></tr>
+		<tr><td><code>.claude/settings.json</code></td><td>Claude Code on the web</td></tr>
+		<tr><td><code>.codex/hooks.json</code></td><td>Codex cloud</td></tr>
+		<tr><td><code>.agents/hooks.json</code></td><td>Antigravity on a remote machine</td></tr>
+		<tr><td><code>.opencode/plugins/teardrop-project.ts</code></td><td>OpenCode on a server</td></tr>
+	</table>
+	<p>Your own settings in those files are kept. Each hook does nothing unless <code>TEARDROP_KEY</code> is set, so nothing changes for a teammate who doesn't use teardrop. At a session's start it installs teardrop if it is missing, using the installer, which checks the release's checksums. The Codex, Antigravity, and OpenCode hooks record only in cloud mode: on your own computers, the hooks <code>teardrop setup</code> adds there record the session. Claude Code's stand down where your own settings already run teardrop's hook.</p>
+	<h3>Set up an environment</h3>
+	<ol>
+		<li>Run <code>teardrop setup -project</code> in the repository, then commit and push.</li>
+		<li>Under Settings, Setup, on your site, make a sync key named after the environment.</li>
+		<li>In the environment's settings, set <code>TEARDROP_SERVER</code> to your site and <code>TEARDROP_KEY</code> to that key. Outside Claude Code on the web and Codespaces, also set <code>TEARDROP_CLOUD=1</code>.</li>
+		<li>Let the environment reach <code>github.com</code>, <code>raw.githubusercontent.com</code>, and <code>objects.githubusercontent.com</code>, to install teardrop, and your site. For Claude Code on the web, use Limited network access and add your site under Allowed domains.</li>
+	</ol>
+	<div class="callout warning"><p class="callout-title"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"/></svg>Warning</p><p>Anyone who can use the environment can read its variables. A sync key can only upload stats, and you can revoke it under Settings at any time.</p></div>
+	<table>
+		<tr><th>Where</th><th>What to know</th></tr>
+		<tr><td>Claude Code on the web</td><td>Runs a repository's hooks in a session with one repository.</td></tr>
+		<tr><td>Codex cloud</td><td>Codex runs a repository's hooks once they are trusted. Check your dashboard after the first task, since a cloud task may not run them.</td></tr>
+		<tr><td>OpenCode on a server</td><td>The plugin runs in the <code>opencode serve</code> process. Set the variables where it starts.</td></tr>
+		<tr><td>Antigravity, remote</td><td>The workspace's <code>.agents/hooks.json</code> runs on the machine the agent works on.</td></tr>
+		<tr><td>Amp's cloud</td><td>Has its own plugin: see <a href="#amp-cloud">Amp cloud threads</a>.</td></tr>
+	</table>
+	<p>A remote machine you keep can instead run the installer and <code>teardrop login</code>, like any computer. <code>teardrop setup -project -remove-hooks</code> takes the hooks out again.</p>
+
+	<h2 id="connectors">Connectors</h2>
+	<p>Chat apps have no hooks, but they can add a connector: a remote MCP server. Your site is one, at <code>/mcp</code>. Add it to Claude on the web (claude.ai), the Claude desktop and mobile apps, ChatGPT, or any app that takes a remote MCP server with OAuth, and its chats add to your hours.</p>
+	<h3>Add it</h3>
+	<p>In Claude, open Settings, then Connectors, choose Add custom connector, and give it your site's address followed by <code>/mcp</code>, such as <code>https://teardrop.example/mcp</code>. Other apps ask for the same address. The app sends you to your site, which shows what it will do. Choose Allow.</p>
+	<p>Your site makes the app a sync key named after it, such as "Claude connector". To disconnect the app, revoke that key under Settings, Setup.</p>
+	<h3>What it records</h3>
+	<p>The connector gives the model two tools:</p>
+	<table>
+		<tr><th>Tool</th><th>What it does</th></tr>
+		<tr><td><code>teardrop_log</code></td><td>The model calls it with <code>start</code> when it begins a reply and <code>end</code> when it finishes. Each call is one record, a prompt or a turn end, as a harness's hooks send.</td></tr>
+		<tr><td><code>teardrop_stats</code></td><td>Reads your hours, per day and per project, to answer questions such as "how much did I work this week?"</td></tr>
+	</table>
+	<p>The site stamps each record with the time it arrives, so a chat's time is witnessed like any other, and it is credited by the same rules as any other tool's. A record carries the conversation as a digest of the name the model gives it, the word count of your message, and the repository if you name one. It never carries your message or the reply.</p>
+	<p>A chat counts under the app's own name, such as <code>claude-ai</code> or <code>chatgpt</code>, so reviewers can tell chat time from time in coding tools. Chats name no project unless the model passes a repository, such as <code>github.com/owner/name</code>, so they show as the app's chats.</p>
+	<div class="callout note"><p class="callout-title"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"/></svg>Note</p><p>The model decides when to call the tools, so a chat in which it doesn't adds nothing. If yours skips them, ask it to log the conversation with teardrop.</p></div>
+
 	<h2 id="own-harness">Add your own harness</h2>
 	<p>Any tool can report to teardrop. Run <code>teardrop hook &lt;tool&gt;</code>, where the tool name is lowercase letters, digits, and dashes, with one JSON object on stdin:</p>
 	<pre><code>{"session_id": "abc123", "cwd": "/home/me/project", "hook_event_name": "prompt", "prompt": "add a login page"}</code></pre>
@@ -273,8 +338,8 @@
 		<tr><th>Command</th><th>What it does</th></tr>
 		<tr><td><code>teardrop</code></td><td>Print your timeline and project totals.</td></tr>
 		<tr><td><code>teardrop setup</code></td><td>Check tools, keep history, install hooks and the Amp and OpenCode plugins.</td></tr>
-		<tr><td><code>teardrop setup amp</code></td><td>The same for the tools you name: <code>claude</code>, <code>codex</code>, <code>amp</code>, <code>opencode</code>, <code>copilot</code>, or <code>cursor</code>.</td></tr>
-		<tr><td><code>teardrop setup claude -project</code></td><td>Put hooks in this repository's <code>.claude/settings.json</code>, to commit, for <a href="#or-commit-the-hooks-to-the-repository">cloud sessions</a>.</td></tr>
+		<tr><td><code>teardrop setup amp</code></td><td>The same for the tools you name: <code>claude</code>, <code>codex</code>, <code>amp</code>, <code>opencode</code>, <code>antigravity</code>, <code>copilot</code>, or <code>cursor</code>.</td></tr>
+		<tr><td><code>teardrop setup -project</code></td><td>Put hooks in this repository, to commit, for <a href="#cloud">cloud sessions</a>: Claude Code's <code>.claude/settings.json</code>, Codex's <code>.codex/hooks.json</code>, Antigravity's <code>.agents/hooks.json</code>, and an OpenCode plugin. Name tools, as in <code>teardrop setup claude -project</code>, for only theirs.</td></tr>
 		<tr><td><code>teardrop status</code></td><td>Show the account this computer syncs to, whether each tool's hooks are installed, what is waiting to send, and when it last synced.</td></tr>
 		<tr><td><code>teardrop doctor</code></td><td>Check everything that decides whether your time counts (this binary, the site and key, the clock, each tool's hooks, records waiting to send, the last background error, and updates) and say how to fix each problem. Exits 1 when something needs fixing. It never prints your key.</td></tr>
 		<tr><td><code>teardrop update</code></td><td>Download the latest teardrop, check it against the release's checksums, replace this one with it, and run setup again. <code>-check</code> only says whether a newer version is out; <code>teardrop update v0.5.0</code> installs that version, even if it is older. <code>-auto on</code> or <code>-auto off</code> turns installing new releases by itself on or off.</td></tr>

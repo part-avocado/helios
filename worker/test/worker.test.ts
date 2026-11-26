@@ -2049,3 +2049,79 @@ test('deleting an account removes its commits, sign-in codes, and logins', async
 		assert.equal((await env.DB.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE user_id = ?`).bind(id).first<{ n: number }>())!.n, 0, table)
 	}
 })
+
+test('a chat app connects with OAuth and adds a chat\'s time, witnessed as it arrives', async () => {
+	const back = 'https://claude.ai/api/mcp/auth_callback'
+	// The connector finds where to sign in from the 401 and the two documents it points to.
+	const first = await call('/mcp', { method: 'POST', body: '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' })
+	assert.equal(first.status, 401)
+	assert.match(first.headers.get('WWW-Authenticate')!, /resource_metadata="http:\/\/teardrop\.example\/\.well-known\/oauth-protected-resource"/)
+	const resource = (await (await call('/.well-known/oauth-protected-resource')).json()) as { authorization_servers: string[] }
+	assert.deepEqual(resource.authorization_servers, [SITE])
+	const meta = (await (await call('/.well-known/oauth-authorization-server')).json()) as { registration_endpoint: string; code_challenge_methods_supported: string[] }
+	assert.deepEqual([meta.registration_endpoint, meta.code_challenge_methods_supported], [`${SITE}/oauth/register`, ['S256']])
+
+	// It registers, and its client_id carries what it registered, signed.
+	const reg = await call('/oauth/register', { method: 'POST', body: JSON.stringify({ client_name: 'Claude', redirect_uris: [back] }) })
+	assert.equal(reg.status, 201)
+	const { client_id } = (await reg.json()) as { client_id: string }
+	assert.equal((await call('/oauth/register', { method: 'POST', body: JSON.stringify({ client_name: 'x', redirect_uris: ['http://evil.example/cb'] }) })).status, 400, 'not https')
+	const forged = client_id.replace(/\.[^.]+$/, '.AAAA')
+
+	const verifier = 'v'.repeat(50)
+	const challenge = createHash('sha256').update(verifier).digest('base64url')
+	const q = (id = client_id, redirect = back) => new URLSearchParams({ client_id: id, redirect_uri: redirect, state: 'st', code_challenge: challenge, code_challenge_method: 'S256', response_type: 'code' }).toString()
+	const cookie = await signIn('chatter')
+	// Signed out, the person signs in first and comes back; a forged client or another redirect is refused.
+	assert.match(new URL((await call(`/oauth/authorize?${q()}`)).headers.get('Location')!, SITE).searchParams.get('next')!, /^\/oauth\/authorize\?/)
+	assert.equal((await call(`/oauth/authorize?${q(forged)}`, { cookie })).status, 400)
+	assert.equal((await call(`/oauth/authorize?${q(client_id, 'https://claude.ai/other')}`, { cookie })).status, 400)
+	const askPage = await call(`/oauth/authorize?${q()}`, { cookie })
+	assert.equal(askPage.status, 200)
+	assert.match(await askPage.text(), /add time to your teardrop hours[\s\S]*claude-ai/)
+	// Allow, from this site only.
+	assert.equal((await call('/oauth/authorize', { method: 'POST', cookie, origin: 'https://evil.example', body: q() + '&decision=allow' })).status, 403)
+	const allowed = await call('/oauth/authorize', { method: 'POST', cookie, origin: SITE, body: q() + '&decision=allow' })
+	const to = new URL(allowed.headers.get('Location')!)
+	assert.deepEqual([to.origin + to.pathname, to.searchParams.get('state')], [back, 'st'])
+	const code = to.searchParams.get('code')!
+
+	const trade = (more: Record<string, string> = {}) =>
+		call('/oauth/token', { method: 'POST', body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: back, client_id, code_verifier: verifier, ...more }).toString() })
+	assert.equal((await trade({ code_verifier: 'w'.repeat(50) })).status, 400, 'wrong verifier')
+	const traded = await trade()
+	assert.equal(traded.status, 200)
+	const { access_token: key, token_type } = (await traded.json()) as { access_token: string; token_type: string }
+	assert.deepEqual([key.startsWith('tdk_'), token_type], [true, 'Bearer'])
+
+	const rpc = async (method: string, params: object = {}, session = '') => {
+		const headers: Record<string, string> = { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }
+		if (session) headers['Mcp-Session-Id'] = session
+		const res = await server.fetch(SITE + '/mcp', { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) })
+		assert.equal(res.status, 200, await res.clone().text())
+		return { res, body: (await res.json()) as { result: any; error?: { message: string } } }
+	}
+	const init = await rpc('initialize', { protocolVersion: '2025-06-18' })
+	assert.equal(init.body.result.protocolVersion, '2025-06-18')
+	assert.match(init.body.result.instructions, /teardrop_log/)
+	const session = init.res.headers.get('Mcp-Session-Id')!
+	assert.ok(session)
+	assert.deepEqual((await rpc('tools/list', {}, session)).body.result.tools.map((t: { name: string }) => t.name), ['teardrop_log', 'teardrop_stats'])
+
+	// A reply's start and end are records of the app, timed by the site's own clock, so they are witnessed.
+	const log = (phase: string, more = {}) => rpc('tools/call', { name: 'teardrop_log', arguments: { phase, conversation: 'refactor-auth', ...more } }, session)
+	assert.match((await log('start', { prompt_words: 12, project: 'https://github.com/kid/site.git' })).body.result.content[0].text, /Logged the start/)
+	assert.match((await log('end', { project: 'https://github.com/kid/site.git' })).body.result.content[0].text, /Logged the end/)
+	assert.equal((await log('middle')).body.result.isError, true)
+	// The site credits the gap the way it does for any harness, and the app's chats read as their own project.
+	const stats = (await rpc('tools/call', { name: 'teardrop_stats', arguments: { days: 1 } }, session)).body.result.structuredContent as { engaged_hours: number; days: { prompts: number }[]; projects: { name: string }[] }
+	assert.equal(stats.days.reduce((n, d) => n + d.prompts, 0), 1)
+	assert.equal(typeof stats.engaged_hours, 'number')
+
+	// The key is the app's own sync key, listed under Settings; a code traded twice revokes it.
+	const listed = (await (await call('/api/sync-keys', { cookie })).json()) as { keys: { name: string }[] }
+	assert.deepEqual(listed.keys.map((k) => k.name), ['Claude connector'])
+	assert.equal((await trade()).status, 400)
+	assert.equal((await call('/mcp', { method: 'POST', key, body: '{"jsonrpc":"2.0","id":1,"method":"ping"}' })).status, 401, 'the key was revoked')
+})
+

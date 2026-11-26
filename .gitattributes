@@ -1,0 +1,2 @@
+# Shell scripts run on Linux and macOS, so they keep Unix line ends on every checkout.
+*.sh text eol=lf

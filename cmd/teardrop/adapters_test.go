@@ -39,6 +39,9 @@ func TestHookRecord(t *testing.T) {
 		// What teardrop's OpenCode plugin sent from a real OpenCode 2.4.1 turn.
 		{name: "OpenCode prompt", tool: "opencode", event: "prompt", payload: `{"session_id":"ses_df60","cwd":"/w","prompt":"add a login page with tests"}`, kind: "prompt", session: "ses_df60", cwd: "/w", human: true},
 		{name: "OpenCode turn end", tool: "opencode", event: "turn_end", payload: `{"session_id":"ses_df60","cwd":"/w","prompt":""}`, kind: "turn_end", session: "ses_df60", cwd: "/w"},
+		// Antigravity names neither the event nor a cwd: the command passes -event, and the folder is the first workspace.
+		{name: "Antigravity prompt", tool: "antigravity", event: "PreInvocation", payload: `{"conversationId":"7f0c","workspacePaths":["/w","/other"],"lastUserInput":"add a login page with tests","invocationNum":0,"modelName":"gemini"}`, kind: "prompt", session: "7f0c", cwd: "/w", human: true},
+		{name: "Antigravity stop", tool: "antigravity", event: "Stop", payload: `{"conversationId":"7f0c","workspacePaths":["/w"],"executionNum":1,"terminationReason":"done","fullyIdle":true}`, kind: "turn_end", session: "7f0c", cwd: "/w"},
 		{name: "any other harness", tool: "my-agent", event: "turn_end", payload: `{"session_id":"x","tokens_in":900,"tokens_out":40}`, kind: "turn_end", session: "x", in: 900},
 	} {
 		var in hookInput

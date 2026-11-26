@@ -86,6 +86,10 @@ type hookInput struct {
 	Thread       string   `json:"thread-id"`       // Codex notify
 	Cwd          string   `json:"cwd"`
 	Roots        []string `json:"workspace_roots"` // Cursor
+	AgyID        string   `json:"conversationId"`  // Antigravity
+	Workspaces   []string `json:"workspacePaths"`  // Antigravity
+	LastInput    string   `json:"lastUserInput"`   // Antigravity
+	Invocation   *int     `json:"invocationNum"`   // Antigravity's PreInvocation: which model call of the execution
 	Event        string   `json:"hook_event_name"`
 	Event2       string   `json:"hookEventName"`
 	Type         string   `json:"type"` // Codex notify
@@ -113,11 +117,22 @@ func hookRecord(tool, event string, in hookInput, now time.Time) (ev sources.Jou
 	if harnessFor(tool) == nil && kind == "" || event == "" {
 		return ev, "", false
 	}
+	// Antigravity runs PreInvocation before every model call; only the first
+	// of an execution follows a person's prompt.
+	if tool == "antigravity" && kind == "prompt" && in.Invocation != nil && *in.Invocation > 0 {
+		return ev, "", false
+	}
+	if in.Prompt == "" && kind == "prompt" {
+		in.Prompt = in.LastInput
+	}
 	cwd := in.Cwd
 	if cwd == "" && len(in.Roots) > 0 {
 		cwd = in.Roots[0]
 	}
-	session := first(in.SessionID, in.SessionID2, in.Conversation, in.Thread)
+	if cwd == "" && len(in.Workspaces) > 0 {
+		cwd = in.Workspaces[0]
+	}
+	session := first(in.SessionID, in.SessionID2, in.Conversation, in.AgyID, in.Thread)
 	if session == "" && cwd != "" {
 		// Copilot CLI's payload names no session, so its folder stands in for
 		// one: hashed, since the session's name goes to the site.
@@ -213,8 +228,15 @@ func runHook(args []string) {
 		}
 		return
 	}
-	// A repository's hook, where the person's own settings run teardrop too: theirs records the event.
-	if project && !check && userHooked() {
+	// A harness that needs an answer on every run gets it, whatever happens next.
+	if h := harnessFor(tool); h != nil && h.Ack != "" && !check {
+		fmt.Println(h.Ack)
+	}
+	// A repository's hook, where the person's own settings run teardrop too:
+	// theirs records the event. For Claude Code that is told from its settings
+	// (userHooked). Another tool's repository hooks record only on a cloud
+	// machine, since on a person's computers that tool's own hooks do.
+	if project && !check && (tool == "claude-code" && userHooked() || tool != "claude-code" && !cloudEnv()) {
 		return
 	}
 	var b []byte

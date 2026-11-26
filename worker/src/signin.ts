@@ -11,7 +11,7 @@ import { createUserKey } from './public.ts'
 const CODE_LIFETIME = 5 * 60_000
 
 /** A request to sign in, as the site sent it. */
-interface Ask {
+export interface Ask {
 	redirect: URL
 	redirect_uri: string
 	state: string
@@ -24,7 +24,7 @@ interface Ask {
  * sees, for anything that can't be sent back, so nothing goes to an address
  * that isn't the site's own.
  */
-function readAsk(params: URLSearchParams): Ask {
+export function readAsk(params: URLSearchParams): Ask {
 	const redirect_uri = params.get('redirect_uri') ?? ''
 	let redirect: URL
 	try {
@@ -48,7 +48,7 @@ function readAsk(params: URLSearchParams): Ask {
 }
 
 /** back is where the person goes back to the site, with what it asked to get back. */
-function back(ask: Ask, add: Record<string, string>): string {
+export function back(ask: Ask, add: Record<string, string>): string {
 	const to = new URL(ask.redirect)
 	for (const [k, v] of Object.entries(add)) to.searchParams.set(k, v)
 	if (ask.state) to.searchParams.set('state', ask.state)

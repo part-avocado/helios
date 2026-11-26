@@ -28,7 +28,7 @@ func runUninstall(args []string) {
 	}
 	fs.Parse(args)
 	exe, exeErr := teardropPath()
-	fmt.Println("This removes teardrop's hooks from Claude Code, Codex, Cursor, and Copilot,")
+	fmt.Println("This removes teardrop's hooks from Claude Code, Codex, Antigravity, Cursor, and Copilot,")
 	fmt.Println("its Amp and OpenCode plugins, and the PATH line the installer added.")
 	if exeErr == nil {
 		fmt.Printf("Then it deletes %s.\n", exe)
@@ -51,6 +51,7 @@ func runUninstall(args []string) {
 	checkFileHooks(func(string) bool { return true }, true, true)
 	changePlugin(true, true)
 	checkOpenCodePlugin(true, true)
+	checkAntigravity(true, true)
 
 	if exeErr == nil {
 		dir := filepath.Dir(exe)
