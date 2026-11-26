@@ -47,24 +47,34 @@ Everything you need to install helios, read your stats, and sync them to your si
 
 ## Editing these pages
 
-Each file here is one section of the docs page on the site, and this file
-lists them in the order and groups its contents show. After changing any of
-them, run `npm run docs` in `worker` (it needs only Node.js, no `npm install`)
-and commit `site/docs.html` with your change: that page is built from these
-files, and the tests fail when it is out of date. To add a page, add a file
-and a line for it above.
+Each file here is one section of the docs page on the site. This file lists
+them in the order, and under the groups, that the page's contents show.
 
-The script that builds the page, `worker/scripts/docs.ts`, reads this much
-Markdown, and stops with the file and line of anything else:
+After changing any page:
+
+1. Run `npm run docs` in `worker`. It needs only Node.js, no `npm install`.
+2. Commit `site/docs.html` with your change. That page is built from these
+   files, and the tests fail when it is out of date.
+
+To add a page, add a file and a line for it above.
+
+### Markdown you can use
+
+The script that builds the page, `worker/scripts/docs.ts`, reads only the
+Markdown below. At anything else it stops and names the file and line.
 
 - A page starts with its title, a `#` heading. `##` and `###` headings go under it.
 - Paragraphs, `-` and `1.` lists (not one inside another), tables, and code between lines of three backticks.
 - `code`, `**bold**`, `*emphasis*`, and `[links](install.md)`. Write `\` before a `*`, `[`, `<`, or backtick that is only itself, and `\|` for a `|` in a table.
 - `> [!NOTE]`, `> [!IMPORTANT]`, and `> [!WARNING]` boxes.
 
-Link to another page here by its file, as `[Install](install.md)`, and to a
-heading by its name, as `[flags](sync.md#server)`. A heading has a name only
-if the line before it gives it one, as `<a id="stats-api"></a>` does; a
-page's title is otherwise named after its file. Other pages and other sites
-link to these names, so keep the ones there are. Link to a page of the site
-by its file in `site`, as `[Settings](../site/settings.html)`.
+### Links
+
+- To another page here, link to its file: `[Install](install.md)`.
+- To a heading, link to its name: `[flags](sync.md#server)`.
+- To a page of the site, link to its file in `site`: `[Settings](../site/settings.html)`.
+
+A heading has a name only if the line before it gives it one, as
+`<a id="stats-api"></a>` does. A page's title is otherwise named after its
+file. Other pages and other sites link to these names, so keep the ones
+there are.

@@ -98,18 +98,27 @@
 	<p class="muted">Everything you need to install helios, read your stats, and sync them to your site.</p>
 
 	<h2 id="quick-start">Quick start</h2>
-	<p>Install helios. On macOS, Linux, or Git Bash on Windows:</p>
+	<h3>1. Install helios</h3>
+	<p>On macOS, Linux, or Git Bash on Windows:</p>
 	<pre><code>curl -fsSL https://raw.githubusercontent.com/part-avocado/helios/main/install.sh | sh</code></pre>
 	<p>On Windows, in PowerShell:</p>
 	<pre><code>irm https://raw.githubusercontent.com/part-avocado/helios/main/install.ps1 | iex</code></pre>
-	<p>The installer then runs <code>helios setup</code>, which lists the tools it found and asks before each change: to keep Claude Code transcripts past 30 days, and to add helios's hooks or plugin to Claude Code, Codex, Amp, OpenCode, Copilot, and Cursor. Saying yes to each is the recommended setup; see <a href="#setup">helios setup</a>. Then use your tools as you normally do.</p>
-	<h3>Just this computer</h3>
+	<h3>2. Answer the setup questions</h3>
+	<p>The installer finishes by running <code>helios setup</code>. It lists the tools it found and asks before each change:</p>
+	<ul>
+		<li>Keep Claude Code transcripts past 30 days.</li>
+		<li>Add helios's hooks or plugin to Claude Code, Codex, Amp, OpenCode, Copilot, and Cursor.</li>
+	</ul>
+	<p>Saying yes to each is the recommended setup. <a href="#setup">helios setup</a> explains every question.</p>
+	<p>Then use your tools as you normally do.</p>
+	<h3>3. See your time</h3>
+	<h4>Just this computer</h4>
 	<p>Run <code>helios</code> for your timeline and project totals, or <code>helios dashboard</code> for charts in your browser. You need no account, and nothing leaves your computer.</p>
-	<h3>On the website</h3>
+	<h4>On the website</h4>
 	<p>To see every computer's hours in one place:</p>
 	<ol>
 		<li>Open the <a href="dashboard.html">dashboard</a> and sign in with Hack Club. Your first sign-in creates your account.</li>
-		<li>Run the command the dashboard shows, then type the code your terminal prints on the site.</li>
+		<li>Run the command the dashboard shows. Your terminal prints a code; type it on the site.</li>
 		<li>Do the same on each computer you code on. Each one syncs by itself from then on.</li>
 	</ol>
 
@@ -118,40 +127,72 @@
 	<pre><code>curl -fsSL https://raw.githubusercontent.com/part-avocado/helios/main/install.sh | sh</code></pre>
 	<h3>Windows (PowerShell)</h3>
 	<pre><code>irm https://raw.githubusercontent.com/part-avocado/helios/main/install.ps1 | iex</code></pre>
-	<p>The installer downloads the right binary, checks it against the release's <code>checksums.txt</code> (it needs <code>sha256sum</code>, <code>shasum</code>, or <code>openssl</code> for that, and installs nothing without one), and installs it without admin rights to <code>~/.local/bin</code>, or <code>%LOCALAPPDATA%\Programs\helios</code> on Windows. It adds that folder to your PATH, then runs <code>helios setup</code>. The first command writes the PATH change to your shell's profile, so open a new terminal before you run <code>helios</code> yourself. The PowerShell one also adds the folder to the window you installed from, so <code>helios</code> works there straight away; restart any other terminal that was already open.</p>
+	<h3>What the installer does</h3>
+	<ol>
+		<li>Downloads the right binary for your computer.</li>
+		<li>Checks it against the release's <code>checksums.txt</code>. This needs <code>sha256sum</code>, <code>shasum</code>, or <code>openssl</code>. Without one of them, it installs nothing.</li>
+		<li>Installs it to <code>~/.local/bin</code>, or <code>%LOCALAPPDATA%\Programs\helios</code> on Windows. No admin rights are needed.</li>
+		<li>Adds that folder to your PATH.</li>
+		<li>Runs <code>helios setup</code>.</li>
+	</ol>
+	<p>When <code>helios</code> starts working depends on which command you ran:</p>
+	<ul>
+		<li><strong>The first command</strong> writes the PATH change to your shell's profile. Open a new terminal before you run <code>helios</code> yourself.</li>
+		<li><strong>The PowerShell command</strong> also adds the folder to the window you installed from, so <code>helios</code> works there straight away. Restart any other terminal that was already open.</li>
+	</ul>
 	<h3>Updating</h3>
-	<p>To update later, run <code>helios update</code>, or run the install command again. <code>helios update -check</code> only says whether a newer version is out, and <code>helios update v0.5.0</code> installs one version in particular, even an older one. <code>helios update</code> and the installer both run <code>helios setup</code> again with the new version, to bring hooks and plugins up to date.</p>
-	<p>Once a day, a background sync checks for a newer release, and <code>helios</code> prints one line when there is one. helios updates itself only if you run <code>helios update -auto on</code>: then that daily check installs each new release once it matches the release's checksums and runs as that version, keeps the one it replaced beside it with <code>.old</code> on the end, and says so for three days. Run <code>helios setup</code> after an update like this to bring hooks and plugins up to date. The checksums come from the same release as the binary, so auto-update trusts GitHub and helios's release workflow as much as the installer does. <code>helios update -auto off</code> stops it.</p>
+	<table>
+		<tr><th>Command</th><th>What it does</th></tr>
+		<tr><td><code>helios update</code></td><td>Installs the latest version. Running the install command again does the same.</td></tr>
+		<tr><td><code>helios update -check</code></td><td>Only says whether a newer version is out.</td></tr>
+		<tr><td><code>helios update v0.5.0</code></td><td>Installs one version in particular, even an older one.</td></tr>
+	</table>
+	<p><code>helios update</code> and the installer both run <code>helios setup</code> again with the new version, to bring hooks and plugins up to date.</p>
+	<h4>Automatic updates</h4>
+	<p>Once a day, a background sync checks for a newer release. When there is one, <code>helios</code> prints one line to say so. It installs nothing by itself.</p>
+	<p>To have helios update itself, run <code>helios update -auto on</code>. From then on, the daily check:</p>
+	<ul>
+		<li>installs each new release once it matches the release's checksums and runs as that version;</li>
+		<li>keeps the version it replaced beside it, with <code>.old</code> on the end;</li>
+		<li>says that it updated, for three days.</li>
+	</ul>
+	<p>After an update like this, run <code>helios setup</code> to bring hooks and plugins up to date. To stop automatic updates, run <code>helios update -auto off</code>.</p>
+	<p>The checksums come from the same release as the binary. So auto-update trusts GitHub and helios's release workflow as much as the installer does.</p>
 	<h3>Installer options</h3>
 	<p>These optional environment variables change what the installer does:</p>
 	<table>
 		<tr><th>Variable</th><th>Effect</th></tr>
 		<tr><td><code>HELIOS_VERSION</code></td><td>Install a specific release, such as <code>v0.1.0</code>.</td></tr>
 		<tr><td><code>HELIOS_INSTALL_DIR</code></td><td>Install to another folder.</td></tr>
-		<tr><td><code>HELIOS_NO_MODIFY_PATH</code></td><td>Don't edit your shell profile or PATH; print the line to add instead.</td></tr>
+		<tr><td><code>HELIOS_NO_MODIFY_PATH</code></td><td>Don't edit your shell profile or PATH. Print the line to add instead.</td></tr>
 		<tr><td><code>HELIOS_NO_SETUP</code></td><td>Don't run <code>helios setup</code> afterwards.</td></tr>
-		<tr><td><code>HELIOS_CLOUD</code></td><td>Set to <code>1</code> in a cloud environment, Codespace, or dev container: sets up Claude Code and every other tool found, without asking. Also set <code>HELIOS_SERVER</code> and <code>HELIOS_KEY</code> there; see <a href="#claude-code-in-the-cloud-codespaces-and-remote-machines">Claude Code in the cloud</a>.</td></tr>
-		<tr><td><code>HELIOS_BASE_URL</code></td><td>Download the binary and <code>checksums.txt</code> from this URL instead of the GitHub release, such as a mirror.</td></tr>
+		<tr><td><code>HELIOS_CLOUD</code></td><td>Set to <code>1</code> in a cloud environment, Codespace, or dev container. It sets up Claude Code and every other tool found, without asking. Also set <code>HELIOS_SERVER</code> and <code>HELIOS_KEY</code> there; see <a href="#claude-code-in-the-cloud-codespaces-and-remote-machines">Claude Code in the cloud</a>.</td></tr>
+		<tr><td><code>HELIOS_BASE_URL</code></td><td>Download the binary and <code>checksums.txt</code> from this URL, such as a mirror, instead of the GitHub release.</td></tr>
 	</table>
+	<h3>Install with Go</h3>
 	<p>With Go 1.25 or later you can also run <code>go install github.com/part-avocado/helios/cmd/helios@latest</code>.</p>
 
 	<h2 id="setup">helios setup</h2>
-	<p><code>helios setup</code> shows every place helios looks for logs, how many sessions it found, and when the newest one is from. Then it offers to:</p>
+	<p><code>helios setup</code> first shows every place helios looks for logs, how many sessions it found, and when the newest one is from.</p>
+	<p>Then it offers each of these changes, one at a time:</p>
 	<ul>
 		<li><strong>Keep Claude Code history.</strong> Claude Code deletes transcripts after 30 days by default. Setup offers to raise <code>cleanupPeriodDays</code> to 3650.</li>
-		<li><strong>Add Claude Code hooks</strong> for real-time capture. See <a href="#claude-code">Claude Code</a>.</li>
+		<li><strong>Add Claude Code hooks</strong>, which record your work as it happens. See <a href="#claude-code">Claude Code</a>.</li>
 		<li><strong>Add Codex hooks.</strong> See <a href="#codex">Codex</a>.</li>
 		<li><strong>Add the Amp plugin.</strong> See <a href="#amp">Amp</a>.</li>
 		<li><strong>Add the OpenCode plugin.</strong> See <a href="#opencode">OpenCode</a>.</li>
 		<li><strong>Add Copilot and Cursor hooks.</strong> See <a href="#copilot-cursor">Copilot and Cursor</a>.</li>
 		<li><strong>Add Antigravity hooks.</strong> See <a href="#antigravity">Antigravity</a>.</li>
 	</ul>
-	<p>For cloud sessions of a repository, such as Claude Code on the web or Codex cloud, run <code>helios setup -project</code> in it instead. See <a href="#cloud">Remote sessions</a>.</p>
-	<p>To set up one tool only, name it: <code>helios setup claude</code>, <code>codex</code>, <code>amp</code>, <code>opencode</code>, <code>antigravity</code>, <code>copilot</code>, or <code>cursor</code>. You can name more than one. Setup offers the Amp plugin even on a computer where Amp isn't installed yet, so it is in place when Amp is.</p>
 	<div class="callout note"><p class="callout-title"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"/></svg>Note</p><p>Setup never changes anything without a yes. It keeps your own hooks and settings, saves a backup the first time it edits a file, and is safe to run again. Pass <code>-yes</code> to accept everything without prompts.</p></div>
+	<h3>Set up one tool only</h3>
+	<p>Name the tool: <code>helios setup claude</code>, <code>codex</code>, <code>amp</code>, <code>opencode</code>, <code>antigravity</code>, <code>copilot</code>, or <code>cursor</code>. You can name more than one.</p>
+	<p>Setup offers the Amp plugin even on a computer where Amp isn't installed yet, so the plugin is in place when Amp is.</p>
+	<h3>Set up cloud sessions</h3>
+	<p>Cloud sessions of a repository, such as Claude Code on the web or Codex cloud, need hooks in the repository itself. Run <code>helios setup -project</code> in the repository instead. See <a href="#cloud">Remote sessions</a>.</p>
 
 	<h2 id="report">The report</h2>
-	<p>Run <code>helios</code> to see the last 7 days, or <code>helios -since 30d</code> for longer. The first table lists work blocks; the second totals each project. Add <code>-l</code> (or <code>--live</code>) to keep it on screen and update it as you work; press Ctrl-C to quit.</p>
+	<p>Run <code>helios</code> to see the last 7 days, or <code>helios -since 30d</code> for longer. It prints two tables: the first lists your work blocks, and the second totals each project.</p>
 	<table>
 		<tr><th>Column</th><th>Meaning</th></tr>
 		<tr><td>ENGAGED</td><td>Time you were plausibly involved. This is the number that matters.</td></tr>
@@ -161,102 +202,246 @@
 		<tr><td>TOKENS IN/OUT</td><td>Tokens the model read (cached ones included) and wrote.</td></tr>
 		<tr><td>TOOLS</td><td>Which AI tools you used in that block.</td></tr>
 	</table>
-	<p>A project is identified by its git remote, then its repository folder, then its working folder, so the same repo adds up across tools and clones. A folder in your home folder is written from it, as <code>~/code/app</code> (and your home folder itself as <code>home</code>), so the key your site sees doesn't name your account on the computer. Projects that were keyed by their full folder before helios did this show up twice on your site: the old key holds the time from before, the new one the time since, and no time counts twice. Add <code>-json</code> to get the report as data.</p>
+	<p>Two flags change how the report comes out:</p>
+	<ul>
+		<li><code>-l</code> (or <code>--live</code>) keeps it on screen and updates it as you work. Press Ctrl-C to quit.</li>
+		<li><code>-json</code> prints the report as data.</li>
+	</ul>
+	<h3>How a project is named</h3>
+	<p>helios names a project by the first of these that it has:</p>
+	<ol>
+		<li>its git remote;</li>
+		<li>its repository folder;</li>
+		<li>its working folder.</li>
+	</ol>
+	<p>So the same repository adds up across tools and clones.</p>
+	<p>A folder inside your home folder is written starting from it, as <code>~/code/app</code>, and your home folder itself is written as <code>home</code>. That way the project key your site sees doesn't name your account on the computer.</p>
+	<p>Older versions of helios used the full folder path as the key. Projects recorded that way show up twice on your site: the old key holds the time from before the change, and the new key holds the time since. No time counts twice.</p>
 
 	<h2 id="dashboard">The dashboard</h2>
-	<p>The dashboard shows an activity heatmap, daily totals, projects, tools, and recent work blocks. There are two ways to open it.</p>
-	<p>The graphs are interactive. Hover a day, bar, or tool for the details. Click a day on the heatmap, or a bar, to list that day's work blocks (a week, on the yearly chart). Click a project in the table to see only that project; every number and chart follows it. Click again, or the chip at the top, to clear it.</p>
+	<p>The dashboard shows an activity heatmap, daily totals, projects, tools, and recent work blocks. You can open it <a href="#account">on the website</a>, with an account, or <a href="#local">on your computer</a>, without one.</p>
+	<h3>Reading the graphs</h3>
+	<p>The graphs are interactive:</p>
+	<ul>
+		<li><strong>Hover</strong> a day, bar, or tool for the details.</li>
+		<li><strong>Click a day</strong> on the heatmap, or a bar, to list that day's work blocks. On the yearly chart, a bar lists a week.</li>
+		<li><strong>Click a project</strong> in the table to see only that project. Every number and chart follows it. Click it again, or the chip at the top, to clear it.</li>
+	</ul>
 	<h3 id="account">On the website, with an account</h3>
-	<p>The <a href="dashboard.html">dashboard on the website</a> adds up the hours from every computer you code on. Only you and your server's reviewers can see the dashboard; your <a href="#profile">public profile</a> shows a summary to anyone.</p>
+	<p>The <a href="dashboard.html">dashboard on the website</a> adds up the hours from every computer you code on. Only you and your server's reviewers can see it. Your <a href="#profile">public profile</a> shows a summary to anyone.</p>
 	<ol>
 		<li>Open the <a href="dashboard.html">dashboard</a> and sign in with Hack Club. Your first sign-in creates your account.</li>
-		<li>Run the command the dashboard shows, then type the code your terminal prints on the site. That connects this computer to your account; do the same on each computer you code on.</li>
-		<li>Keep working. The page fills in as soon as the first sync arrives, and helios syncs again each time a reply finishes in Claude Code or Amp, or you stop one. Run <code>helios sync</code> to update it right away.</li>
+		<li>Run the command the dashboard shows. Your terminal prints a code; type it on the site. That connects this computer to your account. Do the same on each computer you code on.</li>
+		<li>Keep working. The page fills in as soon as the first sync arrives. helios syncs again each time a reply finishes in Claude Code or Amp, or you stop one. Run <code>helios sync</code> to update it right away.</li>
 	</ol>
-	<p>The <a href="projects.html">Projects</a> page lists every project you've worked on; open one to see that project on its own. A project's page also has its settings: <strong>Public</strong>, whether your <a href="#profile">public profile</a> names it, and the GitHub repositories linked to it, which you can add or remove.</p>
+	<h4>Projects</h4>
+	<p>The <a href="projects.html">Projects</a> page lists every project you've worked on. Open one to see that project on its own. A project's page also has its settings:</p>
+	<ul>
+		<li><strong>Public</strong>: whether your <a href="#profile">public profile</a> names it.</li>
+		<li>The GitHub repositories linked to it, which you can add or remove.</li>
+	</ul>
+	<h4>Settings</h4>
 	<p><a href="settings.html">Settings</a> has the rest:</p>
 	<table>
 		<tr><th>Pane</th><th>What it's for</th></tr>
-		<tr><td>Setup</td><td>What to run to connect another computer, and your sync keys. A sync key only uploads stats: each computer gets its own, and cloud sessions (Claude Code in the cloud, Amp threads) get one named "Cloud sessions". Revoke one and only it stops working.</td></tr>
+		<tr><td>Setup</td><td>What to run to connect another computer, and your sync keys. A sync key only uploads stats. Each computer gets its own, and cloud sessions (Claude Code in the cloud, Amp threads) get one named "Cloud sessions". Revoke one and only it stops working.</td></tr>
 		<tr><td>Computers</td><td>Each computer that syncs to you and when it last did. Remove one to drop its hours.</td></tr>
-		<tr><td>Data</td><td>Upload a stats file from a computer that can't reach the website (make it with <code>helios export -o stats.json</code>, and upload it within 7 days), or download a copy of everything the site holds about you.</td></tr>
-		<tr><td>Account</td><td>Your name, Slack ID, and member-since date from Hack Club Auth, sign out, and deleting your account. Deleting removes every computer and all of your stats from the site.</td></tr>
+		<tr><td>Data</td><td>Upload a stats file from a computer that can't reach the website, or download a copy of everything the site holds about you. Make the stats file with <code>helios export -o stats.json</code>, and upload it within 7 days.</td></tr>
+		<tr><td>Account</td><td>Your name, Slack ID, and member-since date from Hack Club Auth, signing out, and deleting your account. Deleting removes every computer and all of your stats from the site.</td></tr>
 	</table>
-	<p>You can sign out from the sidebar, or on a narrow window from the menu at the top right. A computer syncs to one account. To move it to another, remove it under Computers first.</p>
-	<h3>On your computer, without an account</h3>
+	<p>You can sign out from the sidebar, or on a narrow window from the menu at the top right.</p>
+	<p>A computer syncs to one account. To move it to another, remove it under Computers first.</p>
+	<h3 id="local">On your computer, without an account</h3>
 	<p>Run <code>helios dashboard</code> to open the same charts with live data from this computer, refreshed every 30 seconds. It runs on <code>localhost</code> only and refuses requests from other sites, so your stats never leave your computer.</p>
 	<h3 id="profile">Your public profile</h3>
-	<p>Every account has a public profile at <code>/@handle</code>, which anyone can open without signing in. It shows your handle, the month you joined, your hours in the past year, a year of days, and your projects. It never shows your name, your Slack ID, or a folder on your computer. A project that is a repository on a public host, such as <code>github.com/you/site</code>, is public by default, named and linked to its repositories; any other project is only counted, as one of your other projects, until you make it public. Turn <strong>Public</strong> on or off on each project's page. Under Settings, Profile, you can change your handle or make the whole profile private. Settings, Profile also has a badge of your hours to paste into a README, linked to your profile. A private profile, like a banned or deleted account, answers "no such profile", so its address doesn't say that the account exists.</p>
+	<p>Every account has a public profile at <code>/@handle</code>, which anyone can open without signing in.</p>
+	<p>It shows your handle, the month you joined, your hours in the past year, a year of days, and your projects. It never shows your name, your Slack ID, or a folder on your computer.</p>
+	<h4>Which projects it names</h4>
+	<ul>
+		<li>A project that is a repository on a public host, such as <code>github.com/you/site</code>, is public by default. The profile names it and links to its repositories.</li>
+		<li>Any other project is only counted, as one of your other projects, until you make it public.</li>
+	</ul>
+	<p>Turn <strong>Public</strong> on or off on each project's page.</p>
+	<h4>Your handle</h4>
 	<p>Each account starts with a neutral handle, such as <code>u-3f9a0c12b4d1</code>, never one made from your name. When you change it, the old address stops working.</p>
+	<h4>Profile settings</h4>
+	<p>Under Settings, Profile, you can:</p>
+	<ul>
+		<li>change your handle;</li>
+		<li>make the whole profile private;</li>
+		<li>copy a badge of your hours to paste into a README, linked to your profile.</li>
+	</ul>
+	<p>A private profile answers "no such profile", as a banned or deleted account does. So its address doesn't say that the account exists.</p>
 	<h3 id="verification-keys">Verification keys</h3>
-	<p>Every sync and export carries a verification key: an Ed25519 signature, made by your account, over the report's numbers, the time it was made, and the time it expires. Change one minute of engaged time, the account, or a date, and the key no longer matches. The website refuses a report that:</p>
+	<p>Every sync and export carries a verification key. It is an Ed25519 signature, made by your account, over the report's numbers, the time it was made, and the time it expires. Change one minute of engaged time, the account, or a date, and the key no longer matches.</p>
+	<p>The website refuses a report that:</p>
 	<ul>
 		<li>has no key, or a key that doesn't match its contents;</li>
 		<li>is more than 7 days old, so an old or reused file can't stand in for current numbers;</li>
 		<li>claims to be made in the future, or contains activity after the time it was made.</li>
 	</ul>
-	<p>Each computer's key is created the first time it syncs or exports and kept in helios's data folder as <code>account.key</code>. Settings lists your computers by the ID of that key, such as <code>td-4283292a8f76</code>.</p>
+	<p>Each computer's key is created the first time it syncs or exports. It is kept in helios's data folder as <code>account.key</code>. Settings lists your computers by the ID of that key, such as <code>td-4283292a8f76</code>.</p>
 	<div class="callout warning"><p class="callout-title"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"/></svg>Warning</p><p>Verification proves a file wasn't edited after <code>helios export</code> made it. Because the account key lives on your computer, a file alone can't prove the numbers are real. For hours that count, <a href="#server">sync</a>.</p></div>
 
 	<h2 id="tokens">Tokens</h2>
-	<p>Token counts come from the usage records Claude Code and Codex save with each response. A Claude Code response that's written several times, or copied into a resumed session, counts once. Codex counts are taken from the increase in its running totals. Amp counts come from the usage Amp hands the helios plugin when a turn ends, so they start with helios v0.6.0: Amp turns recorded before that show no tokens.</p>
+	<p>Where token counts come from depends on the tool:</p>
+	<table>
+		<tr><th>Tool</th><th>Where its counts come from</th></tr>
+		<tr><td>Claude Code</td><td>The usage record it saves with each response. A response that's written several times, or copied into a resumed session, counts once.</td></tr>
+		<tr><td>Codex</td><td>The usage record it saves with each response. Counts are taken from the increase in its running totals.</td></tr>
+		<tr><td>Amp</td><td>The usage Amp hands the helios plugin when a turn ends. This starts with helios v0.6.0, so Amp turns recorded before that show no tokens.</td></tr>
+	</table>
 
 	<h2 id="claude-code">Claude Code</h2>
-	<p>helios reads transcripts from <code>$CLAUDE_CONFIG_DIR</code> (which may list several folders), <code>~/.claude</code>, and <code>~/.config/claude</code>. It tells your prompts apart from tool results, compaction summaries, background notices, and subagent activity. Subagent transcripts are ignored: their time, tokens, and edits do not count.</p>
-	<p>With hooks installed, Claude Code runs <code>helios hook claude-code</code> when a session starts or ends, when you send a prompt, and when Claude finishes. Each run appends one line to a local journal: the time, session, folder, and the prompt's word counts and fingerprint, never its text. If Claude Code deletes a transcript, the journal still has that session.</p>
+	<p>helios counts Claude Code in two ways: it reads the transcripts Claude Code saves, and, with hooks installed, it records each event as it happens.</p>
+	<h3>Transcripts</h3>
+	<p>helios reads transcripts from <code>$CLAUDE_CONFIG_DIR</code> (which may list several folders), <code>~/.claude</code>, and <code>~/.config/claude</code>.</p>
+	<p>It tells your prompts apart from tool results, compaction summaries, background notices, and subagent activity. Subagent transcripts are ignored: their time, tokens, and edits do not count.</p>
+	<h3>Hooks</h3>
+	<p>With hooks installed, Claude Code runs <code>helios hook claude-code</code> when a session starts or ends, when you send a prompt, and when Claude finishes.</p>
+	<p>Each run adds one line to a local journal. The line holds the time, session, folder, and the prompt's word counts and fingerprint, never its text. If Claude Code deletes a transcript, the journal still has that session.</p>
 	<h3 id="claude-code-in-the-cloud-codespaces-and-remote-machines">Claude Code in the cloud, Codespaces, and remote machines</h3>
 	<p>Which setup fits depends on whether the machine lasts.</p>
 	<h4>A machine you keep, such as an SSH box</h4>
-	<p>Install helios there and connect it like any computer. With no browser on it, run <code>helios login -server https://your-site -no-open</code>, which prints a code to type on the site from any other device. Or make a sync key under Settings on the site and run <code>helios sync -server https://your-site -key tdk_…</code>. The box keeps its own journal, is listed as a computer of its own, and syncs in the background.</p>
-	<p>Setting <code>HELIOS_SERVER</code> and <code>HELIOS_KEY</code> in the box's environment works too, with no login: hooks then send each event as it happens and sync in the background, just as after a login.</p>
+	<p>Install helios there and connect it like any computer. With no browser on it, you have three ways to connect:</p>
+	<ul>
+		<li><strong>A code.</strong> Run <code>helios login -server https://your-site -no-open</code>. It prints a code to type on the site from any other device.</li>
+		<li><strong>A sync key.</strong> Make one under Settings on the site and run <code>helios sync -server https://your-site -key tdk_…</code>.</li>
+		<li><strong>Environment variables.</strong> Set <code>HELIOS_SERVER</code> and <code>HELIOS_KEY</code> in the box's environment. This needs no login. Hooks then send each event as it happens and sync in the background, just as after a login.</li>
+	</ul>
+	<p>The box keeps its own journal, is listed as a computer of its own, and syncs in the background.</p>
 	<h4>A machine that goes away: cloud sessions, Codespaces, dev containers</h4>
-	<p>Transcripts and the journal in a cloud container disappear with it, so there helios sends each hook event straight to your site instead of keeping a journal. This is cloud mode. It is on when <code>HELIOS_SERVER</code> and <code>HELIOS_KEY</code> are both set and one of <code>CLAUDE_CODE_REMOTE</code>, <code>CODESPACES</code>, or <code>HELIOS_CLOUD</code> is <code>1</code> or <code>true</code>. Claude Code on the web sets the first and GitHub Codespaces the second by themselves.</p>
+	<p>Transcripts and the journal in a cloud container disappear with it. So there helios sends each hook event straight to your site instead of keeping a journal. This is called cloud mode.</p>
+	<p>Cloud mode is on when both of these are true:</p>
+	<ul>
+		<li><code>HELIOS_SERVER</code> and <code>HELIOS_KEY</code> are both set.</li>
+		<li>One of <code>CLAUDE_CODE_REMOTE</code>, <code>CODESPACES</code>, or <code>HELIOS_CLOUD</code> is <code>1</code> or <code>true</code>. Claude Code on the web sets the first by itself, and GitHub Codespaces sets the second.</li>
+	</ul>
+	<p>To set it up:</p>
 	<ol>
 		<li>On the site, make a key under Settings.</li>
-		<li>Add two secrets to the environment: <code>HELIOS_SERVER</code> (your site) and <code>HELIOS_KEY</code> (the key). For Codespaces, add them as Codespaces secrets of your account or the repository. Also set <code>HELIOS_CLOUD=1</code> unless the environment sets <code>CLAUDE_CODE_REMOTE</code> or <code>CODESPACES</code> itself.</li>
-		<li>Add this to the environment's setup script, or for a Codespace or dev container, to <code>postCreateCommand</code> in <code>devcontainer.json</code>:</li>
+		<li>Add two secrets to the environment: <code>HELIOS_SERVER</code> (your site) and <code>HELIOS_KEY</code> (the key). For Codespaces, add them as Codespaces secrets of your account or the repository. Also set <code>HELIOS_CLOUD=1</code>, unless the environment sets <code>CLAUDE_CODE_REMOTE</code> or <code>CODESPACES</code> itself.</li>
+		<li>Add this to the environment's setup script. For a Codespace or dev container, add it to <code>postCreateCommand</code> in <code>devcontainer.json</code>:</li>
 	</ol>
 	<pre><code>curl -fsSL https://raw.githubusercontent.com/part-avocado/helios/main/install.sh | HELIOS_CLOUD=1 sh</code></pre>
-	<p>It installs helios, creates <code>~/.claude</code> if no Claude Code folder exists, and adds the hooks of every tool it finds without asking. <code>helios doctor</code> says whether cloud mode is on, and which secret is missing when it is not.</p>
+	<p>That line installs helios, creates <code>~/.claude</code> if no Claude Code folder exists, and adds the hooks of every tool it finds, without asking.</p>
+	<p>To check, run <code>helios doctor</code>. It says whether cloud mode is on, and which secret is missing when it is not.</p>
 	<h4 id="or-commit-the-hooks-to-the-repository">Or commit the hooks to the repository</h4>
 	<p>If you can't edit the environment's setup script, run this once in the repository, on your own computer, and commit the file it writes:</p>
 	<pre><code>helios setup claude -project</code></pre>
-	<p>It adds hooks to the repository's <code>.claude/settings.json</code>, keeping whatever is there. In a session where <code>HELIOS_KEY</code> is set, the session's start installs helios if it is missing, and each prompt and reply runs <code>helios hook claude-code -project</code>, found on <code>PATH</code> or in <code>~/.local/bin</code>. Where <code>HELIOS_KEY</code> is not set, they do nothing: nothing is installed or recorded for teammates who don't use helios. They also do nothing where your own Claude Code settings already have helios's hooks, as on your own computer or a machine the setup script set up, so each event is recorded once. You still add the two secrets to the environment. If the repository's hooks don't end in <code>-project</code>, an older helios added them: run <code>helios setup claude -project</code> again and commit the change, since those don't check for your own hooks. <code>helios setup claude -project -remove-hooks</code> takes them out again.</p>
+	<p>It adds hooks to the repository's <code>.claude/settings.json</code>, keeping whatever is there. You still add the two secrets to the environment.</p>
+	<p>What the committed hooks do depends on where they run:</p>
+	<ul>
+		<li><strong>Where <code>HELIOS_KEY</code> is set</strong>, the session's start installs helios if it is missing. Each prompt and reply then runs <code>helios hook claude-code -project</code>, found on <code>PATH</code> or in <code>~/.local/bin</code>.</li>
+		<li><strong>Where <code>HELIOS_KEY</code> is not set</strong>, they do nothing. Nothing is installed or recorded for teammates who don't use helios.</li>
+		<li><strong>Where your own Claude Code settings already have helios's hooks</strong>, they also do nothing, so each event is recorded once. That is the case on your own computer, or on a machine the setup script set up.</li>
+	</ul>
+	<p>If the repository's hooks don't end in <code>-project</code>, an older helios added them, and those don't check for your own hooks. Run <code>helios setup claude -project</code> again and commit the change.</p>
+	<p>To take the hooks out again, run <code>helios setup claude -project -remove-hooks</code>.</p>
 	<h4>What cloud mode sends</h4>
-	<p>Each event goes to your site as it happens, with what a journal line holds: the time, tool, session, and a prompt's word counts and fingerprint, never its text. Because the site can't look the folder up later, the event also carries the repository, named from its <code>origin</code> remote without any sign-in the remote holds, and the folder's path inside the container, such as <code>/home/user/repo</code>. A reply's end carries the tokens and lines of that turn, read from the transcript, and your commits in the repository since the last one. No sync runs there, and no account key is made.</p>
-	<p>Cloud sessions all count as one computer, called "cloud", however many containers ran them, so a new container never adds a computer to your list. That computer has no clock correction and no time zone of its own: its records are used at the times the container gave them, and its days are counted at the UTC offset your own computers pinned for your account. Subagent activity is not counted there either.</p>
+	<p>Each event goes to your site as it happens. It holds what a journal line holds: the time, tool, session, and a prompt's word counts and fingerprint, never its text.</p>
+	<p>The site can't look the folder up later, so the event also carries:</p>
+	<ul>
+		<li>the repository, named from its <code>origin</code> remote, without any sign-in the remote holds;</li>
+		<li>the folder's path inside the container, such as <code>/home/user/repo</code>.</li>
+	</ul>
+	<p>A reply's end also carries the tokens and lines of that turn, read from the transcript, and your commits in the repository since the last one.</p>
+	<p>No sync runs there, and no account key is made.</p>
+	<h4>How cloud sessions are counted</h4>
+	<ul>
+		<li><strong>One computer.</strong> Cloud sessions all count as one computer, called "cloud", however many containers ran them. So a new container never adds a computer to your list.</li>
+		<li><strong>No clock correction.</strong> That computer's records are used at the times the container gave them.</li>
+		<li><strong>No time zone of its own.</strong> Its days are counted at the UTC offset your own computers pinned for your account.</li>
+		<li><strong>No subagents.</strong> Subagent activity is not counted there either.</li>
+	</ul>
 
 	<h2 id="codex">Codex</h2>
-	<p>helios reads rollouts from <code>$CODEX_HOME</code> or <code>~/.codex</code>, in both <code>sessions</code> and <code>archived_sessions</code>, including compressed <code>.jsonl.zst</code> files. It handles both the older and the current (0.147 and later) log formats. Subagent and reviewer sessions never count as your prompts.</p>
-	<p><code>helios setup</code> also adds hooks to <code>~/.codex/hooks.json</code>, so each prompt and turn end reaches your site as it happens, and a <code>notify</code> line to <code>~/.codex/config.toml</code>, which syncs when a turn ends. Codex skips new hooks until you trust them: open Codex, run <code>/hooks</code>, and trust helios's. The <code>notify</code> line needs no trust step, so Codex syncs on its own either way. If your <code>config.toml</code> already has a <code>notify</code> program, helios leaves it alone.</p>
+	<h3>Logs</h3>
+	<p>helios reads Codex's session logs, called rollouts, from <code>$CODEX_HOME</code> or <code>~/.codex</code>. It looks in both <code>sessions</code> and <code>archived_sessions</code>, and reads compressed <code>.jsonl.zst</code> files too. It handles both the older and the current (0.147 and later) log formats.</p>
+	<p>Subagent and reviewer sessions never count as your prompts.</p>
+	<h3>Hooks and notify</h3>
+	<p><code>helios setup</code> also adds two things to Codex:</p>
+	<ul>
+		<li><strong>Hooks</strong>, in <code>~/.codex/hooks.json</code>. With them, each prompt and turn end reaches your site as it happens.</li>
+		<li><strong>A <code>notify</code> line</strong>, in <code>~/.codex/config.toml</code>. It syncs when a turn ends. If your <code>config.toml</code> already has a <code>notify</code> program, helios leaves it alone.</li>
+	</ul>
+	<div class="callout important"><p class="callout-title"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"/></svg>Important</p><p>Codex skips new hooks until you trust them. Open Codex, run <code>/hooks</code>, and trust helios's.</p></div>
+	<p>The <code>notify</code> line needs no trust step, so Codex syncs on its own either way.</p>
 	<h3>Remote machines and the cloud</h3>
-	<p>On an SSH box, Codespace, or cloud container, set helios up as for <a href="#claude-code-in-the-cloud-codespaces-and-remote-machines">Claude Code</a>. Two things differ for Codex. Its hooks still need the trust step, which a setup script can't do: run <code>/hooks</code> once in each new container, or they are skipped. And until then only <code>notify</code> runs, which reports turn ends and no prompts, so in cloud mode, where there is no sync to read the rollouts later, a container whose hooks were never trusted earns no time.</p>
+	<p>On an SSH box, Codespace, or cloud container, set helios up as for <a href="#claude-code-in-the-cloud-codespaces-and-remote-machines">Claude Code</a>. Two things differ for Codex:</p>
+	<ul>
+		<li><strong>The hooks still need the trust step</strong>, which a setup script can't do. Run <code>/hooks</code> once in each new container, or they are skipped.</li>
+		<li><strong>Until then, only <code>notify</code> runs</strong>, and it reports turn ends, not prompts. In cloud mode there is no sync to read the rollouts later. So a container whose hooks were never trusted earns no time.</li>
+	</ul>
 
 	<h2 id="amp">Amp</h2>
-	<p>Amp keeps threads on its servers, so <code>helios setup</code> (or <code>helios setup amp</code> for Amp alone) offers to write a plugin to <code>~/.config/amp/plugins/helios.ts</code>. It records when a thread starts, when you send a prompt, and when Amp finishes, in the same journal as the Claude Code hooks. New Amp threads load it automatically; in open ones, run <code>plugins: reload</code>.</p>
+	<p>Amp keeps threads on its servers, so helios can't read them from your computer. Instead, <code>helios setup</code> (or <code>helios setup amp</code> for Amp alone) offers to write a plugin to <code>~/.config/amp/plugins/helios.ts</code>.</p>
+	<p>The plugin records when a thread starts, when you send a prompt, and when Amp finishes. It writes to the same journal as the Claude Code hooks.</p>
+	<p>New Amp threads load the plugin automatically. In threads that are already open, run <code>plugins: reload</code>.</p>
 	<h3 id="amp-cloud">Threads in Amp's cloud</h3>
 	<p>Threads you start in the Amp app or on ampcode.com run in Amp's cloud, not on your computer, so that plugin can't see them. A second plugin, <a href="https://github.com/part-avocado/helios/blob/main/amp/helios-cloud.ts"><code>helios-cloud.ts</code></a>, counts them. It goes in your personal Amp plugins, which Amp loads in every cloud thread.</p>
+	<h4>Set it up</h4>
 	<ol>
 		<li>On your helios site, open Settings, Setup, and choose Amp under “Check your tools”.</li>
-		<li>Paste the prompt shown there into any Amp thread. Amp adds the plugin and two values to its Secrets &amp; Env Vars settings: <code>HELIOS_SERVER</code>, your site's address, and <code>HELIOS_KEY</code>, a sync key. Make it with <strong>Make a key for Amp</strong> under the prompt; it shows once, and is listed under your sync keys as "Cloud sessions". Amp asks you for the key in a private dialog, so it stays out of the thread.</li>
+		<li>Make a sync key with <strong>Make a key for Amp</strong>, under the prompt shown there. It shows once, and is listed under your sync keys as "Cloud sessions".</li>
+		<li>Paste the prompt into any Amp thread. Amp adds the plugin and two values to its Secrets &amp; Env Vars settings: <code>HELIOS_SERVER</code>, your site's address, and <code>HELIOS_KEY</code>, the sync key. Amp asks you for the key in a private dialog, so it stays out of the thread.</li>
 	</ol>
-	<p>In a cloud thread, the plugin downloads helios, checks it against the release's checksum, and runs it when you send a prompt and when Amp finishes. Each run sends your site one line: the time, thread, folder, repository, and the prompt's word counts and fingerprint, never its text. When Amp finishes, the line also holds the tokens the turn used and the lines its file edits added and removed, never the code. Your site keeps these lines for a year. At the end of each turn helios also sends your commits in the thread's repository, as <code>helios sync</code> does on a computer, so they show in the review app's graphs and can be checked against GitHub.</p>
-	<p>No computer of yours is needed. When Amp finishes a turn or you stop it, the helios in that thread reads all of your cloud lines back from your site, counts them with the same rules as everything else, and syncs the result. Threads that ran side by side are counted together, so their overlap counts once. Your cloud threads show up as one entry under Settings, Computers, named “Cloud sessions”.</p>
-	<div class="callout note"><p class="callout-title"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"/></svg>Note</p><p>Cloud time reaches your dashboard when Amp finishes a turn or you stop it. Its days are split at midnight UTC, because a cloud thread doesn't know your time zone. The Mac app's threads can also run on your Mac instead of the cloud: open the app's App Settings, Runner, turn it on, and pick “This Mac” when you start a thread. Those are recorded by the first plugin.</p></div>
+	<h4>What the plugin does</h4>
+	<p>In a cloud thread, the plugin downloads helios and checks it against the release's checksum. It then runs helios when you send a prompt and when Amp finishes. Each run sends your site one line:</p>
+	<ul>
+		<li><strong>Every line</strong> holds the time, thread, folder, repository, and the prompt's word counts and fingerprint, never its text.</li>
+		<li><strong>When Amp finishes</strong>, the line also holds the tokens the turn used and the lines its file edits added and removed, never the code.</li>
+	</ul>
+	<p>Your site keeps these lines for a year.</p>
+	<p>At the end of each turn helios also sends your commits in the thread's repository, as <code>helios sync</code> does on a computer. So they show in the review app's graphs and can be checked against GitHub.</p>
+	<h4>How cloud time is counted</h4>
+	<p>No computer of yours is needed. When Amp finishes a turn or you stop it, the helios in that thread:</p>
+	<ol>
+		<li>reads all of your cloud lines back from your site;</li>
+		<li>counts them with the same rules as everything else;</li>
+		<li>syncs the result.</li>
+	</ol>
+	<p>Threads that ran side by side are counted together, so their overlap counts once.</p>
+	<p>Your cloud threads show up as one entry under Settings, Computers, named “Cloud sessions”.</p>
+	<div class="callout note"><p class="callout-title"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"/></svg>Note</p><p>Cloud time reaches your dashboard when Amp finishes a turn or you stop it. Its days are split at midnight UTC, because a cloud thread doesn't know your time zone.</p></div>
+	<h4>Threads on your Mac</h4>
+	<p>The Mac app's threads can also run on your Mac instead of the cloud. Open the app's App Settings, Runner, turn it on, and pick “This Mac” when you start a thread. Those threads are recorded by the first plugin.</p>
 	<h3 id="agent-prompt">Set up with a prompt</h3>
-	<p>The dashboard's setup steps include a prompt to paste into Amp or Claude Code, with your server already filled in. The agent installs helios, runs <code>helios setup -yes</code> to add the hooks and the plugin without stopping to ask, runs <code>helios login</code> and shows you the code to type on the site, and shows you the result. <code>-yes</code> is the part an agent can't do on its own, since setup otherwise asks before changing any settings. The prompt holds no key, so nothing secret ends up in that thread.</p>
+	<p>The dashboard's setup steps include a prompt to paste into Amp or Claude Code, with your server already filled in. The agent then:</p>
+	<ol>
+		<li>installs helios;</li>
+		<li>runs <code>helios setup -yes</code>, to add the hooks and the plugin without stopping to ask;</li>
+		<li>runs <code>helios login</code> and shows you the code to type on the site;</li>
+		<li>shows you the result.</li>
+	</ol>
+	<p><code>-yes</code> is what lets an agent finish setup, since setup otherwise asks before changing any settings and an agent can't answer. The prompt holds no key, so nothing secret ends up in that thread.</p>
 
 	<h2 id="copilot-cursor">Copilot and Cursor</h2>
-	<p><code>helios setup</code> writes <code>~/.copilot/hooks/helios.json</code> for GitHub Copilot CLI and VS Code's Copilot agent, and adds helios's hooks to <code>~/.cursor/hooks.json</code> for Cursor, keeping any hooks of your own. Restart Cursor to load them. Neither keeps transcripts helios can read, so their time comes from the hooks alone, and only reaches your site when one is set up with <code>helios sync</code>.</p>
-	<p>Copilot CLI's hooks name no session, so helios names one after the folder it runs in: a hash of its path, never the path itself.</p>
+	<p><code>helios setup</code> adds hooks for both tools:</p>
+	<table>
+		<tr><th>Tool</th><th>What setup does</th></tr>
+		<tr><td>GitHub Copilot CLI and VS Code's Copilot agent</td><td>Writes <code>~/.copilot/hooks/helios.json</code>.</td></tr>
+		<tr><td>Cursor</td><td>Adds helios's hooks to <code>~/.cursor/hooks.json</code>, keeping any hooks of your own. Restart Cursor to load them.</td></tr>
+	</table>
+	<p>Neither tool keeps transcripts helios can read. So their time comes from the hooks alone, and only reaches your site once this computer is set up with <code>helios sync</code>.</p>
+	<p>Copilot CLI's hooks name no session. So helios names one after the folder it runs in: a hash of its path, never the path itself.</p>
 	<h3>Remote machines and the cloud</h3>
-	<p>On an SSH box, Codespace, or cloud container, set helios up as for <a href="#claude-code-in-the-cloud-codespaces-and-remote-machines">Claude Code</a>: with <code>HELIOS_CLOUD=1</code> the installer sets up Copilot and Cursor too, where their <code>~/.copilot</code> or <code>~/.cursor</code> folder exists. If Copilot has not made its folder yet, run <code>helios setup -yes copilot</code>, which makes it. Their hooks then send each event straight to your site.</p>
+	<p>On an SSH box, Codespace, or cloud container, set helios up as for <a href="#claude-code-in-the-cloud-codespaces-and-remote-machines">Claude Code</a>.</p>
+	<p>With <code>HELIOS_CLOUD=1</code> the installer sets up Copilot and Cursor too, where their <code>~/.copilot</code> or <code>~/.cursor</code> folder exists. If Copilot has not made its folder yet, run <code>helios setup -yes copilot</code>, which makes it.</p>
+	<p>Their hooks then send each event straight to your site.</p>
 
 	<h2 id="opencode">OpenCode</h2>
-	<p><code>helios setup</code> (or <code>helios setup opencode</code>) writes a plugin to <code>~/.config/opencode/plugins/helios.ts</code>, or the <code>plugins</code> folder of <code>$OPENCODE_CONFIG_DIR</code> when that is set. OpenCode 1 and 2 both load it. It runs <code>helios hook opencode</code> when you send a prompt and when a turn ends, finished, failed, or stopped, recording the time and folder, never the prompt text. Prompts in a subagent's session come from the agent, so they aren't counted as yours. OpenCode keeps its history in a database helios doesn't read, so time before the plugin was added doesn't count.</p>
+	<p><code>helios setup</code> (or <code>helios setup opencode</code>) writes a plugin to <code>~/.config/opencode/plugins/helios.ts</code>. When <code>$OPENCODE_CONFIG_DIR</code> is set, it goes in that folder's <code>plugins</code> folder instead. OpenCode 1 and 2 both load it.</p>
+	<p>The plugin runs <code>helios hook opencode</code> when you send a prompt and when a turn ends, whether it finished, failed, or was stopped. It records the time and folder, never the prompt text.</p>
+	<p>Two limits:</p>
+	<ul>
+		<li>Prompts in a subagent's session come from the agent, so they aren't counted as yours.</li>
+		<li>OpenCode keeps its history in a database helios doesn't read, so time before the plugin was added doesn't count.</li>
+	</ul>
 
 	<h2 id="antigravity">Antigravity</h2>
-	<p><code>helios setup</code> (or <code>helios setup antigravity</code>) offers to add a <code>helios</code> group to Antigravity's global hooks file, <code>~/.gemini/config/hooks.json</code>. The App, the CLI, and the IDE all read it. Your other hook groups are kept.</p>
+	<p><code>helios setup</code> (or <code>helios setup antigravity</code>) offers to add a <code>helios</code> group to Antigravity's global hooks file, <code>~/.gemini/config/hooks.json</code>. The App, the CLI, and the IDE all read that file. Your other hook groups are kept.</p>
+	<h3>What the hooks record</h3>
 	<p>The group runs <code>helios hook antigravity</code> on three events:</p>
 	<table>
 		<tr><th>Event</th><th>Recorded as</th></tr>
@@ -264,12 +449,28 @@
 		<tr><td><code>PreInvocation</code>, on an execution's first model call</td><td>your prompt, scored for effort and repeats, then thrown away</td></tr>
 		<tr><td><code>Stop</code></td><td>the turn ending</td></tr>
 	</table>
-	<p>Antigravity runs <code>PreInvocation</code> before every model call. Only the first call of an execution follows a prompt of yours, so helios skips the rest. Antigravity's hooks report no tokens, so its turns show no token counts.</p>
-	<p>Each hook prints <code>{}</code>, which is what Antigravity needs from a hook that changes nothing. To check that it loaded them, open the agent side panel, then Customizations, then Hooks. In the CLI, run <code>/hooks</code>.</p>
-	<p><code>helios setup -remove-hooks antigravity</code> takes the group out again. For Antigravity on a remote machine, see <a href="#cloud">Remote sessions</a>.</p>
+	<p>Two things to know:</p>
+	<ul>
+		<li>Antigravity runs <code>PreInvocation</code> before every model call. Only the first call of an execution follows a prompt of yours, so helios skips the rest.</li>
+		<li>Antigravity's hooks report no tokens, so its turns show no token counts.</li>
+	</ul>
+	<p>Each hook prints <code>{}</code>, which is what Antigravity needs from a hook that changes nothing.</p>
+	<h3>Check that the hooks loaded</h3>
+	<p>In the app, open the agent side panel, then Customizations, then Hooks. In the CLI, run <code>/hooks</code>.</p>
+	<h3>Remove the hooks</h3>
+	<p><code>helios setup -remove-hooks antigravity</code> takes the group out again.</p>
+	<p>For Antigravity on a remote machine, see <a href="#cloud">Remote sessions</a>.</p>
 
 	<h2 id="cloud">Remote sessions</h2>
-	<p>Some agents work on a machine that goes away: Claude Code on the web, Codex cloud tasks, a Codespace, or OpenCode or Antigravity on a remote VM. There helios runs in cloud mode, which <a href="#claude-code-in-the-cloud-codespaces-and-remote-machines">Claude Code in the cloud</a> describes. Each hook event goes straight to your site, and every cloud machine counts as one computer, called "cloud". Cloud mode is on when <code>HELIOS_SERVER</code> and <code>HELIOS_KEY</code> are set with <code>HELIOS_CLOUD=1</code>, <code>CLAUDE_CODE_REMOTE=true</code> (Claude Code on the web sets it), or <code>CODESPACES=true</code>.</p>
+	<p>Some agents work on a machine that goes away: Claude Code on the web, Codex cloud tasks, a Codespace, or OpenCode or Antigravity on a remote VM. There helios runs in cloud mode.</p>
+	<h3>Cloud mode in short</h3>
+	<ul>
+		<li>Each hook event goes straight to your site.</li>
+		<li>Every cloud machine counts as one computer, called "cloud".</li>
+		<li>It is on when <code>HELIOS_SERVER</code> and <code>HELIOS_KEY</code> are set, together with one of <code>HELIOS_CLOUD=1</code>, <code>CLAUDE_CODE_REMOTE=true</code> (Claude Code on the web sets it), or <code>CODESPACES=true</code>.</li>
+	</ul>
+	<p><a href="#claude-code-in-the-cloud-codespaces-and-remote-machines">Claude Code in the cloud</a> describes it in full.</p>
+	<h3>Commit hooks that install helios</h3>
 	<p>A cloud machine starts from your repository and has no helios of its own. So commit hooks that install it:</p>
 	<pre><code>helios setup -project            # Claude Code, Codex, Antigravity, and OpenCode
 helios setup codex -project      # or only the tools you name</code></pre>
@@ -280,15 +481,22 @@ helios setup codex -project      # or only the tools you name</code></pre>
 		<tr><td><code>.agents/hooks.json</code></td><td>Antigravity on a remote machine</td></tr>
 		<tr><td><code>.opencode/plugins/helios-project.ts</code></td><td>OpenCode on a server</td></tr>
 	</table>
-	<p>Your own settings in those files are kept. Each hook does nothing unless <code>HELIOS_KEY</code> is set, so nothing changes for a teammate who doesn't use helios. At a session's start it installs helios if it is missing, using the installer, which checks the release's checksums. The Codex, Antigravity, and OpenCode hooks record only in cloud mode: on your own computers, the hooks <code>helios setup</code> adds there record the session. Claude Code's stand down where your own settings already run helios's hook.</p>
+	<p>Your own settings in those files are kept.</p>
+	<p>How the committed hooks behave:</p>
+	<ul>
+		<li><strong>Without <code>HELIOS_KEY</code>, they do nothing.</strong> So nothing changes for a teammate who doesn't use helios.</li>
+		<li><strong>At a session's start, they install helios if it is missing.</strong> They use the installer, which checks the release's checksums.</li>
+		<li><strong>On your own computers, they don't record twice.</strong> The Codex, Antigravity, and OpenCode hooks record only in cloud mode; on your own computers, the hooks <code>helios setup</code> adds there record the session. Claude Code's stand down where your own settings already run helios's hook.</li>
+	</ul>
 	<h3>Set up an environment</h3>
 	<ol>
 		<li>Run <code>helios setup -project</code> in the repository, then commit and push.</li>
 		<li>Under Settings, Setup, on your site, make a sync key named after the environment.</li>
 		<li>In the environment's settings, set <code>HELIOS_SERVER</code> to your site and <code>HELIOS_KEY</code> to that key. Outside Claude Code on the web and Codespaces, also set <code>HELIOS_CLOUD=1</code>.</li>
-		<li>Let the environment reach <code>github.com</code>, <code>raw.githubusercontent.com</code>, and <code>objects.githubusercontent.com</code>, to install helios, and your site. For Claude Code on the web, use Limited network access and add your site under Allowed domains.</li>
+		<li>Let the environment reach your site, and <code>github.com</code>, <code>raw.githubusercontent.com</code>, and <code>objects.githubusercontent.com</code>, which it needs to install helios. For Claude Code on the web, use Limited network access and add your site under Allowed domains.</li>
 	</ol>
 	<div class="callout warning"><p class="callout-title"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"/></svg>Warning</p><p>Anyone who can use the environment can read its variables. A sync key can only upload stats, and you can revoke it under Settings at any time.</p></div>
+	<h3>Notes for each tool</h3>
 	<table>
 		<tr><th>Where</th><th>What to know</th></tr>
 		<tr><td>Claude Code on the web</td><td>Runs a repository's hooks in a session with one repository.</td></tr>
@@ -297,60 +505,103 @@ helios setup codex -project      # or only the tools you name</code></pre>
 		<tr><td>Antigravity, remote</td><td>The workspace's <code>.agents/hooks.json</code> runs on the machine the agent works on.</td></tr>
 		<tr><td>Amp's cloud</td><td>Has its own plugin: see <a href="#amp-cloud">Amp cloud threads</a>.</td></tr>
 	</table>
-	<p>A remote machine you keep can instead run the installer and <code>helios login</code>, like any computer. <code>helios setup -project -remove-hooks</code> takes the hooks out again.</p>
+	<h3>A remote machine you keep</h3>
+	<p>A remote machine you keep can instead run the installer and <code>helios login</code>, like any computer.</p>
+	<h3>Remove the hooks</h3>
+	<p><code>helios setup -project -remove-hooks</code> takes the hooks out again.</p>
 
 	<h2 id="connectors">Connectors</h2>
-	<p>Chat apps have no hooks, but they can add a connector: a remote MCP server. Your site is one, at <code>/mcp</code>. Add it to Claude on the web (claude.ai), the Claude desktop and mobile apps, ChatGPT, or any app that takes a remote MCP server with OAuth, and its chats add to your hours.</p>
+	<p>Chat apps have no hooks, but they can add a connector: a remote MCP server. Your site is one, at <code>/mcp</code>.</p>
+	<p>Add it to a chat app, and that app's chats add to your hours. It works with Claude on the web (claude.ai), the Claude desktop and mobile apps, ChatGPT, or any app that takes a remote MCP server with OAuth.</p>
 	<h3>Add it</h3>
-	<p>In Claude, open Settings, then Connectors, choose Add custom connector, and give it your site's address followed by <code>/mcp</code>, such as <code>https://helios.example/mcp</code>. Other apps ask for the same address. The app sends you to your site, which shows what it will do. Choose Allow.</p>
+	<ol>
+		<li>In Claude, open Settings, then Connectors, and choose Add custom connector. Other apps have a similar place.</li>
+		<li>Give it your site's address followed by <code>/mcp</code>, such as <code>https://helios.example/mcp</code>. Other apps ask for the same address.</li>
+		<li>The app sends you to your site, which shows what the connector will do. Choose Allow.</li>
+	</ol>
 	<p>Your site makes the app a sync key named after it, such as "Claude connector". To disconnect the app, revoke that key under Settings, Setup.</p>
 	<h3>What it records</h3>
 	<p>The connector gives the model two tools:</p>
 	<table>
 		<tr><th>Tool</th><th>What it does</th></tr>
-		<tr><td><code>helios_log</code></td><td>The model calls it with <code>start</code> when it begins a reply and <code>end</code> when it finishes. Each call is one record, a prompt or a turn end, as a harness's hooks send.</td></tr>
+		<tr><td><code>helios_log</code></td><td>The model calls it with <code>start</code> when it begins a reply and <code>end</code> when it finishes. Each call is one record, a prompt or a turn end, like the ones a harness's hooks send.</td></tr>
 		<tr><td><code>helios_stats</code></td><td>Reads your hours, per day and per project, to answer questions such as "how much did I work this week?"</td></tr>
 	</table>
-	<p>The site stamps each record with the time it arrives, so a chat's time is witnessed like any other, and it is credited by the same rules as any other tool's. A record carries the conversation as a digest of the name the model gives it, the word count of your message, and the repository if you name one. It never carries your message or the reply.</p>
-	<p>A chat counts under the app's own name, such as <code>claude-ai</code> or <code>chatgpt</code>, so reviewers can tell chat time from time in coding tools. Chats name no project unless the model passes a repository, such as <code>github.com/owner/name</code>, so they show as the app's chats.</p>
-	<div class="callout note"><p class="callout-title"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"/></svg>Note</p><p>The model decides when to call the tools, so a chat in which it doesn't adds nothing. If yours skips them, ask it to log the conversation with helios.</p></div>
+	<p>A record carries:</p>
+	<ul>
+		<li>the conversation, as a digest of the name the model gives it;</li>
+		<li>the word count of your message;</li>
+		<li>the repository, if you name one.</li>
+	</ul>
+	<p>It never carries your message or the reply.</p>
+	<h3>How chat time counts</h3>
+	<ul>
+		<li><strong>Time.</strong> The site stamps each record with the time it arrives, so a chat's time is witnessed like any other. It is credited by the same rules as any other tool's.</li>
+		<li><strong>Tool name.</strong> A chat counts under the app's own name, such as <code>claude-ai</code> or <code>chatgpt</code>, so reviewers can tell chat time from time in coding tools.</li>
+		<li><strong>Project.</strong> Chats name no project unless the model passes a repository, such as <code>github.com/owner/name</code>. Without one, they show as the app's chats.</li>
+	</ul>
+	<div class="callout note"><p class="callout-title"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"/></svg>Note</p><p>The model decides when to call the tools. A chat in which it doesn't call them adds nothing. If yours skips them, ask it to log the conversation with helios.</p></div>
 
 	<h2 id="own-harness">Add your own harness</h2>
-	<p>Any tool can report to helios. Run <code>helios hook &lt;tool&gt;</code>, where the tool name is lowercase letters, digits, and dashes, with one JSON object on stdin:</p>
+	<p>Any tool can report to helios. Run <code>helios hook &lt;tool&gt;</code> with one JSON object on stdin:</p>
 	<pre><code>{"session_id": "abc123", "cwd": "/home/me/project", "hook_event_name": "prompt", "prompt": "add a login page"}</code></pre>
+	<p>The tool name is yours to choose, from lowercase letters, digits, and dashes.</p>
 	<table>
 		<tr><th>Field</th><th>Meaning</th></tr>
 		<tr><td><code>session_id</code></td><td>Required. One conversation or thread.</td></tr>
-		<tr><td><code>hook_event_name</code></td><td>Required, or pass <code>-event</code>: <code>prompt</code>, <code>turn_end</code>, <code>session_start</code>, <code>session_end</code>, or <code>edit</code>.</td></tr>
+		<tr><td><code>hook_event_name</code></td><td>Required, unless you pass <code>-event</code> instead. One of <code>prompt</code>, <code>turn_end</code>, <code>session_start</code>, <code>session_end</code>, or <code>edit</code>.</td></tr>
 		<tr><td><code>cwd</code></td><td>The folder, which names the project by its git remote. Only the project key leaves the computer.</td></tr>
-		<tr><td><code>prompt</code></td><td>For <code>prompt</code>: scored for effort and repeats on the computer, then thrown away. Its text is never stored or sent.</td></tr>
+		<tr><td><code>prompt</code></td><td>For <code>prompt</code> events. It is scored for effort and repeats on the computer, then thrown away. Its text is never stored or sent.</td></tr>
 		<tr><td><code>tokens_in</code>, <code>tokens_out</code>, <code>lines_added</code>, <code>lines_removed</code></td><td>Optional, on <code>turn_end</code> or <code>edit</code>.</td></tr>
 	</table>
-	<p>helios always exits 0 and prints nothing on stdout for a tool of your own, so it never gets in the tool's way. A built-in harness gets the one reply it needs there, such as Cursor's <code>{"continue":true}</code>, and if an event can't be written, the reason goes to stderr. It writes the event to the local journal, and, once the computer is connected, sends it to your site as it happens. <code>helios hook -check &lt;tool&gt;</code> prints the record a payload would make and writes nothing, for testing an adapter.</p>
-	<p>For a tool with a hooks file in Claude Code's shape, point its prompt and stop hooks at <code>helios hook mytool</code>. For a tool with plugins, run the same command from the plugin, as helios's own Amp plugin does with <code>helios hook amp</code>.</p>
+	<h3>What helios does with an event</h3>
+	<p>helios writes the event to the local journal. Once the computer is connected, it also sends the event to your site as it happens.</p>
+	<p>It never gets in your tool's way:</p>
+	<ul>
+		<li>It always exits 0.</li>
+		<li>For a tool of your own, it prints nothing on stdout. A built-in harness gets the one reply it needs there, such as Cursor's <code>{"continue":true}</code>.</li>
+		<li>If an event can't be written, the reason goes to stderr.</li>
+	</ul>
+	<h3>Test an adapter</h3>
+	<p><code>helios hook -check &lt;tool&gt;</code> prints the record a payload would make and writes nothing.</p>
+	<h3>Connect your tool</h3>
+	<ul>
+		<li><strong>A tool with a hooks file in Claude Code's shape:</strong> point its prompt and stop hooks at <code>helios hook mytool</code>.</li>
+		<li><strong>A tool with plugins:</strong> run the same command from the plugin, as helios's own Amp plugin does with <code>helios hook amp</code>.</li>
+	</ul>
 
 	<h2 id="lines">Lines of code</h2>
-	<p>When a computer syncs, helios also sends your site one record per commit of yours in each project with a git remote: its SHA, author time, and lines added and removed, never its message or code. Commits earn no time. Your profile links a public repository's latest commits, and once an hour the site asks GitHub which of them exist, so a reviewer can tell a claimed commit GitHub doesn't have. For each commit GitHub has, the review app also shows the GitHub account it is linked to, and marks one whose claimed time differs from GitHub's author date: the SHA pins that date, so a difference means the time was changed after the commit was made. A private repository's commits are shown as not checked. The check needs a <code>GITHUB_TOKEN</code> secret on the Worker; without one, the review app says so.</p>
-	<p>For each project the report shows the lines agents changed (<strong>AGENT LINES</strong>), how many of the added lines later turned up in your commits (<strong>KEPT</strong>), and the lines your own commits added (<strong>COMMITTED</strong>). The code itself is not kept.</p>
+	<h3>What helios sends about commits</h3>
+	<p>When a computer syncs, helios also sends your site one record for each commit of yours, in each project with a git remote. A record holds the commit's SHA, author time, and lines added and removed, never its message or code.</p>
+	<p>Commits earn no time.</p>
+	<h3>Checking commits against GitHub</h3>
+	<p>Your profile links a public repository's latest commits. Once an hour the site asks GitHub which of them exist, so a reviewer can spot a claimed commit that GitHub doesn't have.</p>
+	<p>For each commit GitHub has, the review app also:</p>
+	<ul>
+		<li>shows the GitHub account it is linked to;</li>
+		<li>marks it if its claimed time differs from GitHub's author date. The SHA pins that date, so a difference means the time was changed after the commit was made.</li>
+	</ul>
+	<p>A private repository's commits are shown as not checked.</p>
+	<p>The check needs a <code>GITHUB_TOKEN</code> secret on the Worker. Without one, the review app says so.</p>
+	<h3>Lines in the report</h3>
+	<p>For each project the report shows three counts:</p>
+	<table>
+		<tr><th>Column</th><th>Meaning</th></tr>
+		<tr><td><strong>AGENT LINES</strong></td><td>The lines agents changed.</td></tr>
+		<tr><td><strong>KEPT</strong></td><td>How many of the lines agents added later turned up in your commits.</td></tr>
+		<tr><td><strong>COMMITTED</strong></td><td>The lines your own commits added.</td></tr>
+	</table>
+	<p>The code itself is not kept.</p>
 
 	<h2 id="commands">Commands and flags</h2>
+	<h3>See your time</h3>
 	<table>
 		<tr><th>Command</th><th>What it does</th></tr>
 		<tr><td><code>helios</code></td><td>Print your timeline and project totals.</td></tr>
-		<tr><td><code>helios setup</code></td><td>Check tools, keep history, install hooks and the Amp and OpenCode plugins.</td></tr>
-		<tr><td><code>helios setup amp</code></td><td>The same for the tools you name: <code>claude</code>, <code>codex</code>, <code>amp</code>, <code>opencode</code>, <code>antigravity</code>, <code>copilot</code>, or <code>cursor</code>.</td></tr>
-		<tr><td><code>helios setup -project</code></td><td>Put hooks in this repository, to commit, for <a href="#cloud">cloud sessions</a>: Claude Code's <code>.claude/settings.json</code>, Codex's <code>.codex/hooks.json</code>, Antigravity's <code>.agents/hooks.json</code>, and an OpenCode plugin. Name tools, as in <code>helios setup claude -project</code>, for only theirs.</td></tr>
-		<tr><td><code>helios status</code></td><td>Show the account this computer syncs to, whether each tool's hooks are installed, what is waiting to send, and when it last synced.</td></tr>
-		<tr><td><code>helios doctor</code></td><td>Check everything that decides whether your time counts (this binary, the site and key, the clock, each tool's hooks, records waiting to send, the last background error, and updates) and say how to fix each problem. Exits 1 when something needs fixing. It never prints your key.</td></tr>
-		<tr><td><code>helios update</code></td><td>Download the latest helios, check it against the release's checksums, replace this one with it, and run setup again. <code>-check</code> only says whether a newer version is out; <code>helios update v0.5.0</code> installs that version, even if it is older. <code>-auto on</code> or <code>-auto off</code> turns installing new releases by itself on or off.</td></tr>
-		<tr><td><code>helios dashboard</code></td><td>Open the live dashboard on localhost.</td></tr>
-		<tr><td><code>helios hook -check &lt;tool&gt;</code></td><td>Print the record a hook payload on stdin would make, and write nothing.</td></tr>
-		<tr><td><code>helios export</code></td><td>Write a signed report to upload under Settings on the website (<code>-o file</code>, <code>-since</code>, default 365d).</td></tr>
-		<tr><td><code>helios login</code></td><td>Connect this computer by typing a code on the site instead of copying the key (<code>-server URL</code> once; <code>-no-open</code> prints the address instead of opening a browser).</td></tr>
-		<tr><td><code>helios sync</code></td><td>Send your records to your account (<code>-server URL -key KEY</code> once; both are remembered). <code>-dry-run</code> prints the records it would send, and sends nothing.</td></tr>
-		<tr><td><code>helios uninstall</code></td><td>Remove helios's hooks, Amp and OpenCode plugins, and PATH line, ask about the journal folder, and delete the binary (<code>-yes</code>, <code>-keep-data</code>). See <a href="#uninstall">Uninstall</a>.</td></tr>
+		<tr><td><code>helios dashboard</code></td><td>Open the live dashboard on localhost. Takes <code>-addr</code> (default <code>127.0.0.1:7878</code>) and <code>-no-open</code>.</td></tr>
 		<tr><td><code>helios -version</code></td><td>Print the installed version.</td></tr>
 	</table>
+	<p><code>helios</code> takes these flags:</p>
 	<table>
 		<tr><th>Flag</th><th>Default</th><th>Meaning</th></tr>
 		<tr><td><code>-since</code></td><td><code>7d</code></td><td>How far back to count, such as <code>24h</code> or <code>30d</code>.</td></tr>
@@ -360,75 +611,204 @@ helios setup codex -project      # or only the tools you name</code></pre>
 		<tr><td><code>-verbose</code></td><td></td><td>List log files that couldn't be read.</td></tr>
 		<tr><td><code>-claude-dir</code>, <code>-codex-dir</code></td><td></td><td>Look for logs in these folders instead (comma-separated).</td></tr>
 	</table>
-	<p><code>helios setup</code> takes <code>-yes</code> and <code>-remove-hooks</code>, before or after a tool's name. <code>helios dashboard</code> takes <code>-addr</code> (default <code>127.0.0.1:7878</code>) and <code>-no-open</code>.</p>
+	<h3>Set up and check</h3>
+	<table>
+		<tr><th>Command</th><th>What it does</th></tr>
+		<tr><td><code>helios setup</code></td><td>Check tools, keep history, install hooks and the Amp and OpenCode plugins.</td></tr>
+		<tr><td><code>helios setup amp</code></td><td>The same, for only the tools you name: <code>claude</code>, <code>codex</code>, <code>amp</code>, <code>opencode</code>, <code>antigravity</code>, <code>copilot</code>, or <code>cursor</code>.</td></tr>
+		<tr><td><code>helios setup -project</code></td><td>Put hooks in this repository, for you to commit, for <a href="#cloud">cloud sessions</a>. It writes Claude Code's <code>.claude/settings.json</code>, Codex's <code>.codex/hooks.json</code>, Antigravity's <code>.agents/hooks.json</code>, and an OpenCode plugin. Name tools, as in <code>helios setup claude -project</code>, to write only theirs.</td></tr>
+		<tr><td><code>helios status</code></td><td>Show the account this computer syncs to, whether each tool's hooks are installed, what is waiting to send, and when it last synced.</td></tr>
+		<tr><td><code>helios doctor</code></td><td>Check everything that decides whether your time counts, and say how to fix each problem. It checks this binary, the site and key, the clock, each tool's hooks, records waiting to send, the last background error, and updates. Exits 1 when something needs fixing. It never prints your key.</td></tr>
+		<tr><td><code>helios hook -check &lt;tool&gt;</code></td><td>Print the record a hook payload on stdin would make, and write nothing.</td></tr>
+	</table>
+	<p><code>helios setup</code> takes <code>-yes</code> and <code>-remove-hooks</code>, before or after a tool's name.</p>
+	<h3>Sync and export</h3>
+	<table>
+		<tr><th>Command</th><th>What it does</th></tr>
+		<tr><td><code>helios login</code></td><td>Connect this computer by typing a code on the site, instead of copying a key. Pass <code>-server URL</code> the first time. <code>-no-open</code> prints the address instead of opening a browser.</td></tr>
+		<tr><td><code>helios sync</code></td><td>Send your records to your account. Pass <code>-server URL -key KEY</code> the first time; both are remembered. <code>-dry-run</code> prints the records it would send, and sends nothing.</td></tr>
+		<tr><td><code>helios export</code></td><td>Write a signed report to upload under Settings on the website. Takes <code>-o file</code> and <code>-since</code> (default <code>365d</code>).</td></tr>
+	</table>
+	<h3>Update and uninstall</h3>
+	<table>
+		<tr><th>Command</th><th>What it does</th></tr>
+		<tr><td><code>helios update</code></td><td>Download the latest helios, check it against the release's checksums, replace this one with it, and run setup again.</td></tr>
+		<tr><td><code>helios update -check</code></td><td>Only say whether a newer version is out.</td></tr>
+		<tr><td><code>helios update v0.5.0</code></td><td>Install that version, even if it is older.</td></tr>
+		<tr><td><code>helios update -auto on</code></td><td>Install new releases automatically from now on. <code>-auto off</code> stops it.</td></tr>
+		<tr><td><code>helios uninstall</code></td><td>Remove helios's hooks, Amp and OpenCode plugins, and PATH line, ask about the journal folder, and delete the binary. Takes <code>-yes</code> and <code>-keep-data</code>. See <a href="#uninstall">Uninstall</a>.</td></tr>
+	</table>
 
 	<h2 id="files">Files and folders</h2>
+	<p>helios keeps its own files in one folder, the journal folder:</p>
+	<table>
+		<tr><th>System</th><th>Journal folder</th></tr>
+		<tr><td>macOS</td><td><code>~/Library/Application Support/helios</code></td></tr>
+		<tr><td>Windows</td><td><code>%LOCALAPPDATA%\helios</code></td></tr>
+		<tr><td>Anywhere else</td><td><code>~/.local/share/helios</code></td></tr>
+	</table>
+	<p>Set <code>HELIOS_DATA_DIR</code> to use another folder.</p>
 	<table>
 		<tr><th>What</th><th>Where</th></tr>
-		<tr><td>Server and sync key</td><td><code>server</code> and <code>key</code> in the journal folder below. <code>HELIOS_SERVER</code> and <code>HELIOS_KEY</code> override them.</td></tr>
-		<tr><td>Account key</td><td><code>account.key</code> in the journal folder below. Keep it private; deleting it starts a new account.</td></tr>
-		<tr><td>Hook journal</td><td><code>~/.local/share/helios</code>, <code>~/Library/Application Support/helios</code> on macOS, <code>%LOCALAPPDATA%\helios</code> on Windows. Override with <code>HELIOS_DATA_DIR</code>.</td></tr>
+		<tr><td>Hook journal</td><td>The journal folder.</td></tr>
+		<tr><td>Server and sync key</td><td><code>server</code> and <code>key</code> in the journal folder. <code>HELIOS_SERVER</code> and <code>HELIOS_KEY</code> override them.</td></tr>
+		<tr><td>Account key</td><td><code>account.key</code> in the journal folder. Keep it private. Deleting it starts a new account.</td></tr>
+		<tr><td>Project words</td><td><code>vocab</code> in the journal folder. It holds the identifiers in each project you worked on in the past week. A background sync saves it once a day, so that hooks count your project's own names as words. They never leave your computer.</td></tr>
 		<tr><td>Claude Code hooks</td><td>The <code>hooks</code> setting in Claude Code's <code>settings.json</code>.</td></tr>
 		<tr><td>Amp plugin</td><td><code>~/.config/amp/plugins/helios.ts</code></td></tr>
-		<tr><td>Project words</td><td><code>vocab</code> in the journal folder: the identifiers in each project you worked on in the past week, which a background sync saves once a day so that hooks count your project's own names as words. They never leave your computer.</td></tr>
 		<tr><td>Settings backups</td><td><code>settings.json.helios-backup</code>, next to the original.</td></tr>
 	</table>
 
 	<h2 id="server">Sync</h2>
-	<p><code>helios sync</code> sends your account records: one per prompt and turn end, with its time, word counts, tokens, and lines, never its text. The first sync sends the past year; later ones send only what changed. The first time, connect the computer:</p>
+	<p><code>helios sync</code> sends your records to your account on the site. There is one record for each prompt and each turn end. A record holds its time, word counts, tokens, and lines, never its text.</p>
+	<p>The first sync sends the past year. Later ones send only what changed.</p>
+	<h3>Connect a computer</h3>
+	<p>Before a computer can sync, connect it:</p>
 	<pre><code>helios login -server https://your-site</code></pre>
-	<p>It prints a code such as <code>BCDF-GHJK</code> and opens the site's connect page; sign in, type the code, and check that the computer ID it shows matches the one in your terminal. helios then saves a sync key of this computer's own and syncs. Each computer gets its own key, listed under Settings, Setup, by its computer ID, so you can revoke one without touching the rest. A code lasts 10 minutes and works once. It has to be typed rather than followed from a link, so nobody can send you a link that connects their computer to your account. Never type a code someone sent you: the page says when and from where each code was asked for, and allowing one gives that computer a sync key to your account. On a computer with no browser, make a sync key for it under <a href="settings.html">Settings</a>, Setup, and run <code>helios sync -server https://your-site -key tdk_…</code> there.</p>
-	<p>helios remembers the server and the key, so later it's just <code>helios sync</code>, and hooks sync in the background when a reply finishes or you stop one. Amp reports a stopped reply at once; Claude Code runs no hook then, so that sync happens at your next prompt or when the session closes. Codex syncs through its <code>notify</code> program when a turn ends. The key only sends records; it can't read or change your account or settings. If the server answers that it needs your sync key, run <code>helios login</code> again.</p>
-	<p>Programs that pay or credit hours read your time through the <a href="#stats-api">Stats API</a> and decide what counts; helios itself credits nothing.</p>
-	<p>Your stats on the website are visible to you and to reviewers, apart from what your <a href="#profile">public profile</a> shows: a reviewer sees, for each project, your total and a timeline of your work blocks (when each started and ended, with its prompts, tokens, and lines changed), and neoadmins and superadmins see everything you synced. Deleting your account, under Settings, removes them; admins keep your Slack ID and a record of what your computers reported, without project names. To host the site, see <a href="#run-server">Running a server</a>.</p>
+	<ol>
+		<li>helios prints a code such as <code>BCDF-GHJK</code> and opens the site's connect page.</li>
+		<li>Sign in and type the code.</li>
+		<li>Check that the computer ID on the page matches the one in your terminal.</li>
+	</ol>
+	<p>helios then saves a sync key for this computer and syncs. Each computer gets its own key. They are listed under Settings, Setup, by computer ID, so you can revoke one without touching the rest.</p>
+	<p>A code lasts 10 minutes and works once. It has to be typed, not followed from a link, so nobody can send you a link that connects their computer to your account.</p>
+	<div class="callout warning"><p class="callout-title"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"/></svg>Warning</p><p>Never type a code someone sent you. Allowing a code gives that computer a sync key to your account. The connect page says when and from where each code was asked for.</p></div>
+	<h4>A computer with no browser</h4>
+	<p>Make a sync key for it under <a href="settings.html">Settings</a>, Setup. Then run this on that computer:</p>
+	<pre><code>helios sync -server https://your-site -key tdk_…</code></pre>
+	<h3>After the first sync</h3>
+	<p>helios remembers the server and the key, so later it's just <code>helios sync</code>.</p>
+	<p>Hooks also sync in the background when a reply finishes or you stop one:</p>
+	<ul>
+		<li><strong>Amp</strong> reports a stopped reply at once.</li>
+		<li><strong>Claude Code</strong> runs no hook when you stop a reply, so that sync happens at your next prompt or when the session closes.</li>
+		<li><strong>Codex</strong> syncs through its <code>notify</code> program when a turn ends.</li>
+	</ul>
+	<p>The key only sends records. It can't read or change your account or settings. If the server answers that it needs your sync key, run <code>helios login</code> again.</p>
+	<h3>Who can see your stats</h3>
+	<p>On the website, your stats are visible to you and to reviewers. Beyond that, anyone can see what your <a href="#profile">public profile</a> shows.</p>
+	<ul>
+		<li><strong>A reviewer</strong> sees, for each project, your total and a timeline of your work blocks: when each started and ended, with its prompts, tokens, and lines changed.</li>
+		<li><strong>Neoadmins and superadmins</strong> see everything you synced.</li>
+	</ul>
+	<p>Deleting your account, under Settings, removes your stats. Admins keep your Slack ID and a record of what your computers reported, without project names.</p>
+	<h3>Who credits your hours</h3>
+	<p>helios itself credits nothing. Programs that pay or credit hours read your time through the <a href="#stats-api">Stats API</a> and decide what counts.</p>
+	<p>To host the site yourself, see <a href="#run-server">Running a server</a>.</p>
 
 	<h2 id="run-server">Running a server</h2>
-	<p>The site is one Cloudflare Worker with a D1 database for summaries, an R2 bucket for every report and per-prompt record, and a Durable Object per account that takes records as they arrive and pushes them to open dashboards.</p>
+	<p>The site is one Cloudflare Worker. It uses:</p>
+	<ul>
+		<li>a D1 database, for summaries;</li>
+		<li>an R2 bucket, for every report and per-prompt record;</li>
+		<li>a Durable Object per account, which takes records as they arrive and pushes them to open dashboards.</li>
+	</ul>
 	<h3 id="cloudflare">The website, on Cloudflare</h3>
 	<p>The Worker is in the <code>worker</code> folder of the <a href="https://github.com/part-avocado/helios">repository</a> and serves the pages in <code>site</code>. You need a Cloudflare account and Node.js 22 or later.</p>
-	<p>To try it on your computer first:</p>
+	<h4>Try it on your computer</h4>
 	<pre><code>cd worker
 npm install
 cp .dev.vars.example .dev.vars
 npm run dev</code></pre>
 	<p><code>.dev.vars</code> signs every visitor in as the Slack user ID in <code>DEV_LOGIN</code>, which only works on localhost. Open the address it prints and follow the setup steps on the dashboard.</p>
-	<p>To put it online, connect the repository to Cloudflare. Nothing needs to be installed or signed in on your computer.</p>
+	<h4>Put it online</h4>
+	<p>Connect the repository to Cloudflare. Nothing needs to be installed or signed in on your computer.</p>
 	<ol>
 		<li>In the Cloudflare dashboard, open Workers &amp; Pages, then Create, then Import a repository. Choose your fork of the <a href="https://github.com/part-avocado/helios">repository</a>.</li>
-		<li>Name the Worker <code>helios</code>, set the root directory to <code>worker</code>, the build command to <code>npm ci</code>, and the deploy command to <code>npm run deploy</code>. Save and deploy. The first deploy creates the D1 database, its tables, and an R2 bucket that keeps every report for reviewers. It runs without the secrets, and the site says it is not set up yet.</li>
-		<li>Create a Hack Club Auth app as in <a href="#hca-app">Set up sign-in</a> below, with the <code>openid</code>, <code>profile</code>, and <code>slack_id</code> scopes and <code>https://&lt;worker&gt;.&lt;your-subdomain&gt;.workers.dev/auth/callback</code> as its redirect URI. Cloudflare shows the address under the Worker's Settings, Domains &amp; Routes.</li>
+		<li>Name the Worker <code>helios</code>. Set the root directory to <code>worker</code>, the build command to <code>npm ci</code>, and the deploy command to <code>npm run deploy</code>. Save and deploy. The first deploy creates the D1 database, its tables, and an R2 bucket that keeps every report for reviewers. It runs without the secrets, and the site says it is not set up yet.</li>
+		<li>Create a Hack Club Auth app as in <a href="#hca-app">Set up sign-in</a> below. Give it the <code>openid</code>, <code>profile</code>, and <code>slack_id</code> scopes, and <code>https://&lt;worker&gt;.&lt;your-subdomain&gt;.workers.dev/auth/callback</code> as its redirect URI. Cloudflare shows the address under the Worker's Settings, Domains &amp; Routes.</li>
 		<li>Under the Worker's Settings, Variables and Secrets, add these as secrets: <code>SESSION_SECRET</code> (any long random text), <code>HCA_CLIENT_ID</code>, <code>HCA_CLIENT_SECRET</code>, and <code>ADMINS</code>. Deploying again, which a push to the branch does, keeps them.</li>
 	</ol>
-	<p>The bucket needs R2 turned on for your Cloudflare account, which you do once under R2 in the dashboard. If the build fails on permissions for D1 or R2, open the Worker's Settings, Builds, and give its API token D1 Edit and Workers R2 Storage Edit access.</p>
-	<p>To deploy from your computer instead, run <code>npx wrangler login</code> in <code>worker</code>, then <code>npm run deploy</code>, and add the secrets in the dashboard or with <code>npx wrangler secret put &lt;NAME&gt;</code>.</p>
-	<p>Deploy with <code>npm run deploy</code>, not <code>npx wrangler deploy</code> alone: it applies the D1 migrations before the new code goes live. The code reads columns that migrations add, so the order matters. Migration <code>0026_capped_days.sql</code> adds <code>prompt_days.uncapped_seconds</code>, which every flush of a day's records writes; code deployed before it is applied fails each flush until it is, and the records wait in the meantime. If you deploy by hand, run <code>npx wrangler d1 migrations apply DB --remote</code> first.</p>
+	<p>If the deploy fails:</p>
+	<ul>
+		<li><strong>The bucket</strong> needs R2 turned on for your Cloudflare account. You do that once, under R2 in the dashboard.</li>
+		<li><strong>Permissions for D1 or R2:</strong> open the Worker's Settings, Builds, and give its API token D1 Edit and Workers R2 Storage Edit access.</li>
+	</ul>
+	<h4>Deploy from your computer instead</h4>
+	<p>Run <code>npx wrangler login</code> in <code>worker</code>, then <code>npm run deploy</code>. Add the secrets in the dashboard or with <code>npx wrangler secret put &lt;NAME&gt;</code>.</p>
+	<div class="callout important"><p class="callout-title"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"/></svg>Important</p><p>Deploy with <code>npm run deploy</code>, not <code>npx wrangler deploy</code> alone. <code>npm run deploy</code> applies the D1 migrations before the new code goes live. If you deploy by hand, run <code>npx wrangler d1 migrations apply DB --remote</code> first.</p></div>
+	<p>The order matters because the code reads columns that migrations add. For example, migration <code>0026_capped_days.sql</code> adds <code>prompt_days.uncapped_seconds</code>, which every flush of a day's records writes. Code deployed before that migration is applied fails each flush until it is, and the records wait in the meantime.</p>
+	<h4>Settings</h4>
 	<table>
 		<tr><th>Setting</th><th>Meaning</th></tr>
 		<tr><td><code>SESSION_SECRET</code></td><td>Signs sign-in cookies. Changing it signs everyone out.</td></tr>
 		<tr><td><code>HCA_CLIENT_ID</code>, <code>HCA_CLIENT_SECRET</code></td><td>Your Hack Club Auth app.</td></tr>
 		<tr><td><code>ADMINS</code></td><td>Slack user IDs of the superadmins, separated by commas. They add everyone else who reviews, in <a href="#review-app">the review app</a>.</td></tr>
 		<tr><td><code>GITHUB_TOKEN</code></td><td>Optional secret. Lets the hourly check ask GitHub which claimed commits exist, when GitHub dates them, and whose they are. Without it, commits are linked but not checked, and the review app says so.</td></tr>
-		<tr><td><code>MIN_VERSION</code></td><td>Optional variable, such as <code>v0.6.0</code>. Older helios versions, and ones too old to say their version, are told to run <code>helios update</code> and can't sync until they do. Their records wait on their computers and arrive late, so late that their time isn't credited, so raise it only for a fix that needs it. Empty answers every version.</td></tr>
-		<tr><td><code>UPLOAD_BURST</code>, <code>RECENT_RECORDS_PER_DAY</code>, <code>OLD_RECORDS_PER_DAY</code></td><td>What one account may send: 1,000 uploads at once, which come back one a second; 30,000 records a day dated in the last two days; and 100,000 older ones a day, for a first sync of a year (set <code>OLD_RECORDS_PER_DAY</code> higher if you need to import more). Past one, the site answers 429 and helios keeps the records to send later. The defaults are about ten times the heaviest honest use. Records held back more than 5 minutes arrive late and aren't credited, so lower them with care.</td></tr>
-		<tr><td><code>REPORT_BYTES_PER_DAY</code></td><td>Optional variable: how many bytes of signed reports one account may upload a day, 256 MB when empty. Past it, the site answers 429. Only each account's newest 20 reports that failed their signature check are kept in full.</td></tr>
+		<tr><td><code>MIN_VERSION</code></td><td>Optional variable, such as <code>v0.6.0</code>. Older helios versions, and ones too old to say their version, are told to run <code>helios update</code> and can't sync until they do. Empty accepts every version. Raise it only for a fix that needs it: the records of those versions wait on their computers and arrive so late that their time isn't credited.</td></tr>
+		<tr><td><code>UPLOAD_BURST</code></td><td>How many uploads one account may send at once: 1,000, which come back one a second.</td></tr>
+		<tr><td><code>RECENT_RECORDS_PER_DAY</code></td><td>How many records dated in the last two days one account may send a day: 30,000.</td></tr>
+		<tr><td><code>OLD_RECORDS_PER_DAY</code></td><td>How many older records one account may send a day: 100,000, for a first sync of a year. Set it higher if you need to import more.</td></tr>
+		<tr><td><code>REPORT_BYTES_PER_DAY</code></td><td>Optional variable. How many bytes of signed reports one account may upload a day: 256 MB when empty. Past it, the site answers 429. Only each account's newest 20 reports that failed their signature check are kept in full.</td></tr>
 	</table>
-	<p>To change a secret later, edit it in the dashboard. For your own domain, add a <a href="https://developers.cloudflare.com/workers/configuration/routing/custom-domains/">custom domain</a> to the Worker and use it in the redirect URI. Cloudflare accepts uploads of up to 100 MB.</p>
+	<p>About the three upload limits:</p>
+	<ul>
+		<li>Past one of them, the site answers 429 and helios keeps the records to send later.</li>
+		<li>The defaults are about ten times the heaviest honest use.</li>
+		<li>Records held back more than 5 minutes arrive late and aren't credited, so lower the limits with care.</li>
+	</ul>
+	<p>To change a secret later, edit it in the dashboard.</p>
+	<p>For your own domain, add a <a href="https://developers.cloudflare.com/workers/configuration/routing/custom-domains/">custom domain</a> to the Worker and use it in the redirect URI.</p>
+	<p>Cloudflare accepts uploads of up to 100 MB.</p>
 	<h3 id="review-app">The review app</h3>
-	<p>Reviewing has its own app at <code>/review/</code>, apart from the rest of the site. Reviewers get a Review link in the top bar. What a reviewer can do depends on their level:</p>
+	<p>Reviewing has its own app at <code>/review/</code>, apart from the rest of the site. Reviewers get a Review link in the top bar.</p>
+	<h4>Levels</h4>
+	<p>What a reviewer can do depends on their level:</p>
 	<table>
 		<tr><th>Level</th><th>Who</th><th>What they can do</th></tr>
 		<tr><td>Superadmin</td><td>The Slack IDs in <code>ADMINS</code>.</td><td>Everything below, and add or remove neoadmins.</td></tr>
 		<tr><td>Neoadmin</td><td>Added by a superadmin.</td><td>Read every account: its computers, its projects, and a log of every report it sent. Each log entry shows what the report held and which days and projects changed, and links to the report itself, kept as it arrived. Add and remove reviewers. Ban people.</td></tr>
 		<tr><td>Reviewer</td><td>Added by a neoadmin or superadmin.</td><td>Look a person up by Slack ID and read their total for each project, with each project's graphs, and their time through the <a href="#stats-api">Stats API</a>. Nothing else of theirs.</td></tr>
 	</table>
-	<p>To add someone, look up their Slack ID in the app and choose a level in the Access panel of their account view. They can be added before they first sign in. No one can add, remove, or ban someone at their own level or above, so a neoadmin can't touch another neoadmin.</p>
-	<p>Each person's page has a Project activity panel. For one project at a time it draws engaged time and lines added and removed per day, when in the week they work, and every work block's length against the share of it that was engaged. It also checks the blocks for what to ask about: time counted on two computers at once, long blocks without breaks, lines changed without a prompt, very many lines per hour, and days over 14 hours. A check that stands out is a reason to ask, not proof.</p>
-	<p>Levels and bans are set on a person's account view, in its Access and Bans panels. A Slack ID that has never signed in opens a view with only those two, so a person can be added or banned before their first sign-in. The Reviewers and Bans pages list who holds each level and every ban, and link to each account view.</p>
-	<p>A ban has no length: it lasts until someone lifts it, and always has a reason, which only reviewers see. While it holds, the site takes nothing new from the person: no syncs, uploads, or cloud events. <code>helios sync</code>, their dashboard, and their settings say plainly that they are banned until a reviewer lifts it, but not why. They can still sign in and see what they had. The review app marks a banned person in red wherever they appear. A banned reviewer can't review. Someone below the level of whoever issued a ban can't lift or replace it.</p>
-	<p>Any reviewer can make API keys, under API keys in the app, for a script or a bot. A key acts as the person who made it, at the level they hold when it is used, and stops working when they are removed or banned. The key is shown once, in a popup to copy it from; the site keeps only its hash. Send it as a bearer token:</p>
+	<h4>Add someone or ban someone</h4>
+	<p>Levels and bans are set on a person's account view, in its Access and Bans panels.</p>
+	<p>To add someone, look up their Slack ID in the app and choose a level in the Access panel of their account view.</p>
+	<p>A Slack ID that has never signed in opens a view with only those two panels. So a person can be added or banned before their first sign-in.</p>
+	<p>No one can add, remove, or ban someone at their own level or above. So a neoadmin can't touch another neoadmin.</p>
+	<p>The Reviewers and Bans pages list who holds each level and every ban, and link to each account view.</p>
+	<h4>Project activity</h4>
+	<p>Each person's page has a Project activity panel. For one project at a time, it draws:</p>
+	<ul>
+		<li>engaged time and lines added and removed per day;</li>
+		<li>when in the week they work;</li>
+		<li>every work block's length against the share of it that was engaged.</li>
+	</ul>
+	<p>It also checks the blocks for things to ask about:</p>
+	<ul>
+		<li>time counted on two computers at once;</li>
+		<li>long blocks without breaks;</li>
+		<li>lines changed without a prompt;</li>
+		<li>very many lines per hour;</li>
+		<li>days over 14 hours.</li>
+	</ul>
+	<p>A check that stands out is a reason to ask, not proof.</p>
+	<h4>Bans</h4>
+	<p>A ban has no length. It lasts until someone lifts it. It always has a reason, which only reviewers see.</p>
+	<p>While a ban holds:</p>
+	<ul>
+		<li>The site takes nothing new from the person: no syncs, uploads, or cloud events.</li>
+		<li><code>helios sync</code>, their dashboard, and their settings say plainly that they are banned until a reviewer lifts it, but not why.</li>
+		<li>They can still sign in and see what they had.</li>
+		<li>The review app marks them in red wherever they appear.</li>
+		<li>If they are a reviewer, they can't review.</li>
+	</ul>
+	<p>Someone below the level of whoever issued a ban can't lift or replace it.</p>
+	<h4>API keys</h4>
+	<p>Any reviewer can make API keys, under API keys in the app, for a script or a bot.</p>
+	<ul>
+		<li>A key acts as the person who made it, at the level they hold when it is used.</li>
+		<li>It stops working when they are removed or banned.</li>
+		<li>It is shown once, in a popup to copy it from. The site keeps only its hash.</li>
+	</ul>
+	<p>Send it as a bearer token:</p>
 	<pre><code>curl -H "Authorization: Bearer tdr_..." "https://your-site/api/review/person?slack=U012ABCDEF"</code></pre>
 	<h3 id="stats-api">Stats API</h3>
-	<p>Programs that credit hours, such as a You Ship, We Ship, read people's time here instead of taking submissions. It is protected: call it with a review key, made under API keys in the review app by someone with a place there. A reviewer's key sees project names only; a neoadmin's or superadmin's also sees each project's key, such as <code>github.com/you/site</code>.</p>
+	<p>Programs that credit hours, such as a You Ship, We Ship, read people's time here instead of taking submissions.</p>
+	<p>It is protected. Call it with a review key, made under API keys in the review app by someone with a place there. What the key sees depends on who made it:</p>
+	<ul>
+		<li>A reviewer's key sees project names only.</li>
+		<li>A neoadmin's or superadmin's key also sees each project's key, such as <code>github.com/you/site</code>.</li>
+	</ul>
 	<pre><code>curl -H "Authorization: Bearer tdr_..." "https://your-site/api/review/stats?slack=U012ABCDEF&amp;start=2026-01-01&amp;end=2026-03-31"</code></pre>
 	<table>
 		<tr><th>Parameter</th><th>Meaning</th></tr>
@@ -437,9 +817,28 @@ npm run dev</code></pre>
 		<tr><td><code>project</code></td><td>Optional. Project names, separated by commas, or keys for neoadmins and superadmins. Without it, every project.</td></tr>
 		<tr><td><code>flags</code></td><td>Optional. <code>true</code> reads the records behind the answer, at most 400 days of them, and lists flags for someone to look at.</td></tr>
 	</table>
-	<p>The answer has <code>person</code> (<code>slack_id</code>, <code>name</code>, <code>created_at</code>, <code>deleted_at</code>), <code>ban</code> (<code>reason</code> and <code>at</code>, or <code>null</code>), <code>witnessed_seconds</code>, <code>unwitnessed_seconds</code>, and <code>prompts</code>; <code>projects</code>, most witnessed time first, each with <code>name</code>, <code>key</code>, the same three counts, <code>first_day</code>, and <code>last_day</code>; <code>days</code>, each <code>date</code> with the same three counts; and <code>flags</code> when asked, each with <code>kind</code> and <code>text</code>. Time on two projects at once counts once in the totals, and is split equally between those projects, so a person's projects add up to their total. The answer is up to the moment. Which time to credit, whether to count unwitnessed time, and how to treat a ban or a flag are the program's to decide.</p>
+	<p>The answer has these fields:</p>
+	<table>
+		<tr><th>Field</th><th>What it holds</th></tr>
+		<tr><td><code>person</code></td><td><code>slack_id</code>, <code>name</code>, <code>created_at</code>, and <code>deleted_at</code>.</td></tr>
+		<tr><td><code>ban</code></td><td><code>reason</code> and <code>at</code>, or <code>null</code>.</td></tr>
+		<tr><td><code>witnessed_seconds</code>, <code>unwitnessed_seconds</code>, <code>prompts</code></td><td>The person's three counts.</td></tr>
+		<tr><td><code>projects</code></td><td>The projects, most witnessed time first. Each has <code>name</code>, <code>key</code>, the same three counts, <code>first_day</code>, and <code>last_day</code>.</td></tr>
+		<tr><td><code>days</code></td><td>Each <code>date</code>, with the same three counts.</td></tr>
+		<tr><td><code>flags</code></td><td>Only when asked for. Each has <code>kind</code> and <code>text</code>.</td></tr>
+	</table>
+	<p>Time on two projects at once counts once in the totals, and is split equally between those projects. So a person's projects add up to their total.</p>
+	<p>The answer is up to the moment.</p>
+	<p>The API only reports. Which time to credit, whether to count unwitnessed time, and how to treat a ban or a flag are the program's to decide.</p>
 	<h3 id="public-api">Public API</h3>
-	<p>Anyone with an account can read their own stats from a script, or let another site read them, for example to list your projects when you sign in there. Make a read key under Settings, API. It starts with <code>tdp_</code>, is shown once, and can only read: it can't upload, change, or delete anything. Your sync key doesn't work here, and a read key doesn't sync. While your account is banned, your read keys read nothing.</p>
+	<p>Anyone with an account can read their own stats from a script, or let another site read them, for example to list your projects when you sign in there.</p>
+	<p>Make a read key under Settings, API. A read key:</p>
+	<ul>
+		<li>starts with <code>tdp_</code> and is shown once;</li>
+		<li>can only read. It can't upload, change, or delete anything;</li>
+		<li>doesn't sync. Likewise, your sync key doesn't work here;</li>
+		<li>reads nothing while your account is banned.</li>
+	</ul>
 	<pre><code>curl -H "Authorization: Bearer tdp_..." "https://your-site/api/public/v1/projects"</code></pre>
 	<table>
 		<tr><th>Call</th><th>What it returns</th></tr>
@@ -449,14 +848,32 @@ npm run dev</code></pre>
 		<tr><td><code>GET /api/public/v1/users/{handle}</code></td><td>Anyone's <a href="#profile">public profile</a>, with no key: <code>handle</code>, <code>joined</code> (YYYY-MM), <code>engaged_seconds</code> in the past year, <code>days</code>, <code>projects</code> (each with <code>name</code>, <code>repo</code>, and <code>engaged_seconds</code>), and <code>other_projects</code> (<code>count</code> and <code>engaged_seconds</code>). A private, banned, or unknown profile answers 404. Answers may be cached for a minute.</td></tr>
 		<tr><td><code>GET /api/public/v1/users/{handle}/badge.svg</code></td><td>A badge of the profile's hours for a README, with no key. Add <code>?project=</code> and a repository or project name the profile names for one project's hours. It shows only what the profile shows: a private, banned, or unknown profile, or a project the profile doesn't name, answers 404. Answers may be cached for 5 minutes.</td></tr>
 	</table>
-	<p>Times are Unix milliseconds. Answers are JSON; a refusal is plain text with its reason. Any site may call the API from the browser, since it takes only the key and no cookies. Folders on your computer are never shown, only repositories.</p>
+	<p>Good to know:</p>
+	<ul>
+		<li>Times are Unix milliseconds.</li>
+		<li>Answers are JSON. A refusal is plain text with its reason.</li>
+		<li>Any site may call the API from the browser, since it takes only the key and no cookies.</li>
+		<li>Folders on your computer are never shown, only repositories.</li>
+	</ul>
 	<h3 id="sign-in-with-helios">Sign in with helios</h3>
-	<p>A site can get a read key without anyone pasting one. Send the person to:</p>
+	<p>A site can get a read key without anyone pasting one.</p>
+	<p><strong>1. Send the person to your helios site:</strong></p>
 	<pre><code>https://your-site/authorize?redirect_uri=https://example.com/callback&amp;state=RANDOM&amp;name=My+portfolio</code></pre>
-	<p>They sign in if they need to, see the site's address and what it will read, and choose Allow. They come back to <code>redirect_uri</code> with <code>code</code> and your <code>state</code>, or with <code>error=access_denied</code> if they cancel. Check that <code>state</code> is the one you sent, then trade the code within 5 minutes, from your server or the browser:</p>
+	<p>They sign in if they need to, see the site's address and what it will read, and choose Allow.</p>
+	<p><strong>2. Take the code they come back with.</strong> They come back to <code>redirect_uri</code> with <code>code</code> and your <code>state</code>, or with <code>error=access_denied</code> if they cancel. Check that <code>state</code> is the one you sent.</p>
+	<p><strong>3. Trade the code for a key</strong> within 5 minutes, from your server or the browser:</p>
 	<pre><code>curl -X POST https://your-site/api/public/v1/token \
   -d '{"code":"tdc_...","redirect_uri":"https://example.com/callback"}'</code></pre>
-	<p>The answer is <code>{"key": "tdp_...", "token_type": "Bearer", "name": ..., "slack_id": ...}</code>. Use the key with the calls above. A code works once, for the <code>redirect_uri</code> it was made for; trading it a second time also revokes the key it became. <code>redirect_uri</code> must use https, except on <code>localhost</code>. A site without a server should add PKCE: send <code>code_challenge</code>, the base64url SHA-256 of a random verifier, and send <code>code_verifier</code> with the code. The key shows under the person's Settings, API, named after your site, where they can revoke it. Each site keeps at most 5 keys per person; signing in again after that revokes the oldest. Banned accounts can't sign in.</p>
+	<p>The answer is <code>{"key": "tdp_...", "token_type": "Bearer", "name": ..., "slack_id": ...}</code>. Use the key with the calls above.</p>
+	<p>The rules:</p>
+	<ul>
+		<li>A code works once, for the <code>redirect_uri</code> it was made for. Trading it a second time also revokes the key it became.</li>
+		<li><code>redirect_uri</code> must use https, except on <code>localhost</code>.</li>
+		<li>A site without a server should add PKCE: send <code>code_challenge</code>, the base64url SHA-256 of a random verifier, and send <code>code_verifier</code> with the code.</li>
+		<li>The key shows under the person's Settings, API, named after your site, where they can revoke it.</li>
+		<li>Each site keeps at most 5 keys per person. Signing in again after that revokes the oldest.</li>
+		<li>Banned accounts can't sign in.</li>
+	</ul>
 	<h3 id="hca-app">Set up sign-in</h3>
 	<ol>
 		<li>Open Developer Apps on <a href="https://auth.hackclub.com">auth.hackclub.com</a> and create an app with the <code>openid</code>, <code>profile</code>, and <code>slack_id</code> scopes.</li>
@@ -465,29 +882,77 @@ npm run dev</code></pre>
 		<li>Collect the Slack user ID of each superadmin for <code>ADMINS</code>: in Slack, open their profile, choose ⋮, then Copy member ID.</li>
 	</ol>
 	<h3 id="hosting-cost">Hosting cost</h3>
-	<p><code>node worker/scripts/cost-model.ts [prompts per hour]</code> prints the monthly bill from named inputs, with Cloudflare's prices of 2026-11-22. For 15,488 people logging 109,759 engaged hours a month at 20 prompts an hour, it comes to about $10 a month after a year and $13 after three ($27 and $35 at 60 prompts an hour), against a $500 limit. Every record, every report, and the account log's older rows are kept in R2 for good; D1 keeps each person's newest few hundred log rows and the day totals, which pass D1's 10 GB limit in about year 6 unless old days are folded into months. The inputs are assumptions until measured against a real deploy.</p>
+	<p><code>node worker/scripts/cost-model.ts [prompts per hour]</code> prints the monthly bill from named inputs, with Cloudflare's prices of 2026-11-22.</p>
+	<p>For 15,488 people logging 109,759 engaged hours a month, against a $500 limit:</p>
+	<table>
+		<tr><th>Prompts an hour</th><th>After a year</th><th>After three years</th></tr>
+		<tr><td>20</td><td>about $10 a month</td><td>about $13 a month</td></tr>
+		<tr><td>60</td><td>about $27 a month</td><td>about $35 a month</td></tr>
+	</table>
+	<p>What is kept where:</p>
+	<ul>
+		<li><strong>R2</strong> keeps every record, every report, and the account log's older rows, for good.</li>
+		<li><strong>D1</strong> keeps each person's newest few hundred log rows and the day totals. The day totals pass D1's 10 GB limit in about year 6, unless old days are folded into months.</li>
+	</ul>
+	<p>The inputs are assumptions until measured against a real deploy.</p>
 
 	<h2 id="privacy">Privacy</h2>
-	<p>helios reads timestamps, token counts, line counts, and working folders from your logs. Prompt text is only scored in memory to count recognized words; it is never stored or printed, and <code>sync</code> never uploads it. In Amp's cloud, the plugin sends your website each prompt's time, thread, folder, repository, and word counts, without its text, and every other harness's hooks send the same kind of record. The website keeps these records in R2 for good. The website keeps each report your computers send, which holds those counts and times, so reviewers can read it; deleting your account deletes them. Your public profile shows your hours, your days, and the projects it names to anyone, unless you make it private. Chat logs and prompt text never leave your computer.</p>
-	<p>To see exactly what leaves your computer, run <code>helios sync -dry-run</code>, which prints the records the next sync would send and sends nothing, or pipe a hook payload into <code>helios hook -check &lt;tool&gt;</code>.</p>
+	<p>Chat logs and prompt text never leave your computer.</p>
+	<h3>What helios reads</h3>
+	<p>helios reads timestamps, token counts, line counts, and working folders from your logs.</p>
+	<p>Prompt text is only scored in memory, to count recognized words. It is never stored or printed, and <code>sync</code> never uploads it.</p>
+	<h3>What it sends to your website</h3>
+	<p>In Amp's cloud, the plugin sends your website each prompt's time, thread, folder, repository, and word counts, without its text. Every other harness's hooks send the same kind of record.</p>
+	<h3>What the website keeps</h3>
+	<ul>
+		<li><strong>Records.</strong> The website keeps these records in R2 for good.</li>
+		<li><strong>Reports.</strong> The website keeps each report your computers send, which holds those counts and times, so reviewers can read it. Deleting your account deletes them.</li>
+		<li><strong>Your public profile.</strong> It shows your hours, your days, and the projects it names to anyone, unless you make it private.</li>
+	</ul>
+	<h3>See for yourself</h3>
+	<p>To see exactly what leaves your computer, do either of these:</p>
+	<ul>
+		<li>Run <code>helios sync -dry-run</code>. It prints the records the next sync would send, and sends nothing.</li>
+		<li>Pipe a hook payload into <code>helios hook -check &lt;tool&gt;</code>.</li>
+	</ul>
 
 	<h2 id="troubleshooting">Troubleshooting</h2>
-	<p>Start with <code>helios doctor</code>. It checks the usual causes below and prints what to run for each one it finds.</p>
+	<p>Start with <code>helios doctor</code>. It checks for the usual causes below and prints what to run for each problem it finds.</p>
 	<h3>“No Claude Code, Codex, or Amp sessions found”</h3>
-	<p>Run <code>helios setup</code> to see where helios looked. If your logs live elsewhere, such as inside WSL on Windows, pass <code>-claude-dir</code> or <code>-codex-dir</code>. Try <code>-since 30d</code> if your last session was more than a week ago.</p>
+	<ul>
+		<li>Run <code>helios setup</code> to see where helios looked.</li>
+		<li>If your logs live somewhere else, such as inside WSL on Windows, pass <code>-claude-dir</code> or <code>-codex-dir</code>.</li>
+		<li>If your last session was more than a week ago, try <code>-since 30d</code>.</li>
+	</ul>
 	<h3>“helios: command not found”</h3>
-	<p>Open a new terminal so the PATH change applies. On Windows, the PowerShell window you installed from already has it; restart any other terminal that was open during install.</p>
+	<p>Open a new terminal so the PATH change applies.</p>
+	<p>On Windows, the PowerShell window you installed from already has it. Restart any other terminal that was open during the install.</p>
 	<h3>“skipped N log files that could not be read”</h3>
 	<p>Run <code>helios -verbose</code> to list them. Usually they are files a tool is still writing, and the rest of the report is unaffected.</p>
 	<h3>“Your clock is N minutes ahead of (or behind) the site's”</h3>
-	<p>The site expects each computer's clock to be close to its own, and <code>helios sync</code> warns from 2 minutes off. Turn on setting the time automatically in your system's date and time settings, then sync again.</p>
+	<p>The site expects each computer's clock to be close to its own. <code>helios sync</code> warns once the two are 2 minutes apart.</p>
+	<p>In your system's date and time settings, turn on setting the time automatically. Then sync again.</p>
 	<h3>My hours look too low or too high</h3>
 	<p>Compare ENGAGED with how long you think you worked, and please <a href="https://github.com/part-avocado/helios/issues">open an issue</a> with the numbers.</p>
 
 	<h2 id="uninstall">Uninstall</h2>
 	<pre><code>helios uninstall</code></pre>
-	<p>It asks once, then removes helios's hooks from Claude Code, Codex, Cursor, and Copilot, its Amp and OpenCode plugins, and the line the installer added to your shell profile (on Windows, the folder it added to your Path), leaving your other settings and lines as they were. It asks whether to keep the journal folder, which holds this computer's account key and any records not sent yet, and deletes the binary last. Windows can't delete a running program, so there it tells you to delete <code>helios.exe</code> once the window closes. <code>-yes</code> answers every question, deleting the journal folder unless you add <code>-keep-data</code>.</p>
-	<p>Your account on the site keeps what it has; remove the computer under Settings, Computers. Claude Code's longer history setting and helios's <code>.helios-backup</code> copies of settings files stay. To remove only the hooks and keep helios, run <code>helios setup -remove-hooks</code>.</p>
+	<p>It asks once, then:</p>
+	<ol>
+		<li>Removes helios's hooks from Claude Code, Codex, Cursor, and Copilot, and its Amp and OpenCode plugins.</li>
+		<li>Removes the line the installer added to your shell profile, or on Windows the folder it added to your Path. Your other settings and lines stay as they were.</li>
+		<li>Asks whether to keep the journal folder, which holds this computer's account key and any records not sent yet.</li>
+		<li>Deletes the binary. Windows can't delete a running program, so there it tells you to delete <code>helios.exe</code> once the window closes.</li>
+	</ol>
+	<p><code>-yes</code> answers every question. It deletes the journal folder unless you add <code>-keep-data</code>.</p>
+	<h3>What stays behind</h3>
+	<ul>
+		<li><strong>Your account on the site</strong> keeps what it has. Remove the computer under Settings, Computers.</li>
+		<li><strong>Claude Code's longer history setting</strong> stays.</li>
+		<li><strong>helios's <code>.helios-backup</code> copies</strong> of settings files stay.</li>
+	</ul>
+	<h3>Remove only the hooks</h3>
+	<p>To remove the hooks and keep helios, run <code>helios setup -remove-hooks</code>.</p>
 	<!-- /docs:article -->
 </article>
 <a class="to-top" href="#" hidden><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 10l5-5 5 5"/></svg><span data-i18n="docs.top">Top</span></a>
