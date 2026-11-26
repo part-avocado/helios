@@ -1,9 +1,9 @@
-// Reading teardrop reports, shared by the dashboard and the projects page.
+// Reading helios reports, shared by the dashboard and the projects page.
 // Needs t and LANG from i18n.js, and esc from account.js.
 
 const count = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(n))
 
-// verify checks a signed report from `teardrop dashboard` and returns its payload.
+// verify checks a signed report from `helios dashboard` and returns its payload.
 // The key is an Ed25519 signature of the payload text by the account inside it,
 // so editing any number, the account, or a time makes it fail.
 const SKEW = 5 * 60000

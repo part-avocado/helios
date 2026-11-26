@@ -18,7 +18,7 @@ $('notice-retry').addEventListener('click', () => {
 })
 
 function render(p) {
-	document.title = `@${p.handle} - teardrop`
+	document.title = `@${p.handle} - helios`
 	$('title').textContent = `@${p.handle}`
 	const joined = new Date(Number(p.joined.slice(0, 4)), Number(p.joined.slice(5, 7)) - 1)
 	$('status').textContent = t('profile.joined', { date: joined.toLocaleDateString(LANG, { month: 'long', year: 'numeric' }) })

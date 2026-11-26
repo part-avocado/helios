@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/part-avocado/teardrop/internal/timeline"
+	"github.com/part-avocado/helios/internal/timeline"
 )
 
 func kinds(ev []timeline.Event) string {
@@ -80,7 +80,6 @@ func TestParseCodex(t *testing.T) {
 		t.Errorf("subagent kinds = %s, want A", kinds(r.Events))
 	}
 
-	// Paginated rollouts (Codex 0.147+) drop user_message; the prompt is an item_completed UserMessage.
 	paged := `{"timestamp":"2026-11-20T15:00:00.000Z","ordinal":0,"type":"session_meta","payload":{"id":"c3","cwd":"/src","source":"vscode","thread_source":"user","history_mode":"paginated"}}
 {"timestamp":"2026-11-20T15:00:01.000Z","ordinal":1,"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<environment_context>"}]}}
 {"timestamp":"2026-11-20T15:00:01.500Z","ordinal":2,"type":"event_msg","payload":{"type":"item_completed","item":{"type":"UserMessage"}}}
@@ -105,8 +104,6 @@ func sum(r Raw) (in, out int64) {
 }
 
 func TestTokens(t *testing.T) {
-	// One response written as two records repeats its usage; a resumed session
-	// in another file copies it again. Each response counts once.
 	resp := `{"type":"assistant","timestamp":"2026-11-20T15:00:05.000Z","requestId":"r1","message":{"id":"m1","content":"x","usage":{"input_tokens":10,"cache_creation_input_tokens":100,"cache_read_input_tokens":1000,"output_tokens":7}}}
 {"type":"assistant","timestamp":"2026-11-20T15:00:06.000Z","requestId":"r1","message":{"id":"m1","content":"y","usage":{"input_tokens":10,"cache_creation_input_tokens":100,"cache_read_input_tokens":1000,"output_tokens":7}}}
 `
@@ -120,7 +117,6 @@ func TestTokens(t *testing.T) {
 		t.Errorf("copied response counted again: %d/%d", in, out)
 	}
 
-	// Codex token_count carries running totals and is sometimes repeated.
 	codex := `{"timestamp":"2026-11-20T15:00:00.000Z","type":"session_meta","payload":{"id":"c1","cwd":"/src","source":"cli"}}
 {"timestamp":"2026-11-20T15:00:01.000Z","type":"event_msg","payload":{"type":"token_count","info":null}}
 {"timestamp":"2026-11-20T15:00:02.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000,"cached_input_tokens":800,"output_tokens":50}}}}
@@ -134,7 +130,6 @@ func TestTokens(t *testing.T) {
 }
 
 func TestPromptText(t *testing.T) {
-	// Prompt text reaches the text score; odd field shapes don't drop the record.
 	log := `{"type":"user","timestamp":"2026-11-20T15:00:00.000Z","origin":"weird","message":{"content":"fsdhfhfd fafkigsfak"}}
 {"type":"user","timestamp":"2026-11-20T15:00:01.000Z","message":{"content":[{"type":"text","text":"move it more leftwards"},{"type":"tool_result"}]}}
 `
@@ -174,7 +169,6 @@ func TestJournal(t *testing.T) {
 	if r.Tool != "claude-code" || r.Cwd != "/src/game" || kinds(r.Events) != "AHA" || r.Scores[1].Judged != 6 || r.Scores[1].Real != 5 || r.Scores[1].Sim != 0xabc || !r.Scores[1].Low {
 		t.Errorf("claude session: %+v", r)
 	}
-	// What a harness reported of the turn stays with the event that ends it.
 	if end := r.Events[2]; end.In != 900 || end.Out != 40 || end.Added != 12 || end.Removed != 0 {
 		t.Errorf("turn end: %+v, want 900 in, 40 out, 12 added, and a count below zero dropped", end)
 	}
@@ -195,8 +189,6 @@ func mustRead(t *testing.T, p string) []byte {
 }
 
 func TestEdits(t *testing.T) {
-	// A Write, then an Edit that changes one of three lines; the second file
-	// is a fork that copies the Edit, which must count once.
 	claude := `{"type":"assistant","timestamp":"2026-11-20T15:00:00Z","message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"Write","input":{"file_path":"a.go","content":"package a\n\nfunc Hello() string {\n\treturn \"hi\"\n}\n"}}]}}
 {"type":"assistant","timestamp":"2026-11-20T15:01:00Z","message":{"id":"m2","content":[{"type":"tool_use","id":"t2","name":"Edit","input":{"file_path":"a.go","old_string":"func Hello() string {\n\treturn \"hi\"\n}","new_string":"func Hello() string {\n\treturn \"hello there\"\n}"}},{"type":"tool_use","id":"t3","name":"Read","input":{"file_path":"a.go"}}]}}
 `
@@ -232,7 +224,6 @@ func TestEdits(t *testing.T) {
 	}
 }
 
-// Walk with a since time leaves out logs that were last written before it.
 func TestWalkSince(t *testing.T) {
 	dir := t.TempDir()
 	line := `{"type":"user","timestamp":"2026-11-20T15:00:00.000Z","message":{"content":"fix the bug"}}` + "\n"

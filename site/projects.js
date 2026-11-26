@@ -1,7 +1,7 @@
 // The projects page: every project in a person's reports, as a card, with the
 // time spent on it in the range picked. A card opens the dashboard for just
 // that project. On the hosted site the reports are the signed-in visitor's
-// synced ones (/api/report); from `teardrop dashboard` it is the signed
+// synced ones (/api/report); from `helios dashboard` it is the signed
 // report made live on this computer. reports.js reads both.
 const hosted = 'hosted' in document.documentElement.dataset
 const params = new URLSearchParams(location.search)
@@ -150,7 +150,7 @@ async function loadHosted() {
 	again(loadHosted, 5 * 60000)
 }
 
-// loadLocal reads the live report that `teardrop dashboard` serves on this computer.
+// loadLocal reads the live report that `helios dashboard` serves on this computer.
 async function loadLocal() {
 	let body
 	try {

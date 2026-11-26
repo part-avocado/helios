@@ -5,7 +5,7 @@ The site is one Cloudflare Worker with a D1 database for summaries, an R2 bucket
 <a id="cloudflare"></a>
 ## The website, on Cloudflare
 
-The Worker is in the `worker` folder of the [repository](https://github.com/part-avocado/teardrop) and serves the pages in `site`. You need a Cloudflare account and Node.js 22 or later.
+The Worker is in the `worker` folder of the [repository](https://github.com/part-avocado/helios) and serves the pages in `site`. You need a Cloudflare account and Node.js 22 or later.
 
 To try it on your computer first:
 
@@ -20,8 +20,8 @@ npm run dev
 
 To put it online, connect the repository to Cloudflare. Nothing needs to be installed or signed in on your computer.
 
-1. In the Cloudflare dashboard, open Workers & Pages, then Create, then Import a repository. Choose your fork of the [repository](https://github.com/part-avocado/teardrop).
-2. Name the Worker `teardrop`, set the root directory to `worker`, the build command to `npm ci`, and the deploy command to `npm run deploy`. Save and deploy. The first deploy creates the D1 database, its tables, and an R2 bucket that keeps every report for reviewers. It runs without the secrets, and the site says it is not set up yet.
+1. In the Cloudflare dashboard, open Workers & Pages, then Create, then Import a repository. Choose your fork of the [repository](https://github.com/part-avocado/helios).
+2. Name the Worker `helios`, set the root directory to `worker`, the build command to `npm ci`, and the deploy command to `npm run deploy`. Save and deploy. The first deploy creates the D1 database, its tables, and an R2 bucket that keeps every report for reviewers. It runs without the secrets, and the site says it is not set up yet.
 3. Create a Hack Club Auth app as in [Set up sign-in](#hca-app) below, with the `openid`, `profile`, and `slack_id` scopes and `https://<worker>.<your-subdomain>.workers.dev/auth/callback` as its redirect URI. Cloudflare shows the address under the Worker's Settings, Domains & Routes.
 4. Under the Worker's Settings, Variables and Secrets, add these as secrets: `SESSION_SECRET` (any long random text), `HCA_CLIENT_ID`, `HCA_CLIENT_SECRET`, and `ADMINS`. Deploying again, which a push to the branch does, keeps them.
 
@@ -37,8 +37,8 @@ Deploy with `npm run deploy`, not `npx wrangler deploy` alone: it applies the D1
 | `HCA_CLIENT_ID`, `HCA_CLIENT_SECRET` | Your Hack Club Auth app. |
 | `ADMINS` | Slack user IDs of the superadmins, separated by commas. They add everyone else who reviews, in [the review app](#review-app). |
 | `GITHUB_TOKEN` | Optional secret. Lets the hourly check ask GitHub which claimed commits exist, when GitHub dates them, and whose they are. Without it, commits are linked but not checked, and the review app says so. |
-| `MIN_VERSION` | Optional variable, such as `v0.6.0`. Older teardrops, and ones too old to say their version, are told to run `teardrop update` and can't sync until they do. Their records wait on their computers and arrive late, so late that their time isn't credited, so raise it only for a fix that needs it. Empty answers every version. |
-| `UPLOAD_BURST`, `RECENT_RECORDS_PER_DAY`, `OLD_RECORDS_PER_DAY` | What one account may send: 1,000 uploads at once, which come back one a second; 30,000 records a day dated in the last two days; and 100,000 older ones a day, for a first sync of a year (set `OLD_RECORDS_PER_DAY` higher if you need to import more). Past one, the site answers 429 and teardrop keeps the records to send later. The defaults are about ten times the heaviest honest use. Records held back more than 5 minutes arrive late and aren't credited, so lower them with care. |
+| `MIN_VERSION` | Optional variable, such as `v0.6.0`. Older helios versions, and ones too old to say their version, are told to run `helios update` and can't sync until they do. Their records wait on their computers and arrive late, so late that their time isn't credited, so raise it only for a fix that needs it. Empty answers every version. |
+| `UPLOAD_BURST`, `RECENT_RECORDS_PER_DAY`, `OLD_RECORDS_PER_DAY` | What one account may send: 1,000 uploads at once, which come back one a second; 30,000 records a day dated in the last two days; and 100,000 older ones a day, for a first sync of a year (set `OLD_RECORDS_PER_DAY` higher if you need to import more). Past one, the site answers 429 and helios keeps the records to send later. The defaults are about ten times the heaviest honest use. Records held back more than 5 minutes arrive late and aren't credited, so lower them with care. |
 | `REPORT_BYTES_PER_DAY` | Optional variable: how many bytes of signed reports one account may upload a day, 256 MB when empty. Past it, the site answers 429. Only each account's newest 20 reports that failed their signature check are kept in full. |
 
 To change a secret later, edit it in the dashboard. For your own domain, add a [custom domain](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/) to the Worker and use it in the redirect URI. Cloudflare accepts uploads of up to 100 MB.
@@ -60,7 +60,7 @@ Each person's page has a Project activity panel. For one project at a time it dr
 
 Levels and bans are set on a person's account view, in its Access and Bans panels. A Slack ID that has never signed in opens a view with only those two, so a person can be added or banned before their first sign-in. The Reviewers and Bans pages list who holds each level and every ban, and link to each account view.
 
-A ban has no length: it lasts until someone lifts it, and always has a reason, which only reviewers see. While it holds, the site takes nothing new from the person: no syncs, uploads, or cloud events. `teardrop sync`, their dashboard, and their settings say plainly that they are banned until a reviewer lifts it, but not why. They can still sign in and see what they had. The review app marks a banned person in red wherever they appear. A banned reviewer can't review. Someone below the level of whoever issued a ban can't lift or replace it.
+A ban has no length: it lasts until someone lifts it, and always has a reason, which only reviewers see. While it holds, the site takes nothing new from the person: no syncs, uploads, or cloud events. `helios sync`, their dashboard, and their settings say plainly that they are banned until a reviewer lifts it, but not why. They can still sign in and see what they had. The review app marks a banned person in red wherever they appear. A banned reviewer can't review. Someone below the level of whoever issued a ban can't lift or replace it.
 
 Any reviewer can make API keys, under API keys in the app, for a script or a bot. A key acts as the person who made it, at the level they hold when it is used, and stops working when they are removed or banned. The key is shown once, in a popup to copy it from; the site keeps only its hash. Send it as a bearer token:
 
@@ -105,8 +105,8 @@ curl -H "Authorization: Bearer tdp_..." "https://your-site/api/public/v1/project
 
 Times are Unix milliseconds. Answers are JSON; a refusal is plain text with its reason. Any site may call the API from the browser, since it takes only the key and no cookies. Folders on your computer are never shown, only repositories.
 
-<a id="sign-in-with-teardrop"></a>
-## Sign in with teardrop
+<a id="sign-in-with-helios"></a>
+## Sign in with helios
 
 A site can get a read key without anyone pasting one. Send the person to:
 

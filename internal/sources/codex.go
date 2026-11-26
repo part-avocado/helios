@@ -5,30 +5,14 @@ import (
 	"io"
 	"strings"
 
-	"github.com/part-avocado/teardrop/internal/timeline"
+	"github.com/part-avocado/helios/internal/timeline"
 )
 
-// ParseCodex reads a Codex CLI rollout (<CODEX_HOME>/sessions/YYYY/MM/DD/rollout-*.jsonl,
-// archived_sessions, and their .jsonl.zst forms).
-//
-// A typed prompt is an event_msg/user_message record in legacy rollouts, and
-// an event_msg/item_completed record with a UserMessage item in paginated
-// rollouts (Codex 0.147 and later). Every other timestamped record after
-// session_meta is agent output. Rollouts not started by a person (subagents,
-// reviewers) contain no human inputs, since their "user" messages come from
-// another agent.
-//
-// Line changes come from apply_patch calls, whether made as a custom tool
-// call, a function call, or a shell command.
-//
-// Tokens come from token_count events, which carry the session's running
-// total; each event is credited with the increase since the previous one, so
-// repeated events are not counted twice.
 func ParseCodex(r io.Reader, id string) (Raw, error) {
 	out := Raw{Tool: "codex", ID: id}
 	subagent, seenMeta := false, false
 	var lastIn, lastOut int64
-	patched := map[string]bool{} // call IDs already counted, since a fork copies its parent's records
+	patched := map[string]bool{}
 	err := lines(r, func(b []byte) {
 		var rec struct {
 			Timestamp string `json:"timestamp"`
@@ -56,7 +40,7 @@ func ParseCodex(r io.Reader, id string) (Raw, error) {
 		switch rec.Type {
 		case "session_meta":
 			if seenMeta {
-				return // a fork copies its parent's header later in the file
+				return
 			}
 			seenMeta = true
 			var git struct {
@@ -97,7 +81,7 @@ func ParseCodex(r io.Reader, id string) (Raw, error) {
 		case "token_count":
 			var info struct {
 				Total struct {
-					Input  int64 `json:"input_tokens"` // includes cached input
+					Input  int64 `json:"input_tokens"`
 					Output int64 `json:"output_tokens"`
 				} `json:"total_token_usage"`
 			}
@@ -118,8 +102,6 @@ func ParseCodex(r io.Reader, id string) (Raw, error) {
 	return out, err
 }
 
-// codexPrompt returns the text of a user_message event or an item_completed
-// UserMessage item, and false for any other item.
 func codexPrompt(typ string, message, item json.RawMessage) (string, bool) {
 	if typ == "user_message" {
 		var s string

@@ -1,7 +1,9 @@
-// The teardrop website on Cloudflare Workers: the pages in ../site, sign-in,
+// The helios website on Cloudflare Workers: the pages in ../site, sign-in,
 // each person's synced stats in D1, and every report they sent in R2.
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
+	// The Worker and its D1 database keep the name they were deployed under,
+	// from before the rename to helios.
 	"name": "teardrop",
 	"main": "src/index.ts",
 	"compatibility_date": "2026-11-21",
@@ -12,7 +14,7 @@
 		"directory": "../site",
 		"binding": "ASSETS",
 		// These reach the Worker before the files in ../site: the API, sign-in
-		// (and signing in to other sites with teardrop),
+		// (and signing in to other sites with helios),
 		// the pages that need an account, the review app and its old addresses,
 		// the home page, docs, and profiles, which show an account menu to
 		// signed-in visitors.
@@ -65,9 +67,9 @@
 		// Where the commit check asks GitHub; tests point it elsewhere. The
 		// check needs a GITHUB_TOKEN secret, and is off without one.
 		"GITHUB_API": "https://api.github.com",
-		// The oldest teardrop, such as "v0.6.0", the CLI API answers. Older
+		// The oldest helios, such as "v0.6.0", the CLI API answers. Older
 		// ones, and ones too old to say their version, are told to run
-		// `teardrop update`. Empty answers every version.
+		// `helios update`. Empty answers every version.
 		"MIN_VERSION": "",
 		// What one account may send (src/hub.ts): uploads in a burst, which
 		// come back one a second; records a day dated in the last 48 hours;

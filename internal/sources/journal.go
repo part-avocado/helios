@@ -9,33 +9,29 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/part-avocado/teardrop/internal/textscore"
-	"github.com/part-avocado/teardrop/internal/timeline"
+	"github.com/part-avocado/helios/internal/textscore"
+	"github.com/part-avocado/helios/internal/timeline"
 )
 
-// JournalEvent is one line of the hook journal: an event that a harness hook
-// reported as it happened. It never holds prompt text, only its text score.
 type JournalEvent struct {
 	Time    time.Time `json:"t"`
 	Tool    string    `json:"tool"`
 	Event   string    `json:"event"`
-	Human   bool      `json:"human,omitempty"` // a prompt the person submitted
+	Human   bool      `json:"human,omitempty"`
 	Session string    `json:"session"`
 	Cwd     string    `json:"cwd,omitempty"`
-	Git     string    `json:"git,omitempty"`    // the folder's repository, when the event was recorded on another machine
-	Judged  int       `json:"judged,omitempty"` // text score of a human prompt
+	Git     string    `json:"git,omitempty"`
+	Judged  int       `json:"judged,omitempty"`
 	Real    int       `json:"real,omitempty"`
-	Sim     uint64    `json:"sim,omitempty"`     // prompt fingerprint, for finding repeats
-	Low     bool      `json:"low,omitempty"`     // prompt only steers ("continue", "fix it")
-	In      int64     `json:"in,omitempty"`      // tokens the model read in the turn this event ends, cached ones included
-	Out     int64     `json:"out,omitempty"`     // tokens the model wrote in it
-	Added   int       `json:"added,omitempty"`   // lines the agent added, from harnesses that report them
-	Removed int       `json:"removed,omitempty"` // and removed
-	Sha     string    `json:"sha,omitempty"`     // a commit's, on a commit record; such records earn no time
+	Sim     uint64    `json:"sim,omitempty"`
+	Low     bool      `json:"low,omitempty"`
+	In      int64     `json:"in,omitempty"`
+	Out     int64     `json:"out,omitempty"`
+	Added   int       `json:"added,omitempty"`
+	Removed int       `json:"removed,omitempty"`
+	Sha     string    `json:"sha,omitempty"`
 }
 
-// AppendJournal adds ev to the month's journal file in dir. Each event is
-// written with one append, so hooks from parallel sessions don't interleave.
 func AppendJournal(dir string, ev JournalEvent) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
@@ -56,13 +52,8 @@ func AppendJournal(dir string, ev JournalEvent) error {
 	return err
 }
 
-// lastEventTail is how much of the end of a journal file LastJournalEvent reads.
 const lastEventTail = 256 << 10
 
-// LastJournalEvent returns the newest event of one session in the journal
-// file of the month at holds, and whether it found one. It reads only the end
-// of the file, so a hook can call it; a session whose last event lies further
-// back, or in an earlier month, is reported as not found.
 func LastJournalEvent(dir string, at time.Time, tool, session string) (JournalEvent, bool) {
 	var last JournalEvent
 	f, err := os.Open(filepath.Join(dir, "events-"+at.UTC().Format("2006-01")+".jsonl"))
@@ -84,10 +75,8 @@ func LastJournalEvent(dir string, at time.Time, tool, session string) (JournalEv
 	return last, false
 }
 
-// ReadJournal reads every journal file in dir into one Raw per session.
-// A missing dir yields nothing; unreadable files are reported in warnings.
 func ReadJournal(dir string) (out []Raw, warnings []string) {
-	files, _ := filepath.Glob(filepath.Join(dir, "events-*.jsonl")) // sorted, so months are in order
+	files, _ := filepath.Glob(filepath.Join(dir, "events-*.jsonl"))
 	j := journal{byKey: map[string]*Raw{}}
 	for _, path := range files {
 		f, err := os.Open(path)
@@ -104,9 +93,6 @@ func ReadJournal(dir string) (out []Raw, warnings []string) {
 	return j.raws(), warnings
 }
 
-// ReadJournalEvents returns the journal's events from since on, as written,
-// each once, oldest file first. Unlike ReadJournal it keeps each event's name,
-// so an event sent to the site again matches the one its hook sent.
 func ReadJournalEvents(dir string, since time.Time) []JournalEvent {
 	files, _ := filepath.Glob(filepath.Join(dir, "events-*.jsonl"))
 	first := "events-" + since.UTC().Format("2006-01") + ".jsonl"
@@ -139,7 +125,7 @@ func ReadJournalEvents(dir string, since time.Time) []JournalEvent {
 type journal struct {
 	byKey map[string]*Raw
 	order []string
-	seen  map[string]bool // events read so far, since one taken from the site twice is written twice
+	seen  map[string]bool
 }
 
 func (j *journal) read(f io.Reader, path string) error {

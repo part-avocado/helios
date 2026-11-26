@@ -1,4 +1,4 @@
-// `teardrop login` connects a computer without anyone copying its sync key.
+// `helios login` connects a computer without anyone copying its sync key.
 // The CLI asks for a login (POST /api/v1/login) and shows its person a short
 // code. Signed in on the site, they type the code at /connect (or in the same
 // form on the empty dashboard, which posts here), check the computer's ID,
@@ -26,7 +26,7 @@ const typed = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, '')
 export async function startLogin(request: Request, env: Env, url: URL): Promise<Response> {
 	// Ten a minute from one address (LOGINS), so no one piles logins up in D1.
 	if (!(await env.LOGINS.limit({ key: 'ip:' + (request.headers.get('CF-Connecting-IP') ?? '') })).success) {
-		throw new Refusal(429, 'Too many logins from this address. Wait a minute, then run `teardrop login` again.', { 'Retry-After': '60' })
+		throw new Refusal(429, 'Too many logins from this address. Wait a minute, then run `helios login` again.', { 'Retry-After': '60' })
 	}
 	let body: { computer?: unknown }
 	try {
@@ -59,7 +59,7 @@ export async function startLogin(request: Request, env: Env, url: URL): Promise<
 
 /** pollLogin answers GET /api/v1/login/{code}: pending, denied, or the key, once. */
 export async function pollLogin(env: Env, code: string): Promise<Response> {
-	const gone = new Refusal(410, 'That login has expired or was used already. Run `teardrop login` again.')
+	const gone = new Refusal(410, 'That login has expired or was used already. Run `helios login` again.')
 	if (!/^tdl_[A-Za-z0-9_-]+$/.test(code)) throw gone
 	const hash = await keyHash(code)
 	const row = await env.DB.prepare('SELECT user_id, computer_id, expires_at, allowed_at, denied_at, collected_at FROM cli_logins WHERE hash = ?')
@@ -103,7 +103,7 @@ export async function connect(request: Request, env: Env): Promise<Response> {
 	if (!row || Date.now() > row.expires_at || row.allowed_at != null || row.denied_at != null) {
 		// Ten wrong codes a minute (LOGINS), so no one guesses another person's code.
 		if (!(await env.LOGINS.limit({ key: `user:${user.id}` })).success) return codePage(429, 'Too many codes that didn’t match. Wait a minute, then type the code again.')
-		return codePage(400, 'That code is not one teardrop is waiting for. Check it against your terminal, or run `teardrop login` again: a code lasts 10 minutes.')
+		return codePage(400, 'That code is not one helios is waiting for. Check it against your terminal, or run `helios login` again: a code lasts 10 minutes.')
 	}
 	const decision = form.get('decision')
 	if (decision === 'deny') {
@@ -114,14 +114,14 @@ export async function connect(request: Request, env: Env): Promise<Response> {
 	const allowed = await env.DB.prepare('UPDATE cli_logins SET user_id = ?, allowed_at = ? WHERE hash = ? AND allowed_at IS NULL AND denied_at IS NULL')
 		.bind(user.id, Date.now(), row.hash)
 		.run()
-	if (!allowed.meta.changes) return codePage(400, 'That code was used already. Run `teardrop login` again.')
-	return page(200, 'Computer connected', `<p class="muted">Computer <b class="site">${esc(row.computer_id)}</b> is connected. Go back to your terminal; teardrop takes it from there.</p>
+	if (!allowed.meta.changes) return codePage(400, 'That code was used already. Run `helios login` again.')
+	return page(200, 'Computer connected', `<p class="muted">Computer <b class="site">${esc(row.computer_id)}</b> is connected. Go back to your terminal; helios takes it from there.</p>
 		<a class="btn primary" href="/dashboard.html">Go to your dashboard</a>`)
 }
 
 function codePage(status: number, error: string): Response {
 	return page(status, 'Connect a computer', `
-		<p class="muted">Type the code <code>teardrop login</code> shows in your terminal.</p>
+		<p class="muted">Type the code <code>helios login</code> shows in your terminal.</p>
 		${error ? `<p class="msg bad" role="alert">${esc(error).replace(/`([^`]+)`/g, '<code>$1</code>')}</p>` : ''}
 		<form method="post" action="/connect">
 			<input name="user_code" aria-label="The code from your terminal" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX" maxlength="12" required autofocus>
@@ -134,7 +134,7 @@ function allowPage(short: string, computer: string, asked: number, place: string
 	const minutes = Math.floor((Date.now() - asked) / 60_000)
 	const when = minutes < 1 ? 'just now' : `${minutes} minute${minutes === 1 ? '' : 's'} ago`
 	return page(200, 'Connect this computer?', `
-		<p class="muted">Computer <b class="site">${esc(computer)}</b> asked to connect to your account ${when}${place ? `, from near <b>${esc(place)}</b>` : ''}. Check that <code>teardrop login</code> shows the same ID, and that you ran it then and there. If you didn't, cancel: someone sent you their code.</p>
+		<p class="muted">Computer <b class="site">${esc(computer)}</b> asked to connect to your account ${when}${place ? `, from near <b>${esc(place)}</b>` : ''}. Check that <code>helios login</code> shows the same ID, and that you ran it then and there. If you didn't, cancel: someone sent you their code.</p>
 		<ul class="grants">
 			<li>It gets a sync key, so it can send records as you</li>
 			<li>Revoking its key under Settings, then Setup, disconnects it alone</li>

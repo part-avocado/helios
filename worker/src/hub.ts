@@ -128,7 +128,7 @@ export class UserHub extends DurableObject<Env> {
 		const uploads = Math.min(burst, bucket.n + Math.max(0, now - bucket.at) / 1000)
 		sql.exec(`INSERT OR REPLACE INTO meta (k, v) VALUES ('uploads', ?)`, JSON.stringify({ n: uploads < 1 ? uploads : uploads - 1, at: now }))
 		if (uploads < 1) {
-			return { stored: 0, future: 0, records: [], limited: { message: 'This account is sending too many uploads at once. teardrop sends the rest in a moment.', retryAfter: Math.ceil(1 - uploads) } }
+			return { stored: 0, future: 0, records: [], limited: { message: 'This account is sending too many uploads at once. helios sends the rest in a moment.', retryAfter: Math.ceil(1 - uploads) } }
 		}
 		// A computer ID another account holds is kept under a stand-in of this account's own.
 		computer = await this.named(userID, computer)

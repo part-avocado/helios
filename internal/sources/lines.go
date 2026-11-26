@@ -6,17 +6,11 @@ import (
 	"strings"
 )
 
-// Edit is the size of one change an agent made to files, read from its tool
-// call. Hashes identify the added lines that can later be found in commits;
-// the lines themselves are never kept.
 type Edit struct {
 	Added, Removed int
 	Hashes         []uint64
 }
 
-// LineHash returns the hash used to match a written line with a committed
-// one, ignoring indentation. Short lines such as "}" or "end" would match by
-// chance, so they get no hash.
 func LineHash(line string) (uint64, bool) {
 	s := strings.TrimSpace(line)
 	if len(s) < 6 {
@@ -27,14 +21,11 @@ func LineHash(line string) (uint64, bool) {
 	return h.Sum64(), true
 }
 
-// CountLines counts the lines an edit from old to new adds and removes.
 func CountLines(old, new string) (added, removed int) {
 	e := diffLines(old, new)
 	return e.Added, e.Removed
 }
 
-// diffLines counts the lines of new that old lacks and of old that new lacks,
-// each line matched once. Blank lines are not counted.
 func diffLines(old, new string) Edit {
 	have := map[string]int{}
 	for _, l := range strings.Split(old, "\n") {
@@ -72,8 +63,6 @@ func (e *Edit) merge(o Edit) {
 	e.Hashes = append(e.Hashes, o.Hashes...)
 }
 
-// claudeEdit reads the change a Claude Code Edit, MultiEdit, or Write tool
-// call makes. Other tools change nothing.
 func claudeEdit(name string, input json.RawMessage) (Edit, bool) {
 	var in struct {
 		Old     string `json:"old_string"`
@@ -102,8 +91,6 @@ func claudeEdit(name string, input json.RawMessage) (Edit, bool) {
 	return Edit{}, false
 }
 
-// patchEdit counts the lines of a Codex apply_patch patch
-// ("*** Begin Patch" ... "*** End Patch"): "+" lines are added and "-" lines removed.
 func patchEdit(patch string) Edit {
 	var e Edit
 	for _, l := range strings.Split(patch, "\n") {
@@ -122,9 +109,6 @@ func patchEdit(patch string) Edit {
 	return e
 }
 
-// findPatch returns the first apply_patch patch in a tool call's input, which
-// is either the patch itself or JSON arguments holding it somewhere, such as
-// {"command":["apply_patch","*** Begin Patch..."]} or {"input":"*** Begin Patch..."}.
 func findPatch(raw string) (string, bool) {
 	if i := strings.Index(raw, "*** Begin Patch"); i >= 0 && !strings.HasPrefix(strings.TrimSpace(raw), "{") {
 		return raw[i:], true

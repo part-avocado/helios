@@ -8,19 +8,14 @@ import (
 	"time"
 )
 
-// Message is one entry of a chat as a reviewer reads it.
 type Message struct {
 	Time time.Time
-	Role string // "you" for a person's prompt, "agent" for a reply, "tool" for a tool call
+	Role string
 	Text string
 }
 
-// toolTextLimit is how much of a tool call's input a transcript shows.
 const toolTextLimit = 3000
 
-// Transcript reads the conversation in a log: the person's prompts, the
-// agent's replies, and its tool calls. tool is "claude-code", "codex", or
-// "journal"; a journal holds no text, so its prompts show only their time.
 func Transcript(tool string, data []byte) []Message {
 	var out []Message
 	add := func(ts, role, text string) {
@@ -97,7 +92,7 @@ func Transcript(tool string, data []byte) []Message {
 				if text, ok := codexPrompt(p.Type, p.Message, p.Item); ok {
 					role := "you"
 					if subagent {
-						role = "agent" // a subagent's "user" is the agent that started it
+						role = "agent"
 					}
 					add(rec.Timestamp, role, text)
 					return
@@ -128,8 +123,6 @@ func Transcript(tool string, data []byte) []Message {
 	return out
 }
 
-// claudeToolText describes a Claude Code tool call: the file and change for
-// edits, the command for Bash, and the input otherwise.
 func claudeToolText(name string, input json.RawMessage) string {
 	var in struct {
 		Path    string `json:"file_path"`

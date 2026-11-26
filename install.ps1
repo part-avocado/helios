@@ -1,13 +1,13 @@
-# Install teardrop on Windows. In PowerShell, run:
+# Install helios on Windows. In PowerShell, run:
 #
-#   irm https://raw.githubusercontent.com/part-avocado/teardrop/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/part-avocado/helios/main/install.ps1 | iex
 #
-# Settings, all optional: $env:TEARDROP_VERSION (such as v0.1.0),
-# $env:TEARDROP_INSTALL_DIR, $env:TEARDROP_NO_MODIFY_PATH, $env:TEARDROP_NO_SETUP.
-# $env:TEARDROP_CLOUD = '1' is for a cloud environment: it sets up Claude Code and
-# every other tool found, without asking. Also set $env:TEARDROP_SERVER and
-# $env:TEARDROP_KEY as secrets there; hooks then send time straight to the site.
-# Rerunning it updates teardrop in place. Works in Windows PowerShell 5.1 and PowerShell 7.
+# Settings, all optional: $env:HELIOS_VERSION (such as v0.1.0),
+# $env:HELIOS_INSTALL_DIR, $env:HELIOS_NO_MODIFY_PATH, $env:HELIOS_NO_SETUP.
+# $env:HELIOS_CLOUD = '1' is for a cloud environment: it sets up Claude Code and
+# every other tool found, without asking. Also set $env:HELIOS_SERVER and
+# $env:HELIOS_KEY as secrets there; hooks then send time straight to the site.
+# Rerunning it updates helios in place. Works in Windows PowerShell 5.1 and PowerShell 7.
 
 # Everything runs inside this block so `iex` doesn't change the caller's session
 # and a download cut off midway runs nothing.
@@ -23,7 +23,7 @@
 		$ProgressPreference = 'Continue'
 		try {
 			$req = [Net.HttpWebRequest]::Create($uri)
-			$req.UserAgent = 'teardrop-installer'
+			$req.UserAgent = 'helios-installer'
 			$res = $req.GetResponse()
 			try {
 				$total = $res.ContentLength
@@ -54,12 +54,12 @@
 		}
 	}
 
-	$repo = 'part-avocado/teardrop'
-	$version = if ($env:TEARDROP_VERSION) { $env:TEARDROP_VERSION } else { 'latest' }
-	$base = if ($env:TEARDROP_BASE_URL) { $env:TEARDROP_BASE_URL }
+	$repo = 'part-avocado/helios'
+	$version = if ($env:HELIOS_VERSION) { $env:HELIOS_VERSION } else { 'latest' }
+	$base = if ($env:HELIOS_BASE_URL) { $env:HELIOS_BASE_URL }
 	elseif ($version -eq 'latest') { "https://github.com/$repo/releases/latest/download" }
 	else { "https://github.com/$repo/releases/download/$version" }
-	$dir = if ($env:TEARDROP_INSTALL_DIR) { $env:TEARDROP_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'Programs\teardrop' }
+	$dir = if ($env:HELIOS_INSTALL_DIR) { $env:HELIOS_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'Programs\helios' }
 
 	# 32-bit PowerShell on 64-bit Windows reports x86 here and the real CPU in PROCESSOR_ARCHITEW6432.
 	$cpu = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
@@ -67,17 +67,17 @@
 		'AMD64' { 'amd64' }
 		'ARM64' { 'arm64' }
 		'x86' { '386' }
-		default { Write-Host "teardrop install: $cpu processors are not supported" -ForegroundColor Red; return }
+		default { Write-Host "helios install: $cpu processors are not supported" -ForegroundColor Red; return }
 	}
 	if (-not $arch) { return }
-	$asset = "teardrop_windows_$arch.exe"
+	$asset = "helios_windows_$arch.exe"
 
-	$tmp = Join-Path ([IO.Path]::GetTempPath()) ('teardrop-' + [guid]::NewGuid())
+	$tmp = Join-Path ([IO.Path]::GetTempPath()) ('helios-' + [guid]::NewGuid())
 	New-Item -ItemType Directory -Path $tmp | Out-Null
 	try {
-		Write-Host "Downloading teardrop (windows/$arch)..."
+		Write-Host "Downloading helios (windows/$arch)..."
 		$file = Join-Path $tmp $asset
-		Get-File "$base/$asset" $file 'Downloading teardrop'
+		Get-File "$base/$asset" $file 'Downloading helios'
 		Invoke-WebRequest -UseBasicParsing -Uri "$base/checksums.txt" -OutFile (Join-Path $tmp 'checksums.txt')
 
 		$want = $null
@@ -90,7 +90,7 @@
 		if ($got -ne $want) { throw 'the download is corrupted (checksum mismatch). Nothing was installed; try again.' }
 
 		New-Item -ItemType Directory -Force -Path $dir | Out-Null
-		$exe = Join-Path $dir 'teardrop.exe'
+		$exe = Join-Path $dir 'helios.exe'
 		# Windows can't overwrite a running .exe but can rename it, so move the old one aside.
 		if (Test-Path $exe) {
 			Move-Item -Force -Path $exe -Destination "$exe.old"
@@ -99,20 +99,20 @@
 		Move-Item -Force -Path $file -Destination $exe
 	}
 	catch {
-		Write-Host "teardrop install: $($_.Exception.Message)" -ForegroundColor Red
+		Write-Host "helios install: $($_.Exception.Message)" -ForegroundColor Red
 		return
 	}
 	finally {
 		Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 	}
-	$installed = try { & $exe -version } catch { 'teardrop' }
+	$installed = try { & $exe -version } catch { 'helios' }
 	Write-Host "Installed $installed to $exe"
 
 	$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 	$entries = @($userPath -split ';' | Where-Object { $_ } | ForEach-Object { $_.TrimEnd('\') })
 	$newTerminal = $false
 	if ($entries -notcontains $dir.TrimEnd('\')) {
-		if ($env:TEARDROP_NO_MODIFY_PATH) {
+		if ($env:HELIOS_NO_MODIFY_PATH) {
 			Write-Host "$dir is not on your PATH. Add it in Settings > Edit environment variables for your account."
 		}
 		else {
@@ -123,12 +123,12 @@
 	}
 	if (($env:Path -split ';') -notcontains $dir) { $env:Path = "$env:Path;$dir" }
 
-	if (-not $env:TEARDROP_NO_SETUP) {
+	if (-not $env:HELIOS_NO_SETUP) {
 		Write-Host ''
-		if ($env:TEARDROP_CLOUD -in '1', 'true') {
+		if ($env:HELIOS_CLOUD -in '1', 'true') {
 			# -in ignores case, so True and TRUE count too.
-			if (-not $env:TEARDROP_SERVER -or -not $env:TEARDROP_KEY) {
-				Write-Host 'Warning: TEARDROP_CLOUD is set, but TEARDROP_SERVER and TEARDROP_KEY are not both set.'
+			if (-not $env:HELIOS_SERVER -or -not $env:HELIOS_KEY) {
+				Write-Host 'Warning: HELIOS_CLOUD is set, but HELIOS_SERVER and HELIOS_KEY are not both set.'
 				Write-Host 'Add them as secrets of this environment, or its hooks will send nothing to your site.'
 				Write-Host ''
 			}
@@ -143,6 +143,6 @@
 	}
 	if ($newTerminal) {
 		Write-Host ''
-		Write-Host 'Other open terminals need restarting before `teardrop` works in them.'
+		Write-Host 'Other open terminals need restarting before `helios` works in them.'
 	}
 }

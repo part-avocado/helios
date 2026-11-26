@@ -80,7 +80,7 @@ export async function checkGit(env: GitEnv, get: typeof fetch = fetch, now = Dat
 		.all<{ user_id: number; project_key: string; recent: string }>()
 	let checked = 0
 	const ask = async (path: string) => {
-		const res = await get(api + path, { headers: { Authorization: `Bearer ${env.GITHUB_TOKEN}`, Accept: 'application/vnd.github+json', 'User-Agent': 'teardrop' } })
+		const res = await get(api + path, { headers: { Authorization: `Bearer ${env.GITHUB_TOKEN}`, Accept: 'application/vnd.github+json', 'User-Agent': 'helios' } })
 		const left = Number(res.headers.get('X-RateLimit-Remaining') ?? RESERVE + 1)
 		return { status: res.status, low: left <= RESERVE, body: res.status === 200 ? await res.json().catch(() => null) : null }
 	}

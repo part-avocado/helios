@@ -90,7 +90,7 @@ async function answer(request: Request, env: Env, url: URL): Promise<Response> {
 	const badge = /^GET \/users\/([^/]+)\/badge\.svg$/.exec(call)
 	if (badge) return profileBadge(env, badge[1]!, url.searchParams.get('project'))
 	if (!/^Bearer tdp_/.test(request.headers.get('Authorization') ?? '')) {
-		throw new Refusal(401, 'Send a read key as a bearer token. Make one on your teardrop site under Settings, then API.')
+		throw new Refusal(401, 'Send a read key as a bearer token. Make one on your helios site under Settings, then API.')
 	}
 	const user = await userKeyUser(request, env)
 	if (!user) throw new Refusal(401, 'That read key is not valid. It may have been revoked.')

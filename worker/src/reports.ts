@@ -1,4 +1,4 @@
-// Signed reports from `teardrop sync` and `teardrop export`: checking them,
+// Signed reports from `helios sync` and `helios export`: checking them,
 // storing the latest one of each computer, and reading them back. Every report
 // is also kept as it arrived, in the REPORTS bucket, for reviewers.
 import { noKey, type User } from './auth.ts'
@@ -27,7 +27,7 @@ interface Payload {
 	report?: ReportBody
 }
 
-/** A refusal that reviewers should see, because the teardrop CLI never causes it. */
+/** A refusal that reviewers should see, because the helios CLI never causes it. */
 class FlaggedRefusal extends Refusal {}
 /** A report whose key does not match its contents. */
 class ForgedRefusal extends FlaggedRefusal {}
@@ -35,7 +35,7 @@ class ForgedRefusal extends FlaggedRefusal {}
 const refuse = (why: string) => new Refusal(400, `Report refused: ${why}`)
 
 /**
- * storeReport checks a signed report the way `teardrop` itself does and keeps
+ * storeReport checks a signed report the way `helios` itself does and keeps
  * it as the latest report of the computer that signed it. It returns the
  * computer's ID. Stored or refused, the report goes in the person's log.
  */
@@ -94,9 +94,9 @@ async function store(env: Env, user: User, body: string, entry: Entry): Promise<
 		if (signed?.v !== 1 || typeof signed.payload !== 'string' || typeof signed.key !== 'string') throw new Error()
 		p = JSON.parse(signed.payload)
 	} catch {
-		throw refuse('it is not a signed teardrop report. Make one with: teardrop export -o stats.json')
+		throw refuse('it is not a signed helios report. Make one with: helios export -o stats.json')
 	}
-	if (p.kind) throw refuse('it is a project submission from an old teardrop, and this site no longer takes submissions')
+	if (p.kind) throw refuse('it is a project submission from an old helios, and this site no longer takes submissions')
 	const publicKey = fromBase64Url(p.account ?? '')
 	const signature = fromBase64Url(signed.key)
 	const bytes = new TextEncoder().encode(signed.payload)
@@ -128,8 +128,8 @@ async function store(env: Env, user: User, body: string, entry: Entry): Promise<
 
 	const expires = Date.parse(p.expires_at ?? '')
 	if (!(generated <= now + CLOCK_SKEW)) throw refuse('it says it was made in the future. Check the clock on your computer.')
-	if (!(now < expires)) throw refuse('its key has expired. Run teardrop sync, or export a fresh file.')
-	if (expires - generated > KEY_LIFETIME) throw new FlaggedRefusal(400, 'Report refused: its key is valid for longer than teardrop allows.')
+	if (!(now < expires)) throw refuse('its key has expired. Run helios sync, or export a fresh file.')
+	if (expires - generated > KEY_LIFETIME) throw new FlaggedRefusal(400, 'Report refused: its key is valid for longer than helios allows.')
 	const blocks = (Array.isArray(p.report?.blocks) ? p.report.blocks : []) as { end?: string }[]
 	if (blocks.some((b) => !(Date.parse(b?.end ?? '') <= generated + CLOCK_SKEW))) {
 		throw refuse('it has activity after the time it was made.')
@@ -680,7 +680,7 @@ export async function deleteUser(env: Env, userID: number): Promise<void> {
 		env.DB.prepare('DELETE FROM project_settings WHERE user_id = ?').bind(userID),
 		env.DB.prepare(`UPDATE users SET name = '', handle = NULL, profile_public = 1, api_key = ?, deleted_at = ? WHERE id = ?`).bind(noKey(), Date.now(), userID),
 		env.DB.prepare('DELETE FROM sync_keys WHERE user_id = ?').bind(userID),
-		// Their projects' commits, and what is left of signing in elsewhere and of `teardrop login`.
+		// Their projects' commits, and what is left of signing in elsewhere and of `helios login`.
 		env.DB.prepare('DELETE FROM project_git WHERE user_id = ?').bind(userID),
 		env.DB.prepare('DELETE FROM sign_in_codes WHERE user_id = ?').bind(userID),
 		env.DB.prepare('DELETE FROM cli_logins WHERE user_id = ?').bind(userID),

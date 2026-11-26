@@ -11,7 +11,7 @@ import { createTestHarness, unstable_splitSqlQuery } from 'wrangler'
 
 // The Worker sees requests to this address as coming from the internet. A
 // path alone reaches it as localhost.
-const SITE = 'http://teardrop.example'
+const SITE = 'http://helios.example'
 const DAY = 86400_000
 
 // A sign-in code "code-ada" belongs to the person "ada", whose Slack ID is "UADA".
@@ -121,7 +121,7 @@ async function reports(cookie: string, query = '') {
 	return ((await res.json()) as { computers: { id: string; report: { report: unknown } }[] }).computers
 }
 
-/** computer is a teardrop install: a signing key, and reports signed the way the CLI signs them. */
+/** computer is a helios install: a signing key, and reports signed the way the CLI signs them. */
 function computer({ publicKey, privateKey }: { publicKey: KeyObject; privateKey: KeyObject } = generateKeyPairSync('ed25519')) {
 	const account = publicKey.export({ format: 'jwk' }).x!
 	return (report: object, generatedAt = Date.now(), version = 'v0.0.1') => {
@@ -178,7 +178,7 @@ test('a server without its secrets says so', async () => {
 	}
 })
 
-test('MIN_VERSION sends older and unversioned clients to teardrop update', async () => {
+test('MIN_VERSION sends older and unversioned clients to helios update', async () => {
 	const site = createTestHarness({
 		workers: [{ configPath: new URL('../wrangler.jsonc', import.meta.url), vars: { DEV_LOGIN: 'UDEV', MIN_VERSION: 'v0.6.0' }, secrets: { SESSION_SECRET: 'x', HCA_CLIENT_ID: 'a', HCA_CLIENT_SECRET: 'b', ADMINS: '' } }],
 	})
@@ -191,13 +191,13 @@ test('MIN_VERSION sends older and unversioned clients to teardrop update', async
 		}
 		const key = await devSyncKey(site, env.DB)
 		const whoami = (version?: string) =>
-			site.fetch('/api/v1/whoami', { headers: { Authorization: `Bearer ${key}`, ...(version ? { 'X-Teardrop-Version': version } : {}) } })
+			site.fetch('/api/v1/whoami', { headers: { Authorization: `Bearer ${key}`, ...(version ? { 'X-Helios-Version': version } : {}) } })
 		// v0.10.0 is newer than v0.6.0, though it sorts before it as text.
 		for (const version of ['v0.6.0', 'v0.10.0', 'v1.0.0', 'dev']) assert.equal((await whoami(version)).status, 200, version)
 		for (const version of ['v0.5.9', 'v0.0.1', undefined, 'v0.6']) {
 			const res = await whoami(version)
 			assert.equal(res.status, 426, String(version))
-			assert.match(await res.text(), /teardrop v0\.6\.0 or newer\. Run `teardrop update`/)
+			assert.match(await res.text(), /helios v0\.6\.0 or newer\. Run `helios update`/)
 		}
 		// The key is checked first, so a stranger learns nothing about the version.
 		assert.equal((await site.fetch('/api/v1/whoami', { headers: { Authorization: 'Bearer tdk_nope' } })).status, 401)
@@ -320,7 +320,7 @@ test('signing in creates one account per person, with no key of its own', async 
 	const cookie = await signIn('ada')
 	assert.equal((await call('/logout', { method: 'POST', cookie })).status, 403, 'another site cannot sign someone out')
 	const out = await call('/logout', { method: 'POST', cookie, origin: SITE })
-	assert.deepEqual([out.headers.get('Location'), cookies(out)], ['/', 'teardrop_session='])
+	assert.deepEqual([out.headers.get('Location'), cookies(out)], ['/', 'helios_session='])
 
 	const page = await call('/dashboard', { cookie })
 	const html = await page.text()
@@ -334,7 +334,7 @@ test('a sign-in that this browser did not start is refused', async () => {
 	const start = await call('/auth/hca')
 	const forged = await call('/auth/callback?code=code-ada&state=someone-elses', { cookie: cookies(start) })
 	assert.equal(forged.headers.get('Location'), '/login?error=expired')
-	assert.doesNotMatch(cookies(forged), /teardrop_session=[^;]/)
+	assert.doesNotMatch(cookies(forged), /helios_session=[^;]/)
 	const noCookie = await call(`/auth/callback?code=code-ada&state=${new URL(start.headers.get('Location')!).searchParams.get('state')}`)
 	assert.equal(noCookie.headers.get('Location'), '/login?error=expired')
 })
@@ -368,7 +368,7 @@ test('a synced report is stored exactly and replaced only by a newer one', async
 	assert.equal((await me(cookie)).computers.length, 1)
 })
 
-test('reports that fail teardrop\'s checks are refused', async () => {
+test('reports that fail helios\'s checks are refused', async () => {
 	const cookie = await signIn('strict')
 	const key = await newSyncKey(cookie)
 	const signed = computer()
@@ -432,7 +432,7 @@ test('only reviewers see other people, in the review app', async () => {
 	assert.equal((await call('/api/review/people', { cookie: member })).status, 403)
 	assert.equal((await call('/api/report?user=1', { cookie: member })).status, 403)
 
-	assert.match(await (await call('/review/', { cookie: admin })).text(), /<html[^>]* data-staff[\s\S]*<title>teardrop review</)
+	assert.match(await (await call('/review/', { cookie: admin })).text(), /<html[^>]* data-staff[\s\S]*<title>helios review</)
 	// Only a reviewer's pages are marked to show the Review links.
 	for (const page of ['/', '/dashboard', '/projects', '/settings']) {
 		assert.match(await (await call(page, { cookie: admin })).text(), /<html[^>]* data-staff[\s\S]*class="staff-only"[^>]*>Review</, page)
@@ -551,7 +551,7 @@ test('reviewers look a person up by Slack ID and read their log', async () => {
 	assert.match(both.impossible_days[0]!, new RegExp(`^${day(now - 5 * DAY)}: their computers add up to 28h 40m`))
 
 	// A day that left the report's window doesn't hide time added to a later
-	// one, and a new version of teardrop is pointed out.
+	// one, and a new version of helios is pointed out.
 	const third = computer()
 	const old = { engaged_seconds: 4200, blocks: [], days: days({ 20: 3600, 9: 600 }) }
 	assert.equal((await call('/api/v1/reports', { method: 'POST', body: third(old, now - 4 * DAY), key })).status, 200)
@@ -559,7 +559,7 @@ test('reviewers look a person up by Slack ID and read their log', async () => {
 	assert.equal((await call('/api/v1/reports', { method: 'POST', body: third(slid, now, 'v0-next'), key })).status, 200)
 	row = (await review()).log[0]!
 	assert.deepEqual([row.flagged, row.past_added_seconds], [1, 3600])
-	assert.match(row.remarks.join(' '), /teardrop changed from v0.0.1 to v0-next.*teardrop v0-next, which is not a released version/)
+	assert.match(row.remarks.join(' '), /helios changed from v0.0.1 to v0-next.*helios v0-next, which is not a released version/)
 
 	// Deleting the account empties it, and leaves the log for reviewers.
 	const before = await review()
@@ -676,7 +676,7 @@ test('a log entry says what the report held and what changed, and a computer has
 	assert.deepEqual([stored.id, stored.signature, stored.report], [other, JSON.parse(latest).key, JSON.parse(JSON.parse(latest).payload)])
 	assert.equal((await call('/api/review/report?computer=td-000000000000', { cookie: admin })).status, 404)
 	const download = await call('/api/review/log?slack=UDETAILED', { cookie: admin })
-	assert.match(download.headers.get('Content-Disposition')!, /attachment; filename="teardrop-log-\d+\.json"/)
+	assert.match(download.headers.get('Content-Disposition')!, /attachment; filename="helios-log-\d+\.json"/)
 	const whole = (await download.json()) as { log: (LogRow & { detail: Detail | null })[] }
 	assert.deepEqual([whole.log.length, whole.log.at(-1)!.detail!.projects], [5, [['site', 0, 3600], ['notes', 0, 600]]])
 	for (const path of [`/api/review/report?computer=${other}`, '/api/review/log?slack=UDETAILED']) assert.equal((await call(path, { cookie })).status, 403, path)
@@ -718,7 +718,7 @@ test('every report is kept in full, refused ones too, until the account is delet
 	const forged = JSON.parse(signed({ engaged_seconds: 1800, blocks: [block(now - 1500, 'forged')] }, now - 1000))
 	forged.payload = forged.payload.replace('"engaged_seconds":1800', '"engaged_seconds":180000')
 	assert.deepEqual([(await post(first)).status, (await post(second)).status, (await post(JSON.stringify(forged))).status], [200, 200, 400])
-	// A file that is not a teardrop report is refused and not kept.
+	// A file that is not a helios report is refused and not kept.
 	assert.equal((await post('{"private":"notes"}')).status, 400)
 
 	const { person, log } = await review()
@@ -826,7 +826,7 @@ test('events from Amp\'s cloud are kept, and a cloud thread reads them back with
 	row = await sync(cloud, 11400, { ...today, [day(now - 10 * DAY)]: 3600 })
 	assert.deepEqual([row.flagged, row.past_added_seconds, row.findings.length], [1, 3600, 1])
 
-	// teardrop v0.5.2 on a computer still asks to take the events, and is told there are none for it.
+	// helios v0.5.2 on a computer still asks to take the events, and is told there are none for it.
 	assert.equal((await call('/api/v1/events?computer=td-aaaaaaaaaaaa&after=0', { key: rotated })).status, 404)
 
 	// Events from before the year a report covers go when more arrive.
@@ -1121,9 +1121,9 @@ test('every profile is public by default, and shows no name, Slack ID, or folder
 	const all = await badge(handle)
 	assert.ok(typeof all === 'object')
 	assert.deepEqual([all.type, all.cache], ['image/svg+xml; charset=utf-8', 'public, max-age=300'])
-	assert.match(all.svg, /<text[^>]*>teardrop<\/text><text[^>]*>1 hour<\/text>/)
+	assert.match(all.svg, /<text[^>]*>helios<\/text><text[^>]*>1 hour<\/text>/)
 	const one = await badge(handle, 'github.com/kid/site')
-	assert.match(typeof one === 'object' ? one.svg : '', /teardrop: site<\/text><text[^>]*>1 hour</)
+	assert.match(typeof one === 'object' ? one.svg : '', /helios: site<\/text><text[^>]*>1 hour</)
 	assert.equal(await badge(handle, 'game'), 404, 'a folder the profile only counts')
 	assert.equal(await badge(handle, '/home/kid/game'), 404)
 	assert.equal(await badge('u-000000000000'), 404)
@@ -1131,13 +1131,13 @@ test('every profile is public by default, and shows no name, Slack ID, or folder
 	// The owner names or hides each project, but only their own.
 	assert.equal((await settings({ projects: { '/home/kid/game': true, 'github.com/kid/site': false } })).status, 200)
 	assert.deepEqual(await named(handle), { names: [['game', null]], other: { count: 1, engaged_seconds: 3600 } })
-	assert.match(String(((await badge(handle, 'game')) as { svg: string }).svg), /teardrop: game<\/text><text[^>]*>30 min</)
+	assert.match(String(((await badge(handle, 'game')) as { svg: string }).svg), /helios: game<\/text><text[^>]*>30 min</)
 	assert.equal(await badge(handle, 'github.com/kid/site'), 404, 'a project the owner hid')
 	// A project's name is the computer's to send, so it is escaped.
 	const marked = { key: 'github.com/kid/x', name: '<b>&x"</b>' }
 	assert.equal((await call('/api/v1/reports', { method: 'POST', key, body: computer()({ engaged_seconds: 60, blocks: [{ ...block(now - 1000), project: marked }], projects: [{ project: marked, engaged_seconds: 60 }], days: [] }) })).status, 200)
 	const escaped = String(((await badge(handle, 'github.com/kid/x')) as { svg: string }).svg)
-	assert.match(escaped, /teardrop: &lt;b&gt;&amp;x&quot;&lt;\/b&gt;/)
+	assert.match(escaped, /helios: &lt;b&gt;&amp;x&quot;&lt;\/b&gt;/)
 	assert.doesNotMatch(escaped, /<b>/)
 	assert.equal((await settings({ projects: { '/home/other/thing': true } })).status, 404)
 	assert.equal((await settings({ projects: { 'github.com/kid/site': 'yes' } })).status, 400)
@@ -1154,7 +1154,7 @@ test('every profile is public by default, and shows no name, Slack ID, or folder
 	assert.deepEqual(both.find((x) => x.key === 'github.com/kid/site')!.repos, [])
 	const shown = (await (await profile(handle)).json()) as { projects: { name: string; repo: string | null; repos: string[] }[] }
 	assert.deepEqual(shown.projects.map((x) => [x.name, x.repo, x.repos]), [['site', null, []], ['game', 'github.com/Kid/game', ['github.com/Kid/game', 'github.com/kid/game-assets']], ['<b>&x"</b>', 'github.com/kid/x', ['github.com/kid/x']]])
-	assert.match(String(((await badge(handle, 'github.com/kid/game-assets')) as { svg: string }).svg), /teardrop: game</)
+	assert.match(String(((await badge(handle, 'github.com/kid/game-assets')) as { svg: string }).svg), /helios: game</)
 	assert.equal((await project({ key: '/home/kid/game', repos: ['gitlab.com/kid/game'] })).status, 400)
 	assert.equal((await project({ key: '/home/kid/game', public: 'yes' })).status, 400)
 	assert.equal((await project({ key: '/home/other/thing', public: true })).status, 404)
@@ -1190,7 +1190,7 @@ test('every profile is public by default, and shows no name, Slack ID, or folder
 	assert.match((await me(await signIn('kid'))).handle, /^u-[0-9a-f]{12}$/)
 })
 
-test('another site gets a read key when a person signs in there with teardrop', async () => {
+test('another site gets a read key when a person signs in there with helios', async () => {
 	const back = 'https://portfolio.example/done?from=td'
 	const ask = (extra = '') => `/authorize?redirect_uri=${encodeURIComponent(back)}&state=s%7C1&name=${encodeURIComponent('<b>Folio</b>')}${extra}`
 	const allow = (cookie: string, decision: string, fields: Record<string, string> = {}, origin = SITE) =>
@@ -1310,7 +1310,7 @@ test('programs read a person\'s witnessed time through the review API, with a re
 	// A ban shows, with its reason, so a program can hold payment.
 	assert.equal((await call('/api/review/bans', { method: 'POST', cookie: admin, origin: SITE, body: JSON.stringify({ slack_id: 'ULEARNER', reason: 'test' }) })).status, 200)
 	assert.equal((await stats('slack=ULEARNER')).ban?.reason, 'test')
-	// An old `teardrop submit` is told submissions are gone.
+	// An old `helios submit` is told submissions are gone.
 	const oldSubmit = await call('/api/v1/submissions', { method: 'POST', key, body: JSON.stringify({ project: 'github.com/kid/game' }) })
 	assert.equal(oldSubmit.status, 410)
 })
@@ -1325,7 +1325,7 @@ test('a computer whose clock is off can\'t pick its own correction, not even und
 	const send = (computer: string, project: string, behind: number, ago: number[], session = project) =>
 		server.fetch(SITE + '/api/v1/events', {
 			method: 'POST',
-			headers: { Authorization: `Bearer ${key}`, 'X-Teardrop-Computer': computer, 'X-Teardrop-Sent-At': iso(now - behind) },
+			headers: { Authorization: `Bearer ${key}`, 'X-Helios-Computer': computer, 'X-Helios-Sent-At': iso(now - behind) },
 			body: ago.map((a, i) => JSON.stringify({ t: iso(now - behind - a * 1000), tool: 'claude-code', event: i % 2 ? 'Stop' : 'UserPromptSubmit', session, project, human: i % 2 === 0, judged: 6, real: 6 })).join('\n'),
 		})
 	const admin = await signIn('admin')
@@ -1412,7 +1412,7 @@ test('home and docs work for anyone, and show the account menu once signed in', 
 	try {
 		await bare.listen()
 		assert.equal((await bare.fetch(SITE + '/')).status, 200)
-		assert.equal((await bare.fetch(SITE + '/', { headers: { Cookie: 'teardrop_session=junk.junk' } })).status, 200)
+		assert.equal((await bare.fetch(SITE + '/', { headers: { Cookie: 'helios_session=junk.junk' } })).status, 200)
 	} finally {
 		await bare.close()
 	}
@@ -1434,7 +1434,7 @@ test('exporting and deleting your own data', async () => {
 	assert.equal((await call('/api/account', { method: 'DELETE', cookie })).status, 403, 'no Origin')
 	const gone = await call('/api/account', { method: 'DELETE', cookie, origin: SITE })
 	assert.equal(gone.status, 200)
-	assert.equal(cookies(gone), 'teardrop_session=')
+	assert.equal(cookies(gone), 'helios_session=')
 	// The old session and sync key are dead, and the computer is free to join someone else.
 	assert.equal((await call('/api/me', { cookie })).status, 401)
 	assert.equal((await call('/api/v1/reports', { method: 'POST', body: '{}', key })).status, 401)
@@ -1533,7 +1533,7 @@ test('a computer that sends only records shows on the dashboard, and usage earns
 	const now = Date.now()
 	const pc = 'td-00aa11bb22cc'
 	const line = (t: number, event: string, extra: object = {}) => JSON.stringify({ t: new Date(t).toISOString(), tool: 'claude-code', event, session: 'r1', git: 'github.com/kid/rec', ...extra })
-	const post = (lines: string[]) => server.fetch(SITE + '/api/v1/events', { method: 'POST', body: lines.join('\n'), headers: { Authorization: `Bearer ${key}`, 'X-Teardrop-Computer': pc, 'X-Teardrop-UTC-Offset': '0' } })
+	const post = (lines: string[]) => server.fetch(SITE + '/api/v1/events', { method: 'POST', body: lines.join('\n'), headers: { Authorization: `Bearer ${key}`, 'X-Helios-Computer': pc, 'X-Helios-UTC-Offset': '0' } })
 	await post([line(now - 290_000, 'UserPromptSubmit', { human: true, judged: 6, real: 6 }), line(now - 170_000, 'Stop'), line(now - 290_000, 'usage', { in: 500, out: 20 })])
 	// The usage of a growing turn is sent again; the latest replaces it.
 	await post([line(now - 290_000, 'usage', { in: 900, out: 40 })])
@@ -1550,7 +1550,7 @@ test('a computer that sends only records shows on the dashboard, and usage earns
 	assert.deepEqual((await me(cookie)).computers.map((x) => x.id), [pc])
 	// Another account can't take the computer over by naming it.
 	const other = await newSyncKey(await signIn('squatter'))
-	await server.fetch(SITE + '/api/v1/events', { method: 'POST', body: line(now - 60_000, 'UserPromptSubmit', { human: true }), headers: { Authorization: `Bearer ${other}`, 'X-Teardrop-Computer': pc } })
+	await server.fetch(SITE + '/api/v1/events', { method: 'POST', body: line(now - 60_000, 'UserPromptSubmit', { human: true }), headers: { Authorization: `Bearer ${other}`, 'X-Helios-Computer': pc } })
 	const otherID = (await env.DB.prepare('SELECT id FROM users WHERE slack_id = ?').bind('USQUATTER').first<{ id: number }>())!.id
 	await (env.HUB.get(env.HUB.idFromName(String(otherID))) as unknown as { flush(): Promise<string[]> }).flush()
 	assert.equal((await env.DB.prepare('SELECT user_id FROM computers WHERE id = ?').bind(pc).first<{ user_id: number }>())!.user_id, id)
@@ -1677,7 +1677,7 @@ test('a person has several sync keys at once, and revoking one leaves the rest',
 	assert.equal(await works(build.key), false)
 })
 
-test('teardrop login connects a computer once, only by a typed code, and never for a banned account', async () => {
+test('helios login connects a computer once, only by a typed code, and never for a banned account', async () => {
 	const cookie = await signIn('connector')
 	const start = async () => {
 		const res = await call('/api/v1/login', { method: 'POST', body: JSON.stringify({ computer: 'td-abcdef012345' }) })
@@ -1743,7 +1743,7 @@ function recordKit() {
 	/** One turn: a prompt and the agent's reply two minutes later, which earns 120 seconds. */
 	const turn = (start: number, session = 's1', extra: object = {}) => [line(start, 'UserPromptSubmit', { human: true, judged: 6, real: 6, session, ...extra }), line(start + 120_000, 'Stop', { session, ...extra })]
 	const send = (key: string, lines: string[], headers: Record<string, string> = {}) => server.fetch(SITE + '/api/v1/events', { method: 'POST', body: lines.join('\n'), headers: { Authorization: `Bearer ${key}`, ...headers } })
-	const as = (computer: string) => ({ 'X-Teardrop-Computer': computer, 'X-Teardrop-UTC-Offset': '0' })
+	const as = (computer: string) => ({ 'X-Helios-Computer': computer, 'X-Helios-UTC-Offset': '0' })
 	type DB = { prepare(sql: string): { bind(...v: unknown[]): { first<T>(): Promise<T | null>; all<T>(): Promise<{ results: T[] }>; run(): Promise<unknown> } } }
 	const person = async (slack: string) => {
 		const env = await server.getWorker<{ HUB: { idFromName(name: string): unknown; get(id: unknown): unknown }; DB: DB; REPORTS: { get(key: string): Promise<{ body: ReadableStream } | null>; list(o: { prefix: string }): Promise<{ objects: { key: string }[] }> } }>().getEnv()
@@ -1777,7 +1777,7 @@ test('a cloud batch before any computer counts its days in UTC, and a line that 
 	const now = Date.now()
 	// An offset that puts these records on another day than UTC does: the cloud's word, which must not be taken.
 	const offset = new Date(now).getUTCHours() >= 12 ? 840 : -720
-	const res = await send(key, ['null', '7', '[]', '"prompt"', 'true', ...turn(now - 290_000), line(now, 'not json').slice(1)], { 'X-Teardrop-UTC-Offset': String(offset) })
+	const res = await send(key, ['null', '7', '[]', '"prompt"', 'true', ...turn(now - 290_000), line(now, 'not json').slice(1)], { 'X-Helios-UTC-Offset': String(offset) })
 	assert.deepEqual([res.status, await res.json()], [200, { stored: 0, records: 2 }])
 	const { env, id, flush } = await person('UCLOUDFIRST')
 	await flush()
@@ -1802,7 +1802,7 @@ test('a report from a computer that sends records is refused, and its time count
 		const profile = (await (await call(`/api/public/v1/users/${handle}`)).json()) as { engaged_seconds: number; days: { engaged_seconds: number }[] }
 		return [people.find((p) => p.slack_id === 'UBOTH')!.engaged_seconds, profile.engaged_seconds, profile.days.reduce((n, d) => n + d.engaged_seconds, 0)]
 	}
-	// An old teardrop synced a report; then the computer starts to send records.
+	// An old helios synced a report; then the computer starts to send records.
 	assert.equal((await report(now - 20 * 60_000)).status, 200)
 	assert.deepEqual(await engaged(), [600, 600, 600])
 	assert.equal((await send(key, turn(now - 290_000), as(pc))).status, 200)
@@ -2055,7 +2055,7 @@ test('a chat app connects with OAuth and adds a chat\'s time, witnessed as it ar
 	// The connector finds where to sign in from the 401 and the two documents it points to.
 	const first = await call('/mcp', { method: 'POST', body: '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' })
 	assert.equal(first.status, 401)
-	assert.match(first.headers.get('WWW-Authenticate')!, /resource_metadata="http:\/\/teardrop\.example\/\.well-known\/oauth-protected-resource"/)
+	assert.match(first.headers.get('WWW-Authenticate')!, /resource_metadata="http:\/\/helios\.example\/\.well-known\/oauth-protected-resource"/)
 	const resource = (await (await call('/.well-known/oauth-protected-resource')).json()) as { authorization_servers: string[] }
 	assert.deepEqual(resource.authorization_servers, [SITE])
 	const meta = (await (await call('/.well-known/oauth-authorization-server')).json()) as { registration_endpoint: string; code_challenge_methods_supported: string[] }
@@ -2078,7 +2078,7 @@ test('a chat app connects with OAuth and adds a chat\'s time, witnessed as it ar
 	assert.equal((await call(`/oauth/authorize?${q(client_id, 'https://claude.ai/other')}`, { cookie })).status, 400)
 	const askPage = await call(`/oauth/authorize?${q()}`, { cookie })
 	assert.equal(askPage.status, 200)
-	assert.match(await askPage.text(), /add time to your teardrop hours[\s\S]*claude-ai/)
+	assert.match(await askPage.text(), /add time to your helios hours[\s\S]*claude-ai/)
 	// Allow, from this site only.
 	assert.equal((await call('/oauth/authorize', { method: 'POST', cookie, origin: 'https://evil.example', body: q() + '&decision=allow' })).status, 403)
 	const allowed = await call('/oauth/authorize', { method: 'POST', cookie, origin: SITE, body: q() + '&decision=allow' })
@@ -2103,18 +2103,18 @@ test('a chat app connects with OAuth and adds a chat\'s time, witnessed as it ar
 	}
 	const init = await rpc('initialize', { protocolVersion: '2025-06-18' })
 	assert.equal(init.body.result.protocolVersion, '2025-06-18')
-	assert.match(init.body.result.instructions, /teardrop_log/)
+	assert.match(init.body.result.instructions, /helios_log/)
 	const session = init.res.headers.get('Mcp-Session-Id')!
 	assert.ok(session)
-	assert.deepEqual((await rpc('tools/list', {}, session)).body.result.tools.map((t: { name: string }) => t.name), ['teardrop_log', 'teardrop_stats'])
+	assert.deepEqual((await rpc('tools/list', {}, session)).body.result.tools.map((t: { name: string }) => t.name), ['helios_log', 'helios_stats'])
 
 	// A reply's start and end are records of the app, timed by the site's own clock, so they are witnessed.
-	const log = (phase: string, more = {}) => rpc('tools/call', { name: 'teardrop_log', arguments: { phase, conversation: 'refactor-auth', ...more } }, session)
+	const log = (phase: string, more = {}) => rpc('tools/call', { name: 'helios_log', arguments: { phase, conversation: 'refactor-auth', ...more } }, session)
 	assert.match((await log('start', { prompt_words: 12, project: 'https://github.com/kid/site.git' })).body.result.content[0].text, /Logged the start/)
 	assert.match((await log('end', { project: 'https://github.com/kid/site.git' })).body.result.content[0].text, /Logged the end/)
 	assert.equal((await log('middle')).body.result.isError, true)
 	// The site credits the gap the way it does for any harness, and the app's chats read as their own project.
-	const stats = (await rpc('tools/call', { name: 'teardrop_stats', arguments: { days: 1 } }, session)).body.result.structuredContent as { engaged_hours: number; days: { prompts: number }[]; projects: { name: string }[] }
+	const stats = (await rpc('tools/call', { name: 'helios_stats', arguments: { days: 1 } }, session)).body.result.structuredContent as { engaged_hours: number; days: { prompts: number }[]; projects: { name: string }[] }
 	assert.equal(stats.days.reduce((n, d) => n + d.prompts, 0), 1)
 	assert.equal(typeof stats.engaged_hours, 'number')
 

@@ -7,7 +7,7 @@ const $ = (id) => document.getElementById(id)
 const view = $('view')
 const root = document.documentElement
 // The side menu stays folded to its icons for whoever folded it.
-const SIDE = 'teardrop-review-side'
+const SIDE = 'helios-review-side'
 try {
 	if (localStorage.getItem(SIDE) === 'closed') root.dataset.side = 'closed'
 } catch {
@@ -356,7 +356,7 @@ const SERIES = [
 	{ id: 'tokens', name: 'Tokens written', color: 'teal' },
 ]
 const PALETTE = { pink: '#f472b6', teal: '#2dd4bf' }
-const SHOWN = 'teardrop-review-series'
+const SHOWN = 'helios-review-series'
 // Which series are on, for whoever chose them.
 let shown = new Set(SERIES.filter((s) => s.on).map((s) => s.id))
 try {
@@ -840,7 +840,7 @@ function entry(e) {
 		['report before', e.prev_engaged_seconds == null ? 'none' : `${num(e.prev_engaged_seconds)}s (${dur(e.prev_engaged_seconds)}) over ${e.prev_since || 'unknown'}, made ${iso(e.prev_generated_at)}`],
 		...(compared ? [['change', `${signed(change)} in the ${dur((e.at - e.prev_generated_at) / 1000)} since the report before`]] : []),
 		['added to past days', e.past_added_seconds == null ? 'not compared' : `${num(e.past_added_seconds)}s (${dur(e.past_added_seconds)})`],
-		['teardrop', (e.teardrop_version || 'unknown') + (e.prev_teardrop_version != null && e.prev_teardrop_version !== e.teardrop_version ? `, was ${e.prev_teardrop_version || 'unknown'}` : '')],
+		['helios', (e.teardrop_version || 'unknown') + (e.prev_teardrop_version != null && e.prev_teardrop_version !== e.teardrop_version ? `, was ${e.prev_teardrop_version || 'unknown'}` : '')],
 		...(d ? [
 			['size', size(d.bytes)],
 			['work blocks', d.blocks ? `${num(d.blocks)}, from ${iso(d.first_block)} to ${iso(d.last_block)}` : '0'],

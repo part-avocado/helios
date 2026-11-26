@@ -25,8 +25,8 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go vet ./... && go test ./...
-      # Builds teardrop and drives setup, hooks, relay, and sync against a fake site.
-      - run: go test -tags e2e -run E2E -v ./cmd/teardrop
+      # Builds helios and drives setup, hooks, relay, and sync against a fake site.
+      - run: go test -tags e2e -run E2E -v ./cmd/helios
 
   worker:
     runs-on: ubuntu-latest
@@ -55,7 +55,7 @@ jobs:
       # The same files with every checksum wrong, which the installers must refuse.
       - run: |
           mkdir dist-bad
-          cp dist/teardrop_* dist-bad/
+          cp dist/helios_* dist-bad/
           sed -E 's/^[0-9a-f]{64}/0000000000000000000000000000000000000000000000000000000000000000/' dist/checksums.txt > dist-bad/checksums.txt
       - uses: actions/upload-artifact@v7
         with:
@@ -72,8 +72,8 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     env:
-      TEARDROP_NO_SETUP: "1"
-      TEARDROP_NO_MODIFY_PATH: "1"
+      HELIOS_NO_SETUP: "1"
+      HELIOS_NO_MODIFY_PATH: "1"
     steps:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
@@ -95,62 +95,62 @@ jobs:
       - name: install.sh installs the release
         if: runner.os != 'Windows'
         run: |
-          TEARDROP_BASE_URL=http://127.0.0.1:8765/dist TEARDROP_INSTALL_DIR="$RUNNER_TEMP/good" sh install.sh
-          "$RUNNER_TEMP/good/teardrop" -version | grep -F v0.0.0-ci
+          HELIOS_BASE_URL=http://127.0.0.1:8765/dist HELIOS_INSTALL_DIR="$RUNNER_TEMP/good" sh install.sh
+          "$RUNNER_TEMP/good/helios" -version | grep -F v0.0.0-ci
       - name: install.sh refuses a wrong checksum
         if: runner.os != 'Windows'
         run: |
-          if TEARDROP_BASE_URL=http://127.0.0.1:8765/dist-bad TEARDROP_INSTALL_DIR="$RUNNER_TEMP/bad" sh install.sh; then
+          if HELIOS_BASE_URL=http://127.0.0.1:8765/dist-bad HELIOS_INSTALL_DIR="$RUNNER_TEMP/bad" sh install.sh; then
             echo "install.sh accepted a wrong checksum"; exit 1
           fi
-          test ! -e "$RUNNER_TEMP/bad/teardrop"
+          test ! -e "$RUNNER_TEMP/bad/helios"
       - name: uninstall undoes install.sh and setup
         if: runner.os != 'Windows'
         env:
-          TEARDROP_NO_MODIFY_PATH: ""
+          HELIOS_NO_MODIFY_PATH: ""
         run: |
           export HOME="$RUNNER_TEMP/home" SHELL=/bin/bash
           mkdir -p "$HOME/.claude"
           printf 'alias g=git\n' > "$HOME/.bashrc"
           printf 'alias g=git\n' > "$HOME/.bash_profile"
-          TEARDROP_BASE_URL=http://127.0.0.1:8765/dist TEARDROP_INSTALL_DIR="$RUNNER_TEMP/un" sh install.sh
+          HELIOS_BASE_URL=http://127.0.0.1:8765/dist HELIOS_INSTALL_DIR="$RUNNER_TEMP/un" sh install.sh
           cat "$HOME/.bashrc" "$HOME/.bash_profile" | grep -F "$RUNNER_TEMP/un"
-          "$RUNNER_TEMP/un/teardrop" setup -yes claude
+          "$RUNNER_TEMP/un/helios" setup -yes claude
           grep -F "hook claude-code" "$HOME/.claude/settings.json"
-          "$RUNNER_TEMP/un/teardrop" uninstall -yes
+          "$RUNNER_TEMP/un/helios" uninstall -yes
           printf 'alias g=git\n' | cmp - "$HOME/.bashrc"
           printf 'alias g=git\n' | cmp - "$HOME/.bash_profile"
           if grep -F "hook claude-code" "$HOME/.claude/settings.json"; then exit 1; fi
-          test ! -e "$RUNNER_TEMP/un/teardrop"
+          test ! -e "$RUNNER_TEMP/un/helios"
       - name: install.ps1 installs the release
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $env:TEARDROP_BASE_URL = 'http://127.0.0.1:8765/dist'
-          $env:TEARDROP_INSTALL_DIR = "$env:RUNNER_TEMP\good"
+          $env:HELIOS_BASE_URL = 'http://127.0.0.1:8765/dist'
+          $env:HELIOS_INSTALL_DIR = "$env:RUNNER_TEMP\good"
           Invoke-Expression (Get-Content -Raw ./install.ps1)
-          $v = & "$env:RUNNER_TEMP\good\teardrop.exe" -version
+          $v = & "$env:RUNNER_TEMP\good\helios.exe" -version
           if ($v -notmatch 'v0\.0\.0-ci') { throw "installed version is '$v'" }
       - name: install.ps1 refuses a wrong checksum
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $env:TEARDROP_BASE_URL = 'http://127.0.0.1:8765/dist-bad'
-          $env:TEARDROP_INSTALL_DIR = "$env:RUNNER_TEMP\bad"
+          $env:HELIOS_BASE_URL = 'http://127.0.0.1:8765/dist-bad'
+          $env:HELIOS_INSTALL_DIR = "$env:RUNNER_TEMP\bad"
           Invoke-Expression (Get-Content -Raw ./install.ps1)
-          if (Test-Path "$env:RUNNER_TEMP\bad\teardrop.exe") { throw 'install.ps1 installed a download with a wrong checksum' }
+          if (Test-Path "$env:RUNNER_TEMP\bad\helios.exe") { throw 'install.ps1 installed a download with a wrong checksum' }
       - name: uninstall takes the install folder out of the user Path
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $env:TEARDROP_BASE_URL = 'http://127.0.0.1:8765/dist'
-          $env:TEARDROP_NO_MODIFY_PATH = ''
+          $env:HELIOS_BASE_URL = 'http://127.0.0.1:8765/dist'
+          $env:HELIOS_NO_MODIFY_PATH = ''
           $dir = "$env:RUNNER_TEMP\un"
-          $env:TEARDROP_INSTALL_DIR = $dir
+          $env:HELIOS_INSTALL_DIR = $dir
           Invoke-Expression (Get-Content -Raw ./install.ps1)
           $inPath = { @([Environment]::GetEnvironmentVariable('Path', 'User') -split ';') -contains $dir }
           if (-not (& $inPath)) { throw 'install.ps1 did not add the folder to the user Path' }
-          $out = & "$dir\teardrop.exe" uninstall -yes -keep-data | Out-String
+          $out = & "$dir\helios.exe" uninstall -yes -keep-data | Out-String
           Write-Host $out
           if (& $inPath) { throw 'uninstall left the folder in the user Path' }
           if ($out -notmatch 'once this window closes') { throw 'uninstall did not say to delete the running binary' }
@@ -158,8 +158,8 @@ jobs:
         if: runner.os == 'Windows'
         shell: powershell
         run: |
-          $env:TEARDROP_BASE_URL = 'http://127.0.0.1:8765/dist'
-          $env:TEARDROP_INSTALL_DIR = "$env:RUNNER_TEMP\ps51"
+          $env:HELIOS_BASE_URL = 'http://127.0.0.1:8765/dist'
+          $env:HELIOS_INSTALL_DIR = "$env:RUNNER_TEMP\ps51"
           Invoke-Expression (Get-Content -Raw ./install.ps1)
-          $v = & "$env:RUNNER_TEMP\ps51\teardrop.exe" -version
+          $v = & "$env:RUNNER_TEMP\ps51\helios.exe" -version
           if ($v -notmatch 'v0\.0\.0-ci') { throw "installed version is '$v'" }

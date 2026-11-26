@@ -1,14 +1,14 @@
-# teardrop docs
+# helios docs
 
-Everything you need to install teardrop, read your stats, and sync them to your site.
+Everything you need to install helios, read your stats, and sync them to your site.
 
 ## Getting started
 
 - [Quick start](quick-start.md)
 - [Install](install.md)
-- [teardrop setup](setup.md)
+- [helios setup](setup.md)
 
-## Using teardrop
+## Using helios
 
 - [The report](report.md)
 - [The dashboard](dashboard.md)

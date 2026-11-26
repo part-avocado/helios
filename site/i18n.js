@@ -34,7 +34,7 @@ function tn(key, n, params) {
 }
 
 {
-	const KEY = 'teardrop-lang'
+	const KEY = 'helios-lang'
 	const root = document.documentElement
 	const self = document.currentScript
 	let chosen = null
@@ -86,7 +86,7 @@ function tn(key, n, params) {
 		}
 	}
 	const scripts = (self.dataset.scripts || '').split(/\s+/).filter(Boolean)
-	const loaded = fetch(new URL('strings.json', self.src)).then((r) => r.json()).then((all) => (STRINGS = all), (e) => console.error('teardrop: could not load strings.json', e))
+	const loaded = fetch(new URL('strings.json', self.src)).then((r) => r.json()).then((all) => (STRINGS = all), (e) => console.error('helios: could not load strings.json', e))
 	const parsed = document.readyState === 'loading' ? new Promise((done) => document.addEventListener('DOMContentLoaded', done, { once: true })) : Promise.resolve()
 	Promise.all([loaded, parsed]).then(() => {
 		apply()

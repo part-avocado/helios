@@ -1,5 +1,5 @@
-// The dashboard shows teardrop reports. On the hosted site they are the
-// signed-in visitor's synced reports (/api/report). From `teardrop dashboard`
+// The dashboard shows helios reports. On the hosted site they are the
+// signed-in visitor's synced reports (/api/report). From `helios dashboard`
 // it is one signed report made live on this computer.
 const DAY = 86400000
 const hosted = 'hosted' in document.documentElement.dataset
@@ -71,8 +71,8 @@ function render() {
 		p.tout += b.tokens_out
 		projects.set(b.project.key, p)
 	}
-	// Reports from teardrop 0.4 and later carry per-day totals that count time
-	// on two projects at once only once, as the teardrop command does. Summing
+	// Reports from helios 0.4 and later carry per-day totals that count time
+	// on two projects at once only once, as the helios command does. Summing
 	// blocks, the fallback for older reports and for one project, counts that
 	// time twice.
 	const totals = only ? null : dayTotals()
@@ -327,7 +327,7 @@ async function loadHosted() {
 	again(5 * 60000)
 }
 
-// poll reads the live report that `teardrop dashboard` serves on this computer.
+// poll reads the live report that `helios dashboard` serves on this computer.
 async function poll() {
 	let body
 	try {
@@ -340,7 +340,7 @@ async function poll() {
 			notice(t('dash.notice.liveOnComputer'), t('dash.notice.liveHowTo'))
 			return
 		}
-		// teardrop dashboard was stopped or the computer slept: keep the last stats and keep asking.
+		// helios dashboard was stopped or the computer slept: keep the last stats and keep asking.
 		$('status').textContent = t('dash.status.lostContact')
 		setTimeout(poll, 5000)
 		return
@@ -460,7 +460,7 @@ $('ps-repos').addEventListener('click', (e) => {
 // address of theirs and where to change it: once there is something on it,
 // so a new account's first sight is its setup. Not when a reviewer is viewing.
 async function profileNote() {
-	if (localStorage.getItem('teardrop-profile-note')) return
+	if (localStorage.getItem('helios-profile-note')) return
 	const me = await api('/api/me')
 	if (!me.profile_public || !me.handle) return
 	const url = `${location.origin}/@${me.handle}`
@@ -469,7 +469,7 @@ async function profileNote() {
 	$('profile-note').hidden = false
 }
 $('profile-note-ok').addEventListener('click', () => {
-	localStorage.setItem('teardrop-profile-note', '1')
+	localStorage.setItem('helios-profile-note', '1')
 	$('profile-note').hidden = true
 })
 

@@ -1,9 +1,9 @@
 // Who is asking: sign-in with Hack Club Auth, the session cookie it leaves,
-// the sync keys that `teardrop sync` sends, and the keys reviewers make.
+// the sync keys that `helios sync` sends, and the keys reviewers make.
 import { cookie, fromBase64Url, randomToken, redirect, Refusal, setCookie, toBase64Url } from './http.ts'
 
-const SESSION_COOKIE = 'teardrop_session'
-const STATE_COOKIE = 'teardrop_state'
+const SESSION_COOKIE = 'helios_session'
+const STATE_COOKIE = 'helios_state'
 const SESSION_SECONDS = 30 * 86400
 const STATE_SECONDS = 600
 

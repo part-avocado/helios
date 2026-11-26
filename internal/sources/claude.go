@@ -5,21 +5,11 @@ import (
 	"io"
 	"strings"
 
-	"github.com/part-avocado/teardrop/internal/timeline"
+	"github.com/part-avocado/helios/internal/timeline"
 )
 
-// ClaudeParser returns a parser for Claude Code transcripts
-// (<config>/projects/<dir>/<session>.jsonl, and subagent transcripts under
-// <session>/subagents/). Parsers from one call share state, so token usage
-// that a resumed or forked session copies into another file counts once.
-//
-// Many "user" records are not typed by the person: tool results, harness
-// injections, compaction summaries, background task notices, messages from
-// other agents, and command output. Those count as agent activity. Newer
-// versions tag real prompts with origin.kind "human"; older ones are
-// classified by their content.
 func ClaudeParser() Parser {
-	counted := map[string]bool{} // message IDs whose usage was counted, and tool call IDs whose edit was
+	counted := map[string]bool{}
 	return func(r io.Reader, id string) (Raw, error) {
 		out := Raw{Tool: "claude-code", ID: id}
 		err := lines(r, func(b []byte) {
@@ -34,11 +24,6 @@ func ClaudeParser() Parser {
 			if out.Cwd == "" {
 				out.Cwd = rec.Cwd
 			}
-			// A subagent's records (isSidechain, under <session>/subagents/) are the
-			// agent talking to itself. They would add engaged time, tokens and edits
-			// no person is behind, and a prompt that fans out to many subagents
-			// would inflate all three. The main thread already records the call and
-			// result, which brackets that time.
 			if rec.IsSidechain {
 				return
 			}
@@ -59,7 +44,6 @@ func ClaudeParser() Parser {
 			ev := timeline.Event{Time: t, Kind: timeline.Agent}
 
 			if rec.Type == "assistant" {
-				// One response is written as several records, each repeating its usage.
 				key := msg.ID + "\x00" + rec.RequestID
 				if u := msg.Usage; key != "\x00" && !counted[key] {
 					counted[key] = true
@@ -99,9 +83,6 @@ func ClaudeParser() Parser {
 	}
 }
 
-// claudeRecord is one line of a Claude Code transcript. Fields that vary in
-// shape between versions stay raw, so a surprising value drops only that
-// field, not the record.
 type claudeRecord struct {
 	Type             string          `json:"type"`
 	Timestamp        string          `json:"timestamp"`
@@ -115,8 +96,6 @@ type claudeRecord struct {
 	Message          json.RawMessage `json:"message"`
 }
 
-// prompt returns the text of a user record whose message content is content,
-// and whether a person typed it.
 func (rec claudeRecord) prompt(content json.RawMessage) (string, bool) {
 	var origin struct {
 		Kind string `json:"kind"`
@@ -128,16 +107,12 @@ func (rec claudeRecord) prompt(content json.RawMessage) (string, bool) {
 	return text, human
 }
 
-// Prefixes of user-role text that Claude Code writes on its own.
 var injected = []string{
 	"<task-notification>", "<teammate-message", "Another Claude session sent a message",
 	"<local-command-stdout>", "<local-command-stderr>", "<local-command-caveat>",
 	"<bash-stdout>", "<bash-stderr>", "<system-reminder>",
 }
 
-// typedText returns the typed text of message content (a string, or an array
-// of blocks) and whether a person typed any of it. Content with a text or
-// image block that is not injected text is typed; tool_result blocks alone are not.
 func typedText(content json.RawMessage) (string, bool) {
 	var s string
 	if json.Unmarshal(content, &s) == nil {
@@ -167,9 +142,6 @@ func isInjected(s string) bool {
 	return strings.TrimSpace(s) == "" || Injected(s)
 }
 
-// Injected reports whether s starts as text Claude Code writes in the user's
-// turn on its own, such as a background task's notice or a message from
-// another session, rather than text a person typed.
 func Injected(s string) bool {
 	s = strings.TrimSpace(s)
 	for _, p := range injected {

@@ -1,4 +1,4 @@
-module github.com/part-avocado/teardrop
+module github.com/part-avocado/helios
 
 go 1.25
 

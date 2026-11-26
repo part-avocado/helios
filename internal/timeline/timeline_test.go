@@ -14,17 +14,10 @@ func TestBuild(t *testing.T) {
 	a := Project{Key: "a", Name: "a"}
 	b := Project{Key: "b", Name: "b"}
 	rep := Build([]Session{
-		// Prompt at 0, agent runs until 30 (credited 0–4: three minutes in full, then
-		// the two to the watch cap at half), next prompt at 50 (credited 45–50, the
-		// compose cap), agent answers at 52.
 		{Tool: "codex", Project: a, Events: []Event{at(52, Agent), at(0, Human), at(1, Agent), at(30, Agent), at(50, Human)}},
-		// A parallel session on the same project, inside 0–4: adds no time.
 		{Tool: "claude-code", Project: a, Events: []Event{at(1, Human), at(3, Agent)}},
-		// Another project at the same time: counts for b, but once in the total.
 		{Tool: "codex", Project: b, Events: []Event{at(0, Human), at(3, Agent)}},
-		// A gibberish prompt at 30 neither earns compose time nor extends the watch window.
 		{Tool: "codex", Project: b, Events: []Event{at(30, Agent), at(34, Noise), at(36, Agent)}},
-		// An agent working with no human input earns nothing.
 		{Tool: "codex", Project: b, Events: []Event{at(200, Agent), at(260, Agent)}},
 	}, DefaultRules)
 
@@ -42,7 +35,6 @@ func TestBuild(t *testing.T) {
 		t.Errorf("total engaged = %dm, want 11m", min(rep.Engaged))
 	}
 
-	// Project a splits into 0–4 and 45–52 (41m apart, over the 15m block gap).
 	var got []string
 	for _, bl := range rep.Blocks {
 		if bl.Project == a {
@@ -60,7 +52,6 @@ func TestBuild(t *testing.T) {
 
 func TestOverlap(t *testing.T) {
 	at := func(m int) time.Time { return time.Date(2026, 11, 20, 10, m, 0, 0, time.UTC) }
-	// a: 0-10 and 20-30 (two pieces of one union); b: 5-25 split in two touching pieces.
 	a := []Interval{{at(20), at(30)}, {at(0), at(10)}, {at(2), at(4)}}
 	b := []Interval{{at(15), at(25)}, {at(5), at(15)}}
 	if got := Overlap(a, b); got != 10*time.Minute {
@@ -74,11 +65,9 @@ func TestOverlap(t *testing.T) {
 	}
 }
 
-// Days splits engaged time at local midnight and counts overlap once.
 func TestDays(t *testing.T) {
 	loc := time.FixedZone("UTC+2", 2*60*60)
 	utc := func(h, m int) time.Time { return time.Date(2026, 11, 20, h, m, 0, 0, time.UTC) }
-	// In UTC+2 these are 23:40-00:20 and 23:30-23:50, overlapping from 23:40 to 23:50.
 	got := Days([]Interval{{utc(21, 40), utc(22, 20)}, {utc(21, 30), utc(21, 50)}}, loc)
 	want := []Day{{"2026-11-20", Seconds(30 * time.Minute)}, {"2026-11-21", Seconds(20 * time.Minute)}}
 	if !slices.Equal(got, want) {
@@ -86,8 +75,6 @@ func TestDays(t *testing.T) {
 	}
 }
 
-// A prompt straight after a prompt is an interrupted turn: it earns the gap
-// as watching, up to WatchFull, and prompts with no output can't be padded.
 func TestInterruptedTurn(t *testing.T) {
 	sec := func(s int, k Kind) Event { return Event{Time: t0.Add(time.Duration(s) * time.Second), Kind: k} }
 	for _, c := range []struct {
@@ -104,7 +91,6 @@ func TestInterruptedTurn(t *testing.T) {
 			t.Errorf("%s: %v, want %v", c.name, got, c.want)
 		}
 	}
-	// Real prompts every 5 minutes for an hour, with no agent output: 60%, well under 90%.
 	var ev []Event
 	for i := 0; i <= 12; i++ {
 		ev = append(ev, at(5*i, Human))

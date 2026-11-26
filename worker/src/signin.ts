@@ -1,4 +1,4 @@
-// "Sign in with teardrop": another site sends a person to /authorize with
+// "Sign in with helios": another site sends a person to /authorize with
 // where to send them back. They see what the site will read and choose Allow,
 // and the site gets a code that it trades once, at POST /api/public/v1/token,
 // for a read key of theirs. The key is like one made by hand under Settings,
@@ -30,15 +30,15 @@ export function readAsk(params: URLSearchParams): Ask {
 	try {
 		redirect = new URL(redirect_uri)
 	} catch {
-		throw new Refusal(400, 'The site that sent you here gave no address to send you back to, so you can’t sign in to it with teardrop.')
+		throw new Refusal(400, 'The site that sent you here gave no address to send you back to, so you can’t sign in to it with helios.')
 	}
 	const local = ['localhost', '127.0.0.1', '[::1]'].includes(redirect.hostname)
 	if (!(redirect.protocol === 'https:' || (redirect.protocol === 'http:' && local)) || redirect.username || redirect.password || redirect.hash || redirect_uri.length > 2000) {
-		throw new Refusal(400, 'The site that sent you here asked to be sent back to an address teardrop doesn’t send people to. It must use https.')
+		throw new Refusal(400, 'The site that sent you here asked to be sent back to an address helios doesn’t send people to. It must use https.')
 	}
 	const challenge = params.get('code_challenge') ?? ''
 	if (challenge && (!/^[A-Za-z0-9_-]{43}$/.test(challenge) || (params.get('code_challenge_method') ?? 'S256') !== 'S256')) {
-		throw new Refusal(400, 'The site that sent you here sent a code_challenge teardrop can’t check. It must be S256.')
+		throw new Refusal(400, 'The site that sent you here sent a code_challenge helios can’t check. It must be S256.')
 	}
 	const state = params.get('state') ?? ''
 	if (state.length > 500) throw new Refusal(400, 'The site that sent you here sent a state longer than 500 characters.')
@@ -76,7 +76,7 @@ export async function authorize(request: Request, env: Env, url: URL): Promise<R
 		return redirect(`/login?next=${encodeURIComponent(`/authorize?${again}`)}`)
 	}
 	if (user.ban) {
-		return page(403, 'This account is banned', `<p class="muted">A banned account can’t sign in to other sites with teardrop.</p>
+		return page(403, 'This account is banned', `<p class="muted">A banned account can’t sign in to other sites with helios.</p>
 			<a class="btn" href="${esc(back(ask, { error: 'access_denied' }))}">Back to ${esc(ask.redirect.host)}</a>`)
 	}
 	if (request.method === 'GET') return allowPage(ask, user)
@@ -106,7 +106,7 @@ function allowPage(ask: Ask, user: User): Response {
 		.map(([k, v]) => `<input type="hidden" name="${k}" value="${esc(v)}">`)
 		.join('')
 	return page(200, `Sign in to ${ask.name}`, `
-		<p class="muted"><b class="site">${esc(ask.redirect.origin)}</b> would like to read your teardrop stats.</p>
+		<p class="muted"><b class="site">${esc(ask.redirect.origin)}</b> would like to read your helios stats.</p>
 		<ul class="grants">
 			<li>Your name and Slack ID</li>
 			<li>Your projects, with their repositories and hours</li>
@@ -127,7 +127,7 @@ export function page(status: number, title: string, body: string): Response {
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>${esc(title)} - teardrop</title>
+	<title>${esc(title)} - helios</title>
 	<link rel="icon" href="/favicon.svg">
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -144,7 +144,7 @@ export function page(status: number, title: string, body: string): Response {
 			<h1>${esc(title)}</h1>
 			${body}
 		</div>
-		<p class="back">with <a href="/">teardrop</a></p>
+		<p class="back">with <a href="/">helios</a></p>
 	</div>
 </main>
 </body>

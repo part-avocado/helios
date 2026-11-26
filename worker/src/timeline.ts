@@ -1,5 +1,5 @@
 // The rules that turn prompt records into engaged time, ported from
-// internal/timeline/timeline.go and cmd/teardrop/struggle.go. The Go and
+// internal/timeline/timeline.go and cmd/helios/struggle.go. The Go and
 // TypeScript versions run the same cases (internal/timeline/testdata/credit.json),
 // so they can't drift apart unnoticed.
 //
@@ -484,7 +484,7 @@ export interface Block {
 
 /**
  * blocks groups the credited time of records in [from, to) into work blocks
- * per project, as teardrop's reports do, and puts each record's prompts,
+ * per project, as helios's reports do, and puts each record's prompts,
  * tokens, and lines in the block it falls in.
  */
 export function blocks(all: Rec[], from: number, to: number): Block[] {

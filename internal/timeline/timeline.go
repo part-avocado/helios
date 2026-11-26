@@ -1,25 +1,3 @@
-// Package timeline turns AI coding sessions into the time a human was
-// plausibly engaged with them.
-//
-// A session is a list of timestamped events, each either a human input
-// (a prompt or an interrupt) or agent output (a reply, a tool call, a tool
-// result). Time between two consecutive events is credited as follows:
-//
-//   - If the later event is a human input that follows agent output, the
-//     human was reading that output and writing the next prompt. Credit the
-//     last ComposeCap of the gap. A prompt that is the session's first, or
-//     that follows a skipped prompt, had nothing to read and earns nothing.
-//   - If the later event is a human input that follows another one, the turn
-//     between them was interrupted. Credit the first WatchFull of the gap, as
-//     time spent watching, and no composing time.
-//   - If the later event is agent output, the agent was working. Credit the gap
-//     only while it lies within WatchCap of the last human input, and less of
-//     it the longer ago that input was: the first WatchFull count in full, the
-//     rest of the window at half. A long-running agent left alone earns a
-//     little for the prompt that started it and then nothing.
-//
-// Credited intervals of all sessions in a project are unioned, so parallel
-// sessions on one project are not counted twice.
 package timeline
 
 import (
@@ -34,20 +12,16 @@ type Kind uint8
 const (
 	Agent Kind = iota
 	Human
-	// Prompts below earn no time. They count as agent activity, so they
-	// neither earn compose time nor restart the watch window.
-	Noise     // mostly unrecognized words
-	Repeat    // nearly the same as two of the session's last five prompts
-	Autopilot // third or later low-effort prompt in a row ("continue", "fix it")
+	Noise
+	Repeat
+	Autopilot
 )
 
 type Event struct {
-	Time time.Time
-	Kind Kind
-	In   int64 // tokens the model read for this record, cached ones included
-	Out  int64 // tokens the model wrote
-	// Lines an agent changed in files with this event, and how many of the
-	// added ones were later found in a commit.
+	Time                 time.Time
+	Kind                 Kind
+	In                   int64
+	Out                  int64
 	Added, Removed, Kept int
 }
 
@@ -59,21 +33,18 @@ type Project struct {
 type Session struct {
 	Tool    string
 	ID      string
-	Path    string // the log it was read from
+	Path    string
 	Project Project
 	Events  []Event
 }
 
 type Rules struct {
-	ComposeCap time.Duration // max credit for reading output and writing a prompt
-	WatchFull  time.Duration // agent work this soon after a human input counts in full
-	WatchCap   time.Duration // agent work later than this after a human input earns nothing; between WatchFull and WatchCap it counts at half
-	BlockGap   time.Duration // engaged intervals closer than this are shown as one block
+	ComposeCap time.Duration
+	WatchFull  time.Duration
+	WatchCap   time.Duration
+	BlockGap   time.Duration
 }
 
-// watched is the credit for agent work from a to b after a human input, a
-// before b: full up to WatchFull, half up to WatchCap, none after. A whole
-// window earns WatchFull + (WatchCap-WatchFull)/2.
 func (r Rules) watched(a, b time.Duration) time.Duration {
 	full := min(r.WatchFull, r.WatchCap)
 	at := func(t time.Duration) time.Duration {
@@ -98,7 +69,6 @@ type Interval struct {
 	End   time.Time `json:"end"`
 }
 
-// Seconds is a duration that encodes to JSON as whole seconds.
 type Seconds time.Duration
 
 func (s Seconds) MarshalJSON() ([]byte, error) {
@@ -111,8 +81,6 @@ func (s *Seconds) UnmarshalJSON(b []byte) error {
 	return err
 }
 
-// Credit returns the merged intervals of one session in which the human was
-// plausibly engaged.
 func Credit(events []Event, r Rules) []Interval {
 	ev := slices.Clone(events)
 	sort.SliceStable(ev, func(i, j int) bool { return ev[i].Time.Before(ev[j].Time) })
@@ -126,19 +94,11 @@ func Credit(events []Event, r Rules) []Interval {
 			var start, end time.Time
 			switch {
 			case e.Kind == Human && ev[i-1].Kind == Human:
-				// A prompt straight after a prompt: the turn between them ended with
-				// no record, as an interrupted one does. That is time spent watching
-				// the agent, never composing, and only its first WatchFull counts:
-				// a prompt every few minutes with no output can't be paid in full.
 				start, end = prev, prev.Add(min(e.Time.Sub(prev), r.WatchFull, r.WatchCap))
 			case e.Kind == Human && (ev[i-1].Kind != Agent || !haveHuman):
-				// Only agent output read before a prompt earns composing time. A
-				// prompt after a skipped one has read nothing. Nor has the first
-				// prompt of a session, which a session_start event would let anyone start.
 			case e.Kind == Human:
 				start, end = later(prev, e.Time.Add(-r.ComposeCap)), e.Time
 			case haveHuman:
-				// The credit sits at the start of the gap, where the agent's time counts most.
 				start = prev
 				end = start.Add(r.watched(prev.Sub(lastHuman), earlier(e.Time, lastHuman.Add(r.WatchCap)).Sub(lastHuman)))
 			}
@@ -165,11 +125,10 @@ type Block struct {
 	Tools []string `json:"tools"`
 }
 
-// Lines counts the file lines agents changed.
 type Lines struct {
 	Added   int `json:"lines_added"`
 	Removed int `json:"lines_removed"`
-	Kept    int `json:"lines_kept"` // added lines later found in a commit
+	Kept    int `json:"lines_kept"`
 }
 
 func (l *Lines) add(e Event) {
@@ -179,7 +138,7 @@ func (l *Lines) add(e Event) {
 type ProjectTotal struct {
 	Project          Project `json:"project"`
 	Engaged          Seconds `json:"engaged_seconds"`
-	SessionTime      Seconds `json:"session_seconds"` // union of first-to-last event spans
+	SessionTime      Seconds `json:"session_seconds"`
 	Prompts          int     `json:"prompts"`
 	NoisePrompts     int     `json:"noise_prompts"`
 	RepeatPrompts    int     `json:"repeat_prompts"`
@@ -187,26 +146,21 @@ type ProjectTotal struct {
 	In               int64   `json:"tokens_in"`
 	Out              int64   `json:"tokens_out"`
 	Lines
-	// Lines added by the person's own commits to the project in the window,
-	// whoever typed them; set by the caller, which can read the repository.
 	Committed int `json:"lines_committed"`
 }
 
 type Report struct {
 	Blocks   []Block        `json:"blocks"`
 	Projects []ProjectTotal `json:"projects"`
-	Engaged  Seconds        `json:"engaged_seconds"` // across projects, overlap counted once
-	Days     []Day          `json:"days"`            // Engaged, split by calendar day
+	Engaged  Seconds        `json:"engaged_seconds"`
+	Days     []Day          `json:"days"`
 }
 
-// Day is the engaged time on one calendar day. Like Report.Engaged, time
-// spent on two projects at once counts once; summing blocks would count it twice.
 type Day struct {
-	Date    string  `json:"date"` // YYYY-MM-DD in the time zone of the machine that made the report
+	Date    string  `json:"date"`
 	Engaged Seconds `json:"engaged_seconds"`
 }
 
-// Days totals the union of iv per calendar day in loc, in order.
 func Days(iv []Interval, loc *time.Location) []Day {
 	var out []Day
 	for _, x := range merge(iv, 0) {
@@ -235,8 +189,8 @@ func Build(sessions []Session, r Rules) Report {
 		credited []tagged
 		spans    []Interval
 		prompts  []time.Time
-		skipped  [3]int  // noise, repeat, autopilot
-		usage    []Event // events that carry tokens or line changes
+		skipped  [3]int
+		usage    []Event
 	}
 	byKey := map[string]*acc{}
 	var keys []string
@@ -327,8 +281,6 @@ func Build(sessions []Session, r Rules) Report {
 	return rep
 }
 
-// Engaged returns the intervals in which the person was engaged with any of
-// sessions, overlaps counted once.
 func Engaged(sessions []Session, r Rules) []Interval {
 	var all []Interval
 	for _, s := range sessions {
@@ -337,13 +289,10 @@ func Engaged(sessions []Session, r Rules) []Interval {
 	return merge(all, 0)
 }
 
-// Union returns the union of iv, sorted.
 func Union(iv []Interval) []Interval { return merge(iv, 0) }
 
-// Total returns the length of the union of iv.
 func Total(iv []Interval) time.Duration { return total(merge(iv, 0)) }
 
-// Overlap returns how much of the union of a also lies within the union of b.
 func Overlap(a, b []Interval) time.Duration {
 	a, b = merge(a, 0), merge(b, 0)
 	var d time.Duration
@@ -360,7 +309,6 @@ func Overlap(a, b []Interval) time.Duration {
 	return d
 }
 
-// merge returns the union of intervals, also joining intervals separated by at most gap.
 func merge(iv []Interval, gap time.Duration) []Interval {
 	if len(iv) == 0 {
 		return nil

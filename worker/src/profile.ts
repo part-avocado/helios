@@ -99,13 +99,13 @@ const hoursText = (seconds: number) => {
 export async function profileBadge(env: Env, handle: string, project: string | null): Promise<Response> {
 	const user = await visibleOwner(env, handle)
 	if (!user) throw new Refusal(404, 'No such profile.')
-	let label = 'teardrop', seconds: number
+	let label = 'helios', seconds: number
 	if (project) {
 		const [projects, choices] = await Promise.all([personProjects(env, user.id), projectChoices(env, user.id)])
 		const asked = githubRepo(project)?.toLowerCase()
 		const p = projects.find((x) => isShown(x.key, choices) && (repo(x.key) === project || x.name === project || reposOf(x.key, choices).some((r) => r.toLowerCase() === asked)))
 		if (!p) throw new Refusal(404, 'That profile names no such project.')
-		label = `teardrop: ${p.name}`
+		label = `helios: ${p.name}`
 		seconds = p.engaged_seconds
 	} else {
 		seconds = await personEngaged(env, user.id)

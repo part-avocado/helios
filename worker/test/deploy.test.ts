@@ -24,11 +24,11 @@ function deploy(info: string, npx = true): { status: number | null; ran: string[
 }
 
 test('deploy migrates first, after only on a first deploy, and stops when it cannot tell', { skip: process.platform === 'win32' }, () => {
-	const info = 'wrangler d1 info teardrop', migrate = 'wrangler d1 migrations apply DB --remote', ship = 'wrangler deploy'
+	const info = 'wrangler d1 info helios', migrate = 'wrangler d1 migrations apply DB --remote', ship = 'wrangler deploy'
 	const ok = (r: ReturnType<typeof deploy>) => ({ status: r.status, ran: r.ran })
 	assert.deepEqual(ok(deploy('exit 0')), { status: 0, ran: [info, migrate, ship] })
 	// No database yet: the first deploy creates it.
-	assert.deepEqual(ok(deploy(`echo "✘ [ERROR] Couldn't find a D1 DB named 'teardrop'" >&2; exit 1`)), { status: 0, ran: [info, ship, migrate] })
+	assert.deepEqual(ok(deploy(`echo "✘ [ERROR] Couldn't find a D1 DB named 'helios'" >&2; exit 1`)), { status: 0, ran: [info, ship, migrate] })
 	// Anything else, such as no network, deploys nothing: the code must not go live before its tables.
 	const failed = deploy('echo "fetch failed" >&2; exit 1')
 	assert.notEqual(failed.status, 0)

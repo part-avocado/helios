@@ -3,7 +3,7 @@
 // theme is in place before the page is first drawn.
 {
 	const root = document.documentElement
-	const KEY = 'teardrop-theme'
+	const KEY = 'helios-theme'
 	const system = matchMedia('(prefers-color-scheme: light)')
 	let chosen = null
 	try {

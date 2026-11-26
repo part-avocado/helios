@@ -13,7 +13,7 @@ const ARCHIVE = 200
 const SLACK = 300
 /**
  * Seconds of engaged time that a report may add from before the report before
- * it. teardrop syncs when a reply ends, and a reply that ends earns up to four
+ * it. helios syncs when a reply ends, and a reply that ends earns up to four
  * minutes of watching the agent work, which may all lie before a sync that
  * another session started meanwhile.
  */
@@ -63,7 +63,7 @@ export interface Detail {
 	active_days: number
 	project_count: number
 	prompts: number
-	/** Prompts teardrop left out of the time. */
+	/** Prompts helios left out of the time. */
 	skipped_prompts: number
 	tokens_in: number
 	tokens_out: number
@@ -107,7 +107,7 @@ export const dur = (seconds: number) => {
 
 /**
  * dayTotals reads a report's engaged seconds per date, ignoring anything
- * malformed. A report from before teardrop 0.4 has no such totals, so its
+ * malformed. A report from before helios 0.4 has no such totals, so its
  * work blocks are added up instead, by the UTC date each started on.
  */
 export function dayTotals(report: ReportBody | undefined): Record<string, number> {
@@ -282,9 +282,9 @@ export function remarks(e: Entry): string[] {
 		out.push('The computer was removed and added again, so its days could not be compared.')
 	}
 	if (e.prev_teardrop_version != null && e.prev_teardrop_version !== e.teardrop_version) {
-		out.push(`teardrop changed from ${e.prev_teardrop_version || 'an unknown version'} to ${e.teardrop_version || 'an unknown version'} between the two reports. A new version can count past days differently.`)
+		out.push(`helios changed from ${e.prev_teardrop_version || 'an unknown version'} to ${e.teardrop_version || 'an unknown version'} between the two reports. A new version can count past days differently.`)
 	}
-	if (!/^v\d+\.\d+\.\d+$/.test(e.teardrop_version)) out.push(`Sent by ${e.teardrop_version ? `teardrop ${e.teardrop_version}` : 'an unnamed build'}, which is not a released version.`)
+	if (!/^v\d+\.\d+\.\d+$/.test(e.teardrop_version)) out.push(`Sent by ${e.teardrop_version ? `helios ${e.teardrop_version}` : 'an unnamed build'}, which is not a released version.`)
 	if (e.generated_at != null && e.at - e.generated_at > 3600_000) out.push(`Made ${dur((e.at - e.generated_at) / 1000)} before it arrived.`)
 	return out
 }

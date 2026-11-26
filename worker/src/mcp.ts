@@ -1,4 +1,4 @@
-// The teardrop connector: a remote MCP server, at /mcp, that chat apps add as
+// The helios connector: a remote MCP server, at /mcp, that chat apps add as
 // a connector. Claude on the web (claude.ai), the Claude apps, ChatGPT, and
 // any other MCP client sign in with OAuth and then record time the way a
 // harness's hooks do: a prompt record when Claude starts a reply, and a turn
@@ -90,7 +90,7 @@ const oauthError = (status: number, error: string, description: string) => json(
 export function metadata(url: URL, which: 'resource' | 'server'): Response {
 	const res =
 		which === 'resource'
-			? json({ resource: `${url.origin}/mcp`, authorization_servers: [url.origin], bearer_methods_supported: ['header'], resource_name: 'teardrop' })
+			? json({ resource: `${url.origin}/mcp`, authorization_servers: [url.origin], bearer_methods_supported: ['header'], resource_name: 'helios' })
 			: json({
 					issuer: url.origin,
 					authorization_endpoint: `${url.origin}/oauth/authorize`,
@@ -100,7 +100,7 @@ export function metadata(url: URL, which: 'resource' | 'server'): Response {
 					grant_types_supported: ['authorization_code'],
 					code_challenge_methods_supported: ['S256'],
 					token_endpoint_auth_methods_supported: ['none'],
-					scopes_supported: ['teardrop'],
+					scopes_supported: ['helios'],
 				})
 	for (const [k, v] of Object.entries(CORS)) res.headers.set(k, v)
 	return res
@@ -190,7 +190,7 @@ function allowPage(ask: Ask, client: Client, id: string, user: User): Response {
 		.map(([k, v]) => `<input type="hidden" name="${k}" value="${esc(v)}">`)
 		.join('')
 	return page(200, `Connect ${client.name}`, `
-		<p class="muted"><b class="site">${esc(client.name)}</b> (${esc(ask.redirect.origin)}) would like to add time to your teardrop hours.</p>
+		<p class="muted"><b class="site">${esc(client.name)}</b> (${esc(ask.redirect.origin)}) would like to add time to your helios hours.</p>
 		<ul class="grants">
 			<li>Record when a chat starts and finishes a reply, counted as <code>${esc(client.tool)}</code></li>
 			<li>Read your hours and projects, to answer your questions about them</li>
@@ -241,7 +241,7 @@ export async function token(request: Request, env: Env): Promise<Response> {
 	if (user.ban) return oauthError(403, 'access_denied', 'This account is banned.')
 	const made = await createSyncKey(env, user, `${client.name} connector`)
 	await env.DB.prepare('UPDATE sign_in_codes SET key_id = ? WHERE hash = ?').bind(made.id, hash).run()
-	return new Response(JSON.stringify({ access_token: made.key, token_type: 'Bearer', scope: 'teardrop' }), {
+	return new Response(JSON.stringify({ access_token: made.key, token_type: 'Bearer', scope: 'helios' }), {
 		headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*' },
 	})
 }
@@ -250,14 +250,14 @@ export async function token(request: Request, env: Env): Promise<Response> {
 // with JSON. It keeps no state between requests beyond the session ID it
 // hands out, which names a chat when the client doesn't.
 
-const INSTRUCTIONS = `teardrop counts the time a person spends working with AI. In every conversation, call teardrop_log with phase "start" before you begin each reply, and with phase "end" just before you give your final answer, passing the same conversation value each time. Never include the person's message or your reply. If the work belongs to a code repository, pass it as project, such as github.com/owner/name. Use teardrop_stats when the person asks how much time they have spent.`
+const INSTRUCTIONS = `helios counts the time a person spends working with AI. In every conversation, call helios_log with phase "start" before you begin each reply, and with phase "end" just before you give your final answer, passing the same conversation value each time. Never include the person's message or your reply. If the work belongs to a code repository, pass it as project, such as github.com/owner/name. Use helios_stats when the person asks how much time they have spent.`
 
 const TOOLS = [
 	{
-		name: 'teardrop_log',
+		name: 'helios_log',
 		title: 'Log chat time',
 		description:
-			'Records that a reply started or finished in this conversation, so the time counts toward the person’s teardrop hours. Call with phase "start" before each reply and "end" before the final answer. Sends only the time, a conversation name, an optional project, and a word count, never message text.',
+			'Records that a reply started or finished in this conversation, so the time counts toward the person’s helios hours. Call with phase "start" before each reply and "end" before the final answer. Sends only the time, a conversation name, an optional project, and a word count, never message text.',
 		inputSchema: {
 			type: 'object',
 			properties: {
@@ -271,9 +271,9 @@ const TOOLS = [
 		annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
 	},
 	{
-		name: 'teardrop_stats',
-		title: 'Read teardrop hours',
-		description: 'Returns the person’s engaged hours from teardrop: in total, per day, and per project, over the last days (7 by default).',
+		name: 'helios_stats',
+		title: 'Read helios hours',
+		description: 'Returns the person’s engaged hours from helios: in total, per day, and per project, over the last days (7 by default).',
 		inputSchema: { type: 'object', properties: { days: { type: 'integer', minimum: 1, maximum: 366, description: 'How many days back, 7 by default.' } } },
 		annotations: { readOnlyHint: true, openWorldHint: false },
 	},
@@ -286,7 +286,7 @@ export async function mcp(request: Request, env: Env, url: URL): Promise<Respons
 	if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS })
 	const user = await keyUser(request, env)
 	if (!user) {
-		return new Response('Connect this app to teardrop first.\n', {
+		return new Response('Connect this app to helios first.\n', {
 			status: 401,
 			headers: { ...CORS, 'WWW-Authenticate': `Bearer resource_metadata="${url.origin}/.well-known/oauth-protected-resource"` },
 		})
@@ -358,7 +358,7 @@ async function answer(env: Env, user: User, client: { tool: string }, session: s
 			return {
 				protocolVersion: PROTOCOLS.includes(asked) ? asked : PROTOCOLS[0],
 				capabilities: { tools: { listChanged: false } },
-				serverInfo: { name: 'teardrop', title: 'teardrop', version: '1.0.0' },
+				serverInfo: { name: 'helios', title: 'helios', version: '1.0.0' },
 				instructions: INSTRUCTIONS,
 			}
 		}
@@ -368,8 +368,8 @@ async function answer(env: Env, user: User, client: { tool: string }, session: s
 			return { tools: TOOLS }
 		case 'tools/call': {
 			const args = (c.params?.arguments ?? {}) as Record<string, unknown>
-			if (c.params?.name === 'teardrop_log') return logTurn(env, user, client.tool, session, args)
-			if (c.params?.name === 'teardrop_stats') return readStats(env, user, args)
+			if (c.params?.name === 'helios_log') return logTurn(env, user, client.tool, session, args)
+			if (c.params?.name === 'helios_stats') return readStats(env, user, args)
 			throw new RPCError(-32602, `There is no tool named ${String(c.params?.name)}.`)
 		}
 	}
@@ -411,7 +411,7 @@ async function logTurn(env: Env, user: User, tool: string, session: string, args
 	})
 	const hub = env.HUB.get(env.HUB.idFromName(String(user.id)))
 	const { stored, limited } = await hub.add(user.id, 'cloud', 0, [line], null)
-	if (limited) return text(`teardrop is not taking more records right now: ${limited.message}`, true)
+	if (limited) return text(`helios is not taking more records right now: ${limited.message}`, true)
 	return text(stored ? `Logged the ${phase} of this reply.` : 'Already logged.')
 }
 

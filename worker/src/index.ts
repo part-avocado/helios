@@ -1,4 +1,4 @@
-// The teardrop website on Cloudflare Workers. The pages are the files in
+// The helios website on Cloudflare Workers. The pages are the files in
 // ../site. This Worker adds accounts: sign-in with Hack Club Auth, each
 // person's synced reports in D1, and the API the pages and the CLI use. The
 // review app, at /review/, is the files in ../site/review and the API under
@@ -146,12 +146,12 @@ async function route(request: Request, env: Env): Promise<Response> {
 		const user = await needKey(request, env, url)
 		const body = await readText(request, MAX_EVENTS_BYTES)
 		// Amp cloud events are also kept the old way, for cloud plugins that still count them themselves. A computer's own records are not.
-		const cloud = (request.headers.get('X-Teardrop-Computer') ?? 'cloud') === 'cloud'
+		const cloud = (request.headers.get('X-Helios-Computer') ?? 'cloud') === 'cloud'
 		const [records, stored] = await Promise.all([relayRecords(env, user, request, body), cloud ? holdEvents(env, user, body) : 0])
 		// dropped_future tells the CLI its clock runs fast, which it says.
 		return json({ stored, records: records.stored, ...(records.future ? { dropped_future: records.future } : {}) })
 	}
-	// `teardrop login`: the CLI asks to connect, then polls until its person allows it at /connect.
+	// `helios login`: the CLI asks to connect, then polls until its person allows it at /connect.
 	if (call === 'POST /api/v1/login') return startLogin(request, env, url)
 	if (request.method === 'GET' && path.startsWith('/api/v1/login/')) return pollLogin(env, path.slice('/api/v1/login/'.length))
 	// Who a sync key belongs to, and this site's clock, for the CLI to compare its own against.
@@ -160,11 +160,11 @@ async function route(request: Request, env: Env): Promise<Response> {
 		return json({ name: user.name, handle: user.handle, time: new Date().toISOString() })
 	}
 	if (call === 'GET /api/v1/cloud') return json(await readEvents(env, await needKey(request, env, url), url.searchParams))
-	// teardrop v0.5.2 on a person's computer asks for cloud events to count
+	// helios v0.5.2 on a person's computer asks for cloud events to count
 	// there. It takes "not found" to mean there are none for it, which is so.
 	if (call === 'GET /api/v1/events') throw new Refusal(404, 'Cloud threads are counted in the cloud now.')
-	// `teardrop submit` from before submissions were retired.
-	if (path === '/api/v1/submissions') throw new Refusal(410, 'teardrop no longer takes submissions. Your time is on your dashboard, and programs read it with the review API.')
+	// `helios submit` from before submissions were retired.
+	if (path === '/api/v1/submissions') throw new Refusal(410, 'helios no longer takes submissions. Your time is on your dashboard, and programs read it with the review API.')
 
 	// Signing in and out.
 	if (call === 'GET /auth/hca') return startSignIn(request, env)
@@ -174,7 +174,7 @@ async function route(request: Request, env: Env): Promise<Response> {
 		return signOut(request)
 	}
 
-	// Sign in with teardrop: another site asks for a read key, and the person allows it.
+	// Sign in with helios: another site asks for a read key, and the person allows it.
 	if (path === '/authorize' && (request.method === 'GET' || request.method === 'POST')) return authorize(request, env, url)
 	if (path === '/connect' && (request.method === 'GET' || request.method === 'POST')) return connect(request, env)
 
@@ -243,7 +243,7 @@ async function route(request: Request, env: Env): Promise<Response> {
 	if (call === 'GET /api/export') {
 		// The visitor's profile and their computers' latest reports, as a file to keep. The sync key stays out of it.
 		const body = `{"exported_at":${Date.now()},"profile":${JSON.stringify({ name: user.name, slack_id: user.slack_id, handle: user.handle, created_at: user.created_at })},"computers":${await reportsJSON(env, user.id)}}`
-		return new Response(body, { headers: { 'Content-Type': 'application/json', 'Content-Disposition': 'attachment; filename="teardrop-data.json"', 'Cache-Control': 'no-store' } })
+		return new Response(body, { headers: { 'Content-Type': 'application/json', 'Content-Disposition': 'attachment; filename="helios-data.json"', 'Cache-Control': 'no-store' } })
 	}
 	if (call === 'DELETE /api/account') {
 		// Their stats go. The account's log stays for reviewers.
@@ -252,7 +252,7 @@ async function route(request: Request, env: Env): Promise<Response> {
 		res.headers.append('Set-Cookie', clearSession(request))
 		return res
 	}
-	// Sync keys beside the account's own: one per computer that ran `teardrop login`, and any made here.
+	// Sync keys beside the account's own: one per computer that ran `helios login`, and any made here.
 	if (call === 'GET /api/sync-keys') return json({ keys: await syncKeys(env, user) })
 	if (call === 'POST /api/sync-keys') {
 		// With replace, a key of the same name is revoked once the new one is made, as for the key cloud sessions use.
@@ -311,11 +311,11 @@ async function route(request: Request, env: Env): Promise<Response> {
 async function needKey(request: Request, env: Env, url: URL): Promise<User> {
 	const user = await keyUser(request, env)
 	if (!user) {
-		throw new Refusal(401, `This server needs your sync key. Run \`teardrop login -server ${url.origin}\` to connect this computer.`)
+		throw new Refusal(401, `This server needs your sync key. Run \`helios login -server ${url.origin}\` to connect this computer.`)
 	}
 	if (user.ban) throw new Refusal(403, banMessage())
-	if (tooOld(request.headers.get('X-Teardrop-Version'), env.MIN_VERSION)) {
-		throw new Refusal(426, `This site needs teardrop ${env.MIN_VERSION} or newer. Run \`teardrop update\`, then sync again; your records wait on your computer meanwhile.`)
+	if (tooOld(request.headers.get('X-Helios-Version'), env.MIN_VERSION)) {
+		throw new Refusal(426, `This site needs helios ${env.MIN_VERSION} or newer. Run \`helios update\`, then sync again; your records wait on your computer meanwhile.`)
 	}
 	return user
 }
@@ -400,7 +400,7 @@ async function reviewAPI(request: Request, env: Env, url: URL): Promise<Response
 	if (call === 'GET /log') {
 		const log = await fullLog(env, url.searchParams)
 		const res = json(log)
-		res.headers.set('Content-Disposition', `attachment; filename="teardrop-log-${log.person.id}.json"`)
+		res.headers.set('Content-Disposition', `attachment; filename="helios-log-${log.person.id}.json"`)
 		return res
 	}
 	if (call === 'GET /team') return json(await team(env))
@@ -420,7 +420,7 @@ async function reviewAPI(request: Request, env: Env, url: URL): Promise<Response
 
 /**
  * servePage serves a page of the site. It marks every page as served here,
- * with data-web, which `teardrop dashboard` does not, so the nav offers a
+ * with data-web, which `helios dashboard` does not, so the nav offers a
  * visitor who is not signed in a way to sign in rather than this computer's
  * dashboard. For a signed-in visitor it marks the page, so it shows their
  * account menu from the first paint.

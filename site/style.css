@@ -440,7 +440,7 @@ td > .tag:first-child { margin-left: 0; }
 .signin .msg { margin-top: 18px; }
 .signin .btn { width: 100%; height: 46px; margin-top: 26px; }
 .signin .card > .fine { margin-top: 14px; }
-/* Sign in with teardrop: what another site will read, and Allow */
+/* Sign in with helios: what another site will read, and Allow */
 .authorize .site { color: var(--text); font-family: var(--mono); font-weight: 500; word-break: break-all; }
 .authorize .grants { margin: 20px 0 0; padding: 14px 16px; list-style: none; text-align: left; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
 .authorize .grants li { padding: 4px 0 4px 22px; position: relative; }

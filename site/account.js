@@ -95,16 +95,16 @@ async function api(path, init) {
 	return res.json()
 }
 
-const INSTALL = 'https://raw.githubusercontent.com/part-avocado/teardrop/main/install'
+const INSTALL = 'https://raw.githubusercontent.com/part-avocado/helios/main/install'
 // The name of the sync key made for cloud sessions.
 const CLOUD_KEY = 'Cloud sessions'
 // setupCommands are the one line to paste on each OS: install (or update),
-// then connect to this site. install.ps1 puts teardrop on this session's
+// then connect to this site. install.ps1 puts helios on this session's
 // PATH; install.sh only on a new terminal's, so its own path is named.
 function setupCommands() {
 	return {
-		sh: `curl -fsSL ${INSTALL}.sh | sh && ~/.local/bin/teardrop login -server ${location.origin}`,
-		ps: `irm ${INSTALL}.ps1 | iex; teardrop login -server ${location.origin}`,
+		sh: `curl -fsSL ${INSTALL}.sh | sh && ~/.local/bin/helios login -server ${location.origin}`,
+		ps: `irm ${INSTALL}.ps1 | iex; helios login -server ${location.origin}`,
 	}
 }
 
@@ -122,11 +122,11 @@ function renderSetup(el, again = false) {
 	const cmd = (text, kind = '') => `<div class="cmd ${kind}"><code>${esc(text)}</code><button class="copy" type="button">${t('common.copy')}</button></div>`
 	const promptBox = (text) => `<div class="prompt"><code>${esc(text)}</code><button class="copy" type="button">${t('common.copy')}</button></div>`
 	// What to paste into an agent so it does the setup itself. The questions
-	// teardrop setup asks are answered up front, since an agent can't answer them.
+	// helios setup asks are answered up front, since an agent can't answer them.
 	const prompt = t('setup.agentPrompt', {
-		sh: `curl -fsSL ${INSTALL}.sh | TEARDROP_NO_SETUP=1 sh`,
-		ps: `$env:TEARDROP_NO_SETUP=1; irm ${INSTALL}.ps1 | iex`,
-		connect: `teardrop login -server ${location.origin}`,
+		sh: `curl -fsSL ${INSTALL}.sh | HELIOS_NO_SETUP=1 sh`,
+		ps: `$env:HELIOS_NO_SETUP=1; irm ${INSTALL}.ps1 | iex`,
+		connect: `helios login -server ${location.origin}`,
 	})
 	// What to paste into Amp so its cloud threads count. The sync key is left
 	// out: Amp asks for a secret's value in a private dialog.
@@ -170,7 +170,7 @@ function renderSetup(el, again = false) {
 					</div>
 					<div class="tab-panel" data-tab="claude"><p>${t('setup.tools.claude')}</p></div>
 					<div class="tab-panel" data-tab="codex"><p>${t('setup.tools.codex')}</p></div>
-					<div class="tab-panel" data-tab="amp"><p>${t('setup.tools.amp1')}</p>${cmd('teardrop setup amp')}<p>${t('setup.tools.amp2')}</p>
+					<div class="tab-panel" data-tab="amp"><p>${t('setup.tools.amp1')}</p>${cmd('helios setup amp')}<p>${t('setup.tools.amp2')}</p>
 						<details class="setup-more" id="amp-cloud">
 							<summary>${t('setup.cloud.h')}</summary>
 							<p>${t('setup.cloud.p1')}</p>

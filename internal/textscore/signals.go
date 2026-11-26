@@ -7,20 +7,12 @@ import (
 	"unicode"
 )
 
-// Fingerprint is a 64-bit SimHash of a prompt's words and word pairs. Similar
-// prompts get fingerprints that differ in few bits, so repeats can be found
-// without keeping any text. It can't be turned back into the prompt.
 type Fingerprint uint64
 
-// Similar reports whether two fingerprints come from nearly the same prompt.
-// Rewordings such as dropping "the" or changing punctuation land 0 to 7 bits
-// apart; unrelated prompts land 20 or more apart.
 func Similar(a, b Fingerprint) bool {
 	return a != 0 && b != 0 && bits.OnesCount64(uint64(a^b)) <= 10
 }
 
-// lowEffort holds the words of prompts that steer without thinking:
-// "continue", "yes do it", "fix it", "still not working".
 var lowEffort = map[string]bool{}
 
 func init() {
@@ -32,7 +24,6 @@ func init() {
 	}
 }
 
-// signals fills in the fingerprint and low-effort flag of a scored prompt.
 func (s *Score) signals(words []string) {
 	if len(words) == 0 {
 		return
@@ -65,13 +56,11 @@ func (s *Score) signals(words []string) {
 		}
 	}
 	if s.Sim == 0 {
-		s.Sim = 1 // 0 means "no fingerprint"
+		s.Sim = 1
 	}
 	s.Low = low
 }
 
-// contractions maps "doesnt" to "does not" and similar, so a rewording that
-// only contracts a word still fingerprints as the same request.
 var contractions = map[string]string{
 	"doesnt": "does not", "dont": "do not", "didnt": "did not", "isnt": "is not", "arent": "are not",
 	"wasnt": "was not", "cant": "can not", "cannot": "can not", "wont": "will not", "its": "it is",
@@ -89,8 +78,6 @@ func expand(words []string) []string {
 	return out
 }
 
-// mix spreads FNV's bits (splitmix64 finalizer), so each bit of a feature's
-// hash is close to a fair coin.
 func mix(x uint64) uint64 {
 	x ^= x >> 30
 	x *= 0xbf58476d1ce4e5b9
@@ -99,7 +86,6 @@ func mix(x uint64) uint64 {
 	return x ^ x>>31
 }
 
-// normalize lowercases a word and drops apostrophes, so "Doesn't" matches "doesnt".
 func normalize(w string) string {
 	return strings.Map(func(r rune) rune {
 		if r == '\'' || r == '’' {

@@ -1,8 +1,3 @@
-# Keyboard mash, one prompt per line: what someone types to make a prompt
-# without writing one. The first 200 lines were generated once with a seeded
-# script in six styles (home row only, anywhere on the keyboard, home row with
-# the keys above, rolls along a row, two or three keys repeated, and mash
-# padded with one real word); the rest were typed by hand.
 ddlsljjdas jgsa hkhaaga ffkshjjlhj alllgggda jkfgajkl
 dfkkldj dgs lfhdgglhj ljgfa faksfsaha kffkffjhg
 gahhhfh dlhjasjlsh shfhl hsfafglas fjlssjj gagjld
@@ -243,3 +238,4 @@ fkfkfkfk
 lalalalala kakakaka
 dfhgdfhgdfhg
 iuyiuyiuy
+ghasd

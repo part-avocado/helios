@@ -1,26 +1,26 @@
 #!/bin/sh
-# Install teardrop on macOS, Linux, or Git Bash on Windows:
+# Install helios on macOS, Linux, or Git Bash on Windows:
 #
-#   curl -fsSL https://raw.githubusercontent.com/part-avocado/teardrop/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/part-avocado/helios/main/install.sh | sh
 #
 # Settings, all optional:
-#   TEARDROP_VERSION=v0.1.0       install this release instead of the latest
-#   TEARDROP_INSTALL_DIR=<dir>    install here instead of ~/.local/bin
-#   TEARDROP_NO_MODIFY_PATH=1     don't add the install dir to your shell profile
-#   TEARDROP_NO_SETUP=1           don't run `teardrop setup` afterwards
-#   TEARDROP_CLOUD=1              for a cloud environment or Codespace: set up Claude Code
+#   HELIOS_VERSION=v0.1.0       install this release instead of the latest
+#   HELIOS_INSTALL_DIR=<dir>    install here instead of ~/.local/bin
+#   HELIOS_NO_MODIFY_PATH=1     don't add the install dir to your shell profile
+#   HELIOS_NO_SETUP=1           don't run `helios setup` afterwards
+#   HELIOS_CLOUD=1              for a cloud environment or Codespace: set up Claude Code
 #                                 and every other tool found, without asking. Also set
-#                                 TEARDROP_SERVER and TEARDROP_KEY as secrets there; hooks
+#                                 HELIOS_SERVER and HELIOS_KEY as secrets there; hooks
 #                                 then send time straight to the site.
 #
-# Rerunning it updates teardrop in place.
+# Rerunning it updates helios in place.
 set -eu
 
-REPO="part-avocado/teardrop"
+REPO="part-avocado/helios"
 
 say() { printf '%s\n' "$*"; }
 fail() {
-	printf 'teardrop install: %s\n' "$*" >&2
+	printf 'helios install: %s\n' "$*" >&2
 	exit 1
 }
 
@@ -41,7 +41,7 @@ fetch() {
 			wget -q -O "$2" "$1"
 		fi
 	else
-		fail "curl or wget is needed to download teardrop"
+		fail "curl or wget is needed to download helios"
 	fi
 }
 
@@ -58,8 +58,8 @@ sha256() {
 
 # The whole script runs from main, so a download cut off midway runs nothing.
 main() {
-	version="${TEARDROP_VERSION:-latest}"
-	base="${TEARDROP_BASE_URL:-}"
+	version="${HELIOS_VERSION:-latest}"
+	base="${HELIOS_BASE_URL:-}"
 	if [ -z "$base" ]; then
 		if [ "$version" = latest ]; then
 			base="https://github.com/$REPO/releases/latest/download"
@@ -67,7 +67,7 @@ main() {
 			base="https://github.com/$REPO/releases/download/$version"
 		fi
 	fi
-	bin_dir="${TEARDROP_INSTALL_DIR:-$HOME/.local/bin}"
+	bin_dir="${HELIOS_INSTALL_DIR:-$HOME/.local/bin}"
 
 	os=$(uname -s)
 	case "$os" in
@@ -89,12 +89,12 @@ main() {
 	fi
 	ext=""
 	[ "$os" = windows ] && ext=".exe"
-	asset="teardrop_${os}_${arch}${ext}"
+	asset="helios_${os}_${arch}${ext}"
 
-	tmp=$(mktemp -d 2>/dev/null || mktemp -d -t teardrop)
+	tmp=$(mktemp -d 2>/dev/null || mktemp -d -t helios)
 	trap 'rm -rf "$tmp"' EXIT INT TERM
 
-	say "Downloading teardrop ($os/$arch)..."
+	say "Downloading helios ($os/$arch)..."
 	fetch "$base/$asset" "$tmp/$asset" progress || fail "could not download $base/$asset"
 	fetch "$base/checksums.txt" "$tmp/checksums.txt" || fail "could not download $base/checksums.txt"
 
@@ -108,11 +108,11 @@ main() {
 	fi
 
 	mkdir -p "$bin_dir" || fail "could not create $bin_dir"
-	target="$bin_dir/teardrop$ext"
+	target="$bin_dir/helios$ext"
 	chmod +x "$tmp/$asset"
-	# Copy next to the target, then rename, so a running teardrop is never half-written.
+	# Copy next to the target, then rename, so a running helios is never half-written.
 	cp "$tmp/$asset" "$target.new" && mv -f "$target.new" "$target" || fail "could not write $target"
-	say "Installed $("$target" -version 2>/dev/null || echo teardrop) to $target"
+	say "Installed $("$target" -version 2>/dev/null || echo helios) to $target"
 
 	case ":$PATH:" in
 	*":$bin_dir:"*) on_path=1 ;;
@@ -123,13 +123,13 @@ main() {
 		add_to_path "$bin_dir"
 	fi
 
-	if [ -z "${TEARDROP_NO_SETUP:-}" ]; then
+	if [ -z "${HELIOS_NO_SETUP:-}" ]; then
 		say ""
 		# When piped from curl, stdin is this script, so setup asks on the terminal instead.
-		case "$(printf '%s' "${TEARDROP_CLOUD:-}" | tr '[:upper:]' '[:lower:]')" in 1 | true) cloud=1 ;; *) cloud= ;; esac
+		case "$(printf '%s' "${HELIOS_CLOUD:-}" | tr '[:upper:]' '[:lower:]')" in 1 | true) cloud=1 ;; *) cloud= ;; esac
 		if [ -n "$cloud" ]; then
-			if [ -z "${TEARDROP_SERVER:-}" ] || [ -z "${TEARDROP_KEY:-}" ]; then
-				say "Warning: TEARDROP_CLOUD is set, but TEARDROP_SERVER and TEARDROP_KEY are not both set."
+			if [ -z "${HELIOS_SERVER:-}" ] || [ -z "${HELIOS_KEY:-}" ]; then
+				say "Warning: HELIOS_CLOUD is set, but HELIOS_SERVER and HELIOS_KEY are not both set."
 				say "Add them as secrets of this environment, or its hooks will send nothing to your site."
 				say ""
 			fi
@@ -146,7 +146,7 @@ main() {
 	fi
 	if [ "$added" = 1 ]; then
 		say ""
-		say "Open a new terminal, then run: teardrop"
+		say "Open a new terminal, then run: helios"
 	fi
 }
 
@@ -161,12 +161,12 @@ add_to_path() {
 		[ "$(uname -s)" = Darwin ] && profile="$HOME/.bash_profile"
 		;;
 	*/fish)
-		profile="${XDG_CONFIG_HOME:-$HOME/.config}/fish/conf.d/teardrop.fish"
+		profile="${XDG_CONFIG_HOME:-$HOME/.config}/fish/conf.d/helios.fish"
 		line="fish_add_path \"$1\""
 		;;
 	*) profile="$HOME/.profile" ;;
 	esac
-	if [ -n "${TEARDROP_NO_MODIFY_PATH:-}" ]; then
+	if [ -n "${HELIOS_NO_MODIFY_PATH:-}" ]; then
 		say "$1 is not on your PATH. Add this line to $profile:"
 		say "  $line"
 		return
@@ -176,7 +176,7 @@ add_to_path() {
 		return
 	fi
 	mkdir -p "$(dirname "$profile")"
-	printf '\n# Added by the teardrop installer\n%s\n' "$line" >>"$profile" ||
+	printf '\n# Added by the helios installer\n%s\n' "$line" >>"$profile" ||
 		{
 			say "Could not edit $profile. Add this line to it: $line"
 			return

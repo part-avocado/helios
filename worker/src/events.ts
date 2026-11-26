@@ -1,7 +1,7 @@
 // Events from Amp threads that run in Amp's cloud. The cloud plugin sends
 // them with the person's sync key, and the site keeps them for a year. No
 // computer of the person's is needed: when a cloud thread finishes a turn,
-// the teardrop that the plugin runs there reads all of the person's cloud
+// the helios that the plugin runs there reads all of the person's cloud
 // events back, counts them, and syncs the result as their cloud computer.
 // The server keeps the events and never works out time from them itself.
 import { derived, type User } from './auth.ts'

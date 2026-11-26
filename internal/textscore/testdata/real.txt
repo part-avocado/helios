@@ -1,7 +1,3 @@
-# Real prompts, one per line: language, a tab, the prompt. Written for these
-# tests as people write to coding agents, typos and missing accents included.
-# tl and sw are not among the languages the letter-pair table is built from,
-# so they show whether the mash check holds for languages it never saw.
 es	puedes arreglar el boton de login que no funciona en el movil
 es	quiero que la pagina cargue mas rapido, revisa las imagenes
 es	no entiendo por que falla el test, explicame el error

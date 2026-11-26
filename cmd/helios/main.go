@@ -1,0 +1,490 @@
+// Command helios prints how much time you spent engaged with AI coding
+// sessions, per project, from Claude Code and Codex logs on this machine and
+// from the journal that its Claude Code hooks and Amp plugin write.
+//
+//	helios          show your timeline for the last 7 days
+//	helios setup    check which tools are found, install hooks, fix settings that lose history
+//	helios setup amp   set up one tool only: claude, codex, or amp
+//	helios dashboard   open a live dashboard in the browser
+//	helios calibrate   show how the time model's caps treat your logs
+//	helios export   write a signed report to upload on the website
+//	helios login -server URL   connect this computer to your account on the website
+//	helios sync     send your records to your account on the website
+//	helios status   show whether this computer is set up and sending
+//	helios doctor   check the setup and say how to fix what is wrong
+//	helios update   replace this helios with the latest release
+//	helios hook claude-code   record one Claude Code hook event (run by Claude Code)
+//	helios relay    send events recorded in Amp's cloud to your helios site, and count them there (run by the Amp cloud plugin)
+package main
+
+import (
+	"encoding/json"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path"
+	"path/filepath"
+	"slices"
+	"strings"
+	"text/tabwriter"
+	"time"
+
+	"github.com/part-avocado/helios/internal/sources"
+	"github.com/part-avocado/helios/internal/textscore"
+	"github.com/part-avocado/helios/internal/timeline"
+)
+
+// version is set by the release build.
+var version = "dev"
+
+
+// A prompt with more than this share of unrecognized words earns no time.
+const noiseThreshold = 0.5
+
+func main() {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "setup":
+			runSetup(os.Args[2:])
+			return
+		case "hook":
+			runHook(os.Args[2:])
+			return
+		case "dashboard":
+			runDashboard(os.Args[2:])
+			return
+		case "export":
+			runExport(os.Args[2:])
+			return
+		case "sync":
+			runSync(os.Args[2:])
+			return
+		case "update":
+			runUpdate(os.Args[2:])
+			return
+		case "relay":
+			runRelay(os.Args[2:])
+			return
+		case "calibrate":
+			runCalibrate(os.Args[2:])
+			return
+		case "login":
+			runLogin(os.Args[2:])
+			return
+		case "uninstall":
+			runUninstall(os.Args[2:])
+			return
+		case "doctor":
+			runDoctor(os.Args[2:])
+			return
+		case "status":
+			runStatus(os.Args[2:])
+			return
+		case "help":
+			os.Args[1] = "-h"
+		case "version":
+			os.Args[1] = "-version"
+		}
+	}
+	claudeDir := flag.String("claude-dir", "", txtFlagClaudeDirsDefault)
+	codexDir := flag.String("codex-dir", "", txtFlagCodexDirsDefault)
+	since := flag.String("since", "7d", txtFlagSince)
+	asJSON := flag.Bool("json", false, txtFlagJSON)
+	verbose := flag.Bool("verbose", false, txtFlagVerbose)
+	var live bool
+	flag.BoolVar(&live, "live", false, txtFlagLive)
+	flag.BoolVar(&live, "l", false, txtFlagLiveShort)
+	every := flag.Duration("every", 3*time.Second, txtFlagEvery)
+	showVersion := flag.Bool("version", false, txtFlagVersion)
+	// The rules are not flags: the help would spell out how time is credited,
+	// and hours counted with other rules wouldn't match an export or a sync.
+	rules := timeline.DefaultRules
+	flag.Usage = func() {
+		fmt.Fprint(os.Stderr, txtUsage)
+		flag.PrintDefaults()
+	}
+	flag.Parse()
+	if flag.NArg() > 0 {
+		// Without this, a mistyped command would quietly print the timeline.
+		fmt.Fprintf(os.Stderr, txtUnknownCommand, flag.Arg(0))
+		flag.Usage()
+		os.Exit(2)
+	}
+	if *showVersion {
+		fmt.Printf(txtVersion, version)
+		return
+	}
+	window, err := parseSince(*since)
+	check(err)
+
+	if live {
+		if *asJSON {
+			check(errors.New(txtLiveNoJSON))
+		}
+		runLive(*claudeDir, *codexDir, *since, window, rules, *every)
+		return
+	}
+
+	raws, warnings := loadAll(*claudeDir, *codexDir)
+	reportWarnings(warnings, *verbose)
+	rep, sessions := buildReport(raws, time.Now().Add(-window), rules)
+	if *asJSON {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		check(enc.Encode(rep))
+		return
+	}
+	if len(rep.Blocks) == 0 {
+		printEmpty(os.Stdout, *since, len(raws) > 0)
+	} else {
+		printReport(os.Stdout, rep, len(sessions))
+	}
+	if e, ok := readLastError(); ok {
+		fmt.Printf(txtLastBackgroundErr, e.Command, ago(e.Time))
+	}
+	if n := updateNotice(); n != "" {
+		fmt.Println("\n" + n)
+	}
+}
+
+func printEmpty(out io.Writer, since string, anyLogs bool) {
+	fmt.Fprintf(out, txtEmptyWindow, since)
+	if !anyLogs {
+		fmt.Fprint(out, txtEmptyNoLogs)
+	} else {
+		fmt.Fprint(out, txtEmptyTryLonger)
+	}
+}
+
+// loadAll reads every transcript plus the hook journal.
+func loadAll(claudeDir, codexDir string) ([]sources.Raw, []string) {
+	return loadSince(claudeDir, codexDir, time.Time{})
+}
+
+// loadSince is loadAll without the transcripts last written before since.
+func loadSince(claudeDir, codexDir string, since time.Time) ([]sources.Raw, []string) {
+	raws, _, warnings := load(locations(claudeDir, codexDir), since)
+	journal, jw := sources.ReadJournal(dataDir())
+	return mergeJournal(raws, journal), append(warnings, jw...)
+}
+
+// lookups holds what a report learns about projects from git and their
+// files: which project a log belongs to, the words in its files, and its
+// commits. Live mode keeps one between refreshes, so git isn't asked and the
+// files aren't reread every few seconds.
+type lookups struct {
+	// resolve names a log's project and the directory holding its files, if any.
+	resolve func(sources.Raw) (timeline.Project, string)
+	vocabs  map[string]textscore.Vocab // by project directory
+	commits map[string]*commitLines    // by project directory, as read
+}
+
+func newLookups(resolve func(sources.Raw) (timeline.Project, string)) *lookups {
+	return &lookups{resolve: resolve, vocabs: map[string]textscore.Vocab{}, commits: map[string]*commitLines{}}
+}
+
+// buildReport credits the events of raws after cutoff.
+func buildReport(raws []sources.Raw, cutoff time.Time, rules timeline.Rules) (timeline.Report, []timeline.Session) {
+	return buildReportWith(newLookups(localProjects()), raws, cutoff, rules)
+}
+
+func buildReportWith(look *lookups, raws []sources.Raw, cutoff time.Time, rules timeline.Rules) (timeline.Report, []timeline.Session) {
+	sessions, committed := buildSessions(raws, cutoff, look)
+	rep := timeline.Build(sessions, rules)
+	for i := range rep.Projects {
+		rep.Projects[i].Committed = committed[rep.Projects[i].Project.Key]
+	}
+	return rep, sessions
+}
+
+// buildSessions resolves each log to a project, keeps events after cutoff,
+// marks prompts that fail the text check as noise, and finds the lines agents
+// wrote that were later committed. It also returns the lines committed to
+// each project's repository in the window.
+func buildSessions(raws []sources.Raw, cutoff time.Time, look *lookups) ([]timeline.Session, map[string]int) {
+	repos := map[string]*commitLines{} // this report's copies, which edits claim lines from
+	committed := map[string]int{}
+	var sessions []timeline.Session
+	bar := newBar(txtBarAnalyzing, int64(len(raws)), txtBarSessions)
+	defer bar.done()
+	for i, r := range raws {
+		bar.set(int64(i))
+		var p struct {
+			project timeline.Project
+			root    string
+		}
+		p.project, p.root = look.resolve(r)
+		// Classify the whole session, so prompts before the window still count
+		// as context for repeats and autopilot runs.
+		all := slices.Clone(r.Events)
+		discount(all, r.Scores, func(e timeline.Event, s textscore.Score) bool {
+			if !e.Time.After(cutoff) {
+				return false // outside the window: only context, so skip reading the repo
+			}
+			// Read the project's files only when a prompt has words the dictionary lacks.
+			v, built := look.vocabs[p.root]
+			if len(s.Unknown) > 0 && !built {
+				v = textscore.RepoVocab(p.root)
+				look.vocabs[p.root] = v
+			}
+			return s.Noise(v) > noiseThreshold
+		})
+		var ev []timeline.Event
+		for i, e := range all {
+			if !e.Time.After(cutoff) {
+				continue
+			}
+			c := repos[p.root]
+			if c == nil {
+				read := look.commits[p.root]
+				if read == nil {
+					read = readCommits(p.root, cutoff)
+					look.commits[p.root] = read
+				}
+				c = read.clone()
+				repos[p.root] = c
+				committed[p.project.Key] += c.added
+			}
+			if edit, ok := r.Edits[i]; ok {
+				e.Kept = c.claim(edit.Hashes)
+			}
+			ev = append(ev, e)
+		}
+		if len(ev) > 0 {
+			sessions = append(sessions, timeline.Session{Tool: r.Tool, ID: r.ID, Path: r.Path, Project: p.project, Events: ev})
+		}
+	}
+	return sessions, committed
+}
+
+func printReport(out io.Writer, rep timeline.Report, nSessions int) {
+	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, txtBlocksHeader)
+	day := ""
+	for _, b := range rep.Blocks {
+		start, end := b.Start.Local(), b.End.Local()
+		if d := start.Format(txtDayFormat); d != day {
+			day = d
+			fmt.Fprintf(w, "%s\t\t\t\t\t\t\n", d)
+		}
+		fmt.Fprintf(w, "  %s-%s\t%s\t%s\t%s\t%d\t%s\t%s\n",
+			start.Format(txtTimeFormat), end.Format(txtTimeFormat), b.Project.Name,
+			dur(time.Duration(b.Engaged)), dur(end.Sub(start)), b.Prompts, tokens(b.In, b.Out), strings.Join(b.Tools, ","))
+	}
+	w.Flush()
+
+	fmt.Fprintln(out)
+	w = tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, txtProjectsHeader)
+	var noise, repeat, autopilot int
+	for _, p := range rep.Projects {
+		noise, repeat, autopilot = noise+p.NoisePrompts, repeat+p.RepeatPrompts, autopilot+p.AutopilotPrompts
+		fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%d\t%s\t+%d/-%d\t%d\t%d\n", p.Project.Name, dur(time.Duration(p.Engaged)), dur(time.Duration(p.SessionTime)),
+			p.Prompts, p.NoisePrompts+p.RepeatPrompts+p.AutopilotPrompts, tokens(p.In, p.Out), p.Lines.Added, p.Lines.Removed, p.Lines.Kept, p.Committed)
+	}
+	w.Flush()
+	fmt.Fprintf(out, txtTotalEngaged, dur(time.Duration(rep.Engaged)), plural(len(rep.Projects), txtNounProject), plural(nSessions, txtNounSession))
+	if skipped := noise + repeat + autopilot; skipped > 0 {
+		// Which check skipped how many, so someone whose prompts are read as
+		// mashing finds out; not which prompts, so no one tunes them one by one.
+		fmt.Fprintf(out, txtSkippedPrompts, plural(skipped, txtNounPrompt))
+		if noise > 0 {
+			fmt.Fprintf(out, txtSkippedNoise, noise)
+		}
+		if repeat > 0 {
+			fmt.Fprintf(out, txtSkippedRepeat, repeat)
+		}
+		if autopilot > 0 {
+			fmt.Fprintf(out, txtSkippedAutopilot, autopilot)
+		}
+	}
+}
+
+func reportWarnings(warnings []string, verbose bool) {
+	if len(warnings) == 0 {
+		return
+	}
+	if verbose {
+		for _, w := range warnings {
+			fmt.Fprintln(os.Stderr, txtErrPrefix, w)
+		}
+		return
+	}
+	fmt.Fprintf(os.Stderr, txtSkippedLogs, plural(len(warnings), txtNounLogFile))
+}
+
+// parseSince accepts Go durations plus a d suffix for days.
+func parseSince(s string) (time.Duration, error) {
+	if n, ok := strings.CutSuffix(s, "d"); ok {
+		var days float64
+		if _, err := fmt.Sscanf(n, "%g", &days); err == nil && days > 0 {
+			return time.Duration(days * 24 * float64(time.Hour)), nil
+		}
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil || d <= 0 {
+		return 0, fmt.Errorf(txtBadSince, s)
+	}
+	return d, nil
+}
+
+// localProjects resolves logs to projects on this machine, asking git once per directory.
+func localProjects() func(sources.Raw) (timeline.Project, string) {
+	type resolved struct {
+		project timeline.Project
+		root    string
+	}
+	cache := map[string]resolved{}
+	return func(r sources.Raw) (timeline.Project, string) {
+		key := r.Cwd + "\x00" + r.GitURL
+		p, ok := cache[key]
+		if !ok {
+			p.project, p.root = resolveProject(r.Cwd, r.GitURL)
+			cache[key] = p
+		}
+		return p.project, p.root
+	}
+}
+
+// resolveProject names a project by its git remote, else its repository root,
+// else its directory. It also returns the directory to read vocabulary from.
+func resolveProject(cwd, gitURL string) (timeline.Project, string) {
+	root := cwd
+	if top := gitOut(cwd, "rev-parse", "--show-toplevel"); top != "" {
+		root = filepath.FromSlash(top)
+	}
+	if gitURL == "" {
+		gitURL = gitOut(cwd, "config", "--get", "remote.origin.url")
+	}
+	return nameProject(root, gitURL), root
+}
+
+// nameProject names the project in the folder root by its git remote, when it has one.
+func nameProject(root, gitURL string) timeline.Project {
+	if dir, ok := localRemote(gitURL); ok {
+		// Named after its key, so the home folder itself is "home", not the account.
+		key := folderKey(dir)
+		return timeline.Project{Key: key, Name: path.Base(filepath.ToSlash(key))}
+	}
+	if gitURL != "" {
+		key := normalizeRemote(gitURL)
+		return timeline.Project{Key: key, Name: filepath.Base(key)}
+	}
+	if root == "" {
+		return timeline.Project{Key: "(unknown)", Name: "(unknown)"}
+	}
+	return timeline.Project{Key: folderKey(root), Name: filepath.Base(root)}
+}
+
+// folderKey is the key of a project with no remote. A folder in the home
+// folder is keyed from it, as ~/code/app, so the key, which reaches the
+// site, doesn't name the person's account on this computer.
+func folderKey(root string) string {
+	home, _ := os.UserHomeDir()
+	if home == "" {
+		return root
+	}
+	rel, err := filepath.Rel(home, root)
+	switch {
+	case err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel):
+		return root
+	case rel == ".":
+		return "home"
+	}
+	return "~/" + filepath.ToSlash(rel)
+}
+
+// localRemote returns the folder a remote names when it is one on this
+// computer, such as /home/ada/x.git, file:///home/ada/x, or C:\\x.git, less .git.
+func localRemote(u string) (string, bool) {
+	u = strings.TrimSpace(u)
+	// ~/repos/x.git, which git takes, and a relayed event's key, already keyed from its computer's home.
+	if rest, ok := strings.CutPrefix(u, "~/"); ok {
+		// One that climbs out of home names no folder under it; it is keyed as written.
+		if r := path.Clean(filepath.ToSlash(rest)); r == ".." || strings.HasPrefix(r, "../") {
+			return "", false
+		}
+		home, _ := os.UserHomeDir()
+		if home == "" {
+			return strings.TrimSuffix(u, ".git"), true
+		}
+		return strings.TrimSuffix(filepath.Join(home, filepath.FromSlash(rest)), ".git"), true
+	}
+	if rest, ok := strings.CutPrefix(u, "file://"); ok {
+		u = filepath.FromSlash(rest)
+		if len(u) > 2 && u[0] == filepath.Separator && u[2] == ':' {
+			u = u[1:] // file:///C:/x on Windows
+		}
+	}
+	if u == "" || !filepath.IsAbs(u) && !strings.HasPrefix(u, "/") {
+		return "", false
+	}
+	return strings.TrimSuffix(filepath.Clean(u), ".git"), true
+}
+
+// normalizeRemote maps git@host:o/r.git and https://host/o/r to host/o/r.
+func normalizeRemote(u string) string {
+	u = strings.TrimSuffix(strings.TrimSpace(u), ".git")
+	if i := strings.Index(u, "://"); i >= 0 {
+		u = u[i+3:]
+		if at := strings.Index(u, "@"); at >= 0 && at < strings.Index(u+"/", "/") {
+			u = u[at+1:]
+		}
+	} else if at := strings.Index(u, "@"); at >= 0 {
+		u = strings.Replace(u[at+1:], ":", "/", 1)
+	}
+	return strings.ToLower(u)
+}
+
+func gitOut(dir string, args ...string) string {
+	if dir == "" || !exists(dir) {
+		return ""
+	}
+	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func dur(d time.Duration) string {
+	m := int(d.Round(time.Minute) / time.Minute)
+	if m < 60 {
+		return fmt.Sprintf(txtMinutes, m)
+	}
+	return fmt.Sprintf(txtHoursMinutes, m/60, m%60)
+}
+
+func tokens(in, out int64) string {
+	if in == 0 && out == 0 {
+		return txtNone
+	}
+	return count(in) + "/" + count(out)
+}
+
+func count(n int64) string {
+	switch {
+	case n >= 1_000_000:
+		return fmt.Sprintf(txtMillions, float64(n)/1e6)
+	case n >= 1_000:
+		return fmt.Sprintf(txtThousands, float64(n)/1e3)
+	}
+	return fmt.Sprint(n)
+}
+
+func check(err error) {
+	if err != nil {
+		fmt.Fprintln(os.Stderr, txtErrPrefix, err)
+		os.Exit(1)
+	}
+}
+
+func plural(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
+}

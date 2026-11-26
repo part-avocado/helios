@@ -7,8 +7,6 @@ import (
 	"time"
 )
 
-// TestSharedCases runs the cases the Worker's port of Credit runs too
-// (worker/src/timeline.ts), so the two can't drift apart unnoticed.
 func TestSharedCases(t *testing.T) {
 	b, err := os.ReadFile("testdata/credit.json")
 	if err != nil {

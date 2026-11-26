@@ -157,7 +157,7 @@ const BAN_COLUMNS = `b.id, b.slack_id, b.reason, b.by_slack_id, b.by_level, b.at
 const inForce = (b: BanRow) => b.lifted_at == null
 
 /**
- * The words a banned person is told, by the site and by `teardrop sync`. The
+ * The words a banned person is told, by the site and by `helios sync`. The
  * reason is for reviewers only, so it is left out.
  */
 export function banMessage(): string {

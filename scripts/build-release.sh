@@ -13,6 +13,6 @@ for target in linux/amd64 linux/arm64 linux/386 darwin/amd64 darwin/arm64 window
 	[ "$os" = windows ] && ext=".exe"
 	CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath \
 		-ldflags "-s -w -X main.version=$version" \
-		-o "$out/teardrop_${os}_${arch}${ext}" ./cmd/teardrop
+		-o "$out/helios_${os}_${arch}${ext}" ./cmd/helios
 done
-(cd "$out" && sha256sum teardrop_* >checksums.txt)
+(cd "$out" && sha256sum helios_* >checksums.txt)

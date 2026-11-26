@@ -1,5 +1,5 @@
-// The upload load test: simulated accounts send records to a teardrop site
-// at honest rates, as teardrop's hooks and first sync do, and it prints how
+// The upload load test: simulated accounts send records to a helios site
+// at honest rates, as helios's hooks and first sync do, and it prints how
 // fast the site answered and what it refused. It exits 1 if the site refused
 // any upload, since honest use must never meet the limits in src/hub.ts.
 //
@@ -55,13 +55,13 @@ interface Result {
 	stored: number
 }
 
-/** upload sends lines as one batch from computer, as teardrop's relay does. */
+/** upload sends lines as one batch from computer, as helios's relay does. */
 async function upload(key: string, computer: string, lines: string[]): Promise<Result> {
 	const start = performance.now()
 	try {
 		const res = await fetch(server + '/api/v1/events', {
 			method: 'POST',
-			headers: { Authorization: `Bearer ${key}`, 'X-Teardrop-Computer': computer, 'X-Teardrop-Version': 'dev', 'Content-Type': 'application/x-ndjson' },
+			headers: { Authorization: `Bearer ${key}`, 'X-Helios-Computer': computer, 'X-Helios-Version': 'dev', 'Content-Type': 'application/x-ndjson' },
 			body: lines.join('\n') + '\n',
 		})
 		const body = await res.text()

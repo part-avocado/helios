@@ -15,7 +15,7 @@ const inputs = {
 	reportBytes: 6_000, // one computer's latest report in R2, compressed
 	logRowBytes: 600, // an account_log row, which each report sync adds
 	logRowsInD1: 400, // per person at most (LOG_KEPT + ARCHIVE in src/log.ts); older rows go to R2
-	reportSyncShare: 0.1, // syncs that still send a report: Amp cloud threads and teardrop before 0.7
+	reportSyncShare: 0.1, // syncs that still send a report: Amp cloud threads and helios before 0.7
 	keptReportBytes: 40_000, // each such report, kept in R2 for good
 	promptDayBytes: 300,
 	pageRequests: 4_500_000, // pages, API calls, profiles, and sockets

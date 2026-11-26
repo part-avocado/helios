@@ -78,7 +78,7 @@ h1, h2, h3 { line-height: 1.15; }
 /* The server marks <html> with data-hosted when someone is signed in (and
    data-staff for reviewers), so these show or hide what only an account needs. */
 html:not([data-hosted]) .hosted-only, html[data-hosted] .local-only, html:not([data-staff]) .staff-only { display: none !important; }
-/* The Worker also marks every page it serves with data-web, which `teardrop
+/* The Worker also marks every page it serves with data-web, which `helios
    dashboard` does not. So app-only shows to someone signed in and on this
    computer's own dashboard, and guest-only to a visitor of the website who
    is not signed in. */

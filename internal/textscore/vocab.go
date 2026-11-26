@@ -10,18 +10,14 @@ import (
 	"unicode"
 )
 
-// Vocab is the set of lowercased identifiers found in a project's files.
 type Vocab map[string]struct{}
 
-// Limits keep vocabulary building fast on old laptops and huge repositories.
 const (
 	maxFiles     = 5000
 	maxFileBytes = 1 << 20
 	maxTotal     = 32 << 20
 )
 
-// RepoVocab collects identifiers and their camelCase and snake_case parts from
-// the text files under root: the files git tracks, or a plain walk outside git.
 func RepoVocab(root string) Vocab {
 	v := Vocab{}
 	if root == "" {
@@ -72,8 +68,6 @@ func listFiles(root string) []string {
 	return out
 }
 
-// add records every identifier in s, plus its parts: PlayerController adds
-// playercontroller, player, and controller.
 func (v Vocab) add(s string) {
 	for _, id := range strings.FieldsFunc(s, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' }) {
 		v.put(id)

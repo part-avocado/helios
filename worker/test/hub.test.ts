@@ -33,7 +33,7 @@ test('the hub loses no record while it writes a day', async () => {
 		const hub = () => env.HUB.get(env.HUB.idFromName(String(id)))
 		// Records go in one batch, at a UTC offset in minutes.
 		const post = (records: { t: number; session: string; event?: string; in?: number }[], offset = 0) =>
-			site.fetch('/api/v1/events', { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'X-Teardrop-UTC-Offset': String(offset) }, body: records.map(({ t, session, event, in: tokens }) => JSON.stringify({ t: new Date(t).toISOString(), tool: 'cursor', event: event ?? 'turn_end', session, project: 'p', in: tokens ?? 1 })).join('\n') })
+			site.fetch('/api/v1/events', { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'X-Helios-UTC-Offset': String(offset) }, body: records.map(({ t, session, event, in: tokens }) => JSON.stringify({ t: new Date(t).toISOString(), tool: 'cursor', event: event ?? 'turn_end', session, project: 'p', in: tokens ?? 1 })).join('\n') })
 		const send = async (t: number, session: string, offset = 0, event?: string) => {
 			const res = await post([{ t, session, event }], offset)
 			assert.equal(res.status, 200)
@@ -212,7 +212,7 @@ test('the hub loses no record while it writes a day', async () => {
 		await env.DB.prepare(`INSERT INTO users (hca_id, api_key, created_at) VALUES ('someone else', 'no key', 0)`).run()
 		await env.DB.prepare(`INSERT INTO computers (id, user_id, public_key, signature, generated_at, synced_at) SELECT ?, id, 'k', 's', 0, 0 FROM users WHERE hca_id = 'someone else'`).bind(pc).first()
 		const asPC = async (t: number, session: string) => {
-			const res = await site.fetch('/api/v1/events', { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'X-Teardrop-UTC-Offset': '0', 'X-Teardrop-Computer': pc }, body: JSON.stringify({ t: new Date(t).toISOString(), tool: 'cursor', event: 'turn_end', session, project: 'p' }) })
+			const res = await site.fetch('/api/v1/events', { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'X-Helios-UTC-Offset': '0', 'X-Helios-Computer': pc }, body: JSON.stringify({ t: new Date(t).toISOString(), tool: 'cursor', event: 'turn_end', session, project: 'p' }) })
 			assert.equal(res.status, 200)
 		}
 		const names = async () => (await all<{ computer_id: string }>(`SELECT DISTINCT computer_id FROM prompt_days WHERE user_id = ? AND computer_id LIKE 'td-%' ORDER BY computer_id`, id)).map((r) => r.computer_id)

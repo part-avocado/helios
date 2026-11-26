@@ -93,7 +93,7 @@ function showProfile(p) {
 	const badge = `${location.origin}/api/public/v1/users/${p.handle}/badge.svg`
 	$('badge').hidden = !p.public
 	$('badge-img').src = p.public ? `${badge}?v=${Date.now()}` : ''
-	$('badge-md').textContent = `[![teardrop](${badge})](${url})`
+	$('badge-md').textContent = `[![helios](${badge})](${url})`
 }
 const saveProfile = async (changes, done) => {
 	try {
@@ -117,7 +117,7 @@ $('profile-public').addEventListener('change', (e) => saveProfile({ public: e.ta
 // lastUsed says when a key was last used, as HTML.
 const lastUsed = (k) => (k.last_used_at ? t('settings.key.lastUsed', { ago: esc(ago(k.last_used_at)) }) : t('settings.key.neverUsed'))
 
-// Sync keys beside the account's own: one per computer that ran teardrop login, and any made here.
+// Sync keys beside the account's own: one per computer that ran helios login, and any made here.
 async function listSyncKeys() {
 	const { keys } = await api('/api/sync-keys')
 	$('sync-keys').innerHTML = keys.map((k) => `<div class="item">
@@ -132,7 +132,7 @@ $('sync-key-form').addEventListener('submit', async (e) => {
 		const made = await during(e.target.querySelector('button'), () => change('/api/sync-keys', 'POST', JSON.stringify({ name: e.target.name.value })))
 		e.target.reset()
 		$('sync-key-msg').hidden = true
-		$('sync-key-connect').textContent = `teardrop sync -server ${location.origin} -key ${made.key}`
+		$('sync-key-connect').textContent = `helios sync -server ${location.origin} -key ${made.key}`
 		$('sync-dialog').showModal()
 		await listSyncKeys()
 	} catch (err) {
