@@ -25,6 +25,9 @@ Everything you need to install teardrop, read your stats, and sync them to your 
 - [Amp cloud threads](amp.md#amp-cloud)
 - [Copilot and Cursor](copilot-cursor.md)
 - [OpenCode](opencode.md)
+- [Antigravity](antigravity.md)
+- [Remote sessions](cloud.md)
+- [Connectors for Claude and other chat apps](connectors.md)
 - [Add your own harness](own-harness.md)
 - [Lines of code](lines.md)
 

@@ -3,8 +3,12 @@
 
 See how much time you actually spend working with AI coding tools, per project.
 teardrop reads the logs Claude Code and Codex already write, and records Amp,
-OpenCode, GitHub Copilot, and Cursor through hooks and plugins that
-`teardrop setup` adds, so there is nothing to keep running.
+OpenCode, Antigravity, GitHub Copilot, and Cursor through hooks and plugins that
+`teardrop setup` adds, so there is nothing to keep running. Sessions on a
+machine that goes away (Claude Code on the web, Codex cloud, Amp's cloud, a
+Codespace, or OpenCode or Antigravity on a server) count too, and so do chats
+in Claude on the web and other chat apps, through the site's connector. See
+[Remote sessions](docs/cloud.md) and [Connectors](docs/connectors.md).
 
 ## Install
 
@@ -38,7 +42,8 @@ rights are needed. It installs to `~/.local/bin`, or
 `setup` lists the tools it found and offers to stop Claude Code from deleting
 transcripts after 30 days. It changes nothing without asking and is safe to rerun.
 To set up one tool only, name it: `teardrop setup claude`, `codex`, `amp`,
-`opencode`, `copilot`, or `cursor`.
+`opencode`, `antigravity`, `copilot`, or `cursor`. For cloud sessions of a
+repository, run `teardrop setup -project` in it and commit what it writes.
 
 With Go 1.25 or later you can also run
 `go install github.com/part-avocado/teardrop/cmd/teardrop@latest`.
@@ -95,6 +100,9 @@ never stored.
 | GitHub Copilot CLI and VS Code agent | the journal, written by hooks in `~/.copilot/hooks/teardrop.json` |
 | Cursor | the journal, written by hooks in `~/.cursor/hooks.json` |
 | OpenCode 1 and 2 | the journal, written by the teardrop plugin in `~/.config/opencode/plugins/teardrop.ts` (`$OPENCODE_CONFIG_DIR`, `$XDG_CONFIG_HOME`); its past sessions, kept in SQLite, aren't read |
+| Antigravity (App, CLI, and IDE) | the journal, written by hooks in `~/.gemini/config/hooks.json` |
+| Claude Code on the web, Codex cloud, OpenCode or Antigravity on a remote VM | your teardrop site, sent by hooks in cloud mode (`teardrop setup -project` commits them to the repository) |
+| Claude on the web, the Claude apps, ChatGPT, and other MCP chat apps | your teardrop site, through its connector at `/mcp` |
 | Any other harness | the journal, written by `teardrop hook <tool>` (see "Add your own harness" in the docs) |
 
 Override them with `-claude-dir` and `-codex-dir`.

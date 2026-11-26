@@ -38,8 +38,16 @@ func openCodeDir() string {
 func openCodePluginPath() string { return filepath.Join(openCodeDir(), "plugins", "teardrop.ts") }
 
 func renderOpenCodePlugin(exe string) []byte {
-	lit, _ := json.Marshal(exe) // escapes Windows backslashes
-	return bytes.Replace(openCodePluginTemplate, []byte("__TEARDROP_PATH__"), lit, 1)
+	return renderOpenCodePluginWith(exe, []string{})
+}
+
+// renderOpenCodePluginWith is the plugin that runs program with before ahead
+// of teardrop's own arguments, such as a shell running cloud.sh.
+func renderOpenCodePluginWith(program string, before []string) []byte {
+	lit, _ := json.Marshal(program) // escapes Windows backslashes
+	args, _ := json.Marshal(before)
+	out := bytes.Replace(openCodePluginTemplate, []byte("__TEARDROP_PATH__"), lit, 1)
+	return bytes.Replace(out, []byte("__TEARDROP_ARGS__"), args, 1)
 }
 
 // openCodeInstalled reports whether OpenCode is on this machine.

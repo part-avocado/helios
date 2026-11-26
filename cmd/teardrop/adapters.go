@@ -35,6 +35,7 @@ type harness struct {
 	Names []string          // what `teardrop setup` accepts for it
 	Kinds map[string]string // its event names, mapped to the contract's kinds
 	Reply map[string]string // what it needs printed on stdout, per kind
+	Ack   string            // what it needs printed on stdout on every run, even one teardrop doesn't record
 }
 
 // claudeEvents are Claude Code's hook events, which Codex and VS Code's Copilot agent use too.
@@ -54,7 +55,12 @@ var harnesses = []harness{
 	{Tool: "cursor", Name: "Cursor", Names: []string{"cursor"}, Kinds: map[string]string{
 		"beforeSubmitPrompt": "prompt", "stop": "turn_end", "sessionStart": "session_start", "sessionEnd": "session_end", "afterFileEdit": "edit",
 	}, Reply: map[string]string{"prompt": `{"continue":true}`}},
+	// Antigravity's hooks name no event, so each passes -event (antigravity.go).
+	{Tool: "antigravity", Name: "Antigravity", Names: []string{"antigravity", "agy"}, Kinds: map[string]string{
+		"SessionStart": "session_start", "PreInvocation": "prompt", "Stop": "turn_end",
+	}, Ack: "{}"},
 }
+
 
 func merged(a, b map[string]string) map[string]string {
 	out := map[string]string{}

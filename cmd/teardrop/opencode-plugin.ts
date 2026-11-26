@@ -5,13 +5,15 @@
 import { spawn } from 'node:child_process'
 
 const teardrop = __TEARDROP_PATH__
+// Words that go before teardrop's own: none, unless it runs through a script.
+const before: string[] = __TEARDROP_ARGS__
 
 // Hand the event to teardrop, which scores the prompt and keeps only the
 // counts. Failures are ignored so OpenCode is never blocked.
 const record = (event: string, sessionID: string, cwd: string, prompt = '') =>
 	new Promise<void>((resolve) => {
 		try {
-			const child = spawn(teardrop, ['hook', 'opencode', '-event', event], { stdio: ['pipe', 'ignore', 'ignore'], windowsHide: true })
+			const child = spawn(teardrop, [...before, 'hook', 'opencode', '-event', event], { cwd: cwd || undefined, stdio: ['pipe', 'ignore', 'ignore'], windowsHide: true })
 			const timer = setTimeout(resolve, 2000)
 			const done = () => (clearTimeout(timer), resolve())
 			child.on('error', done) // teardrop was moved or uninstalled

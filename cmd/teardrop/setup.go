@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -34,7 +35,7 @@ func parseSetupArgs(fs *flag.FlagSet, args []string) (map[string]bool, error) {
 		}
 		tool, ok := setupNames[strings.ToLower(fs.Arg(0))]
 		if !ok {
-			return nil, fmt.Errorf("unknown tool %q; use claude, codex, amp, opencode, copilot, or cursor", fs.Arg(0))
+			return nil, fmt.Errorf("unknown tool %q; use claude, codex, amp, opencode, antigravity, copilot, or cursor", fs.Arg(0))
 		}
 		only[tool] = true
 		args = fs.Args()[1:]
@@ -50,12 +51,13 @@ func runSetup(args []string) {
 	removeHooks := fs.Bool("remove-hooks", false, "remove teardrop's hooks and its Amp and OpenCode plugins, keeping teardrop installed (teardrop uninstall removes everything)")
 	claudeDir := fs.String("claude-dir", "", "Claude Code config directories, comma-separated")
 	codexDir := fs.String("codex-dir", "", "Codex home directories, comma-separated")
-	project := fs.Bool("project", false, "with claude: put the hooks in this repository's .claude/settings.json, to commit, so cloud sessions of it record time")
+	project := fs.Bool("project", false, "put hooks in the repository you are in, to commit, so its cloud sessions record time (claude, codex, antigravity, opencode; all four if none is named)")
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "Usage: teardrop setup [flags] [claude] [codex] [amp] [opencode] [copilot] [cursor]")
+		fmt.Fprintln(os.Stderr, "Usage: teardrop setup [flags] [claude] [codex] [amp] [opencode] [antigravity] [copilot] [cursor]")
 		fmt.Fprintln(os.Stderr, "       Sets up every tool it finds, or only the ones you name.")
-		fmt.Fprintln(os.Stderr, "       teardrop setup claude -project")
-		fmt.Fprintln(os.Stderr, "       Sets up Claude Code's cloud sessions of the repository you are in.")
+		fmt.Fprintln(os.Stderr, "       teardrop setup [claude] [codex] [antigravity] [opencode] -project")
+		fmt.Fprintln(os.Stderr, "       Sets up cloud sessions of the repository you are in: Claude Code on the web,")
+		fmt.Fprintln(os.Stderr, "       Codex cloud, and Antigravity or OpenCode on a remote machine.")
 		fmt.Fprintln(os.Stderr)
 		fs.PrintDefaults()
 	}
@@ -66,12 +68,22 @@ func runSetup(args []string) {
 	}
 	want := func(tool string) bool { return len(only) == 0 || only[tool] }
 	if *project {
-		if len(only) != 1 || !only["Claude Code"] {
-			fmt.Fprintln(os.Stderr, "teardrop setup: -project is for Claude Code; run `teardrop setup claude -project`")
-			os.Exit(2)
+		for tool := range only {
+			if !slices.Contains(projectTools, tool) {
+				fmt.Fprintf(os.Stderr, "teardrop setup: -project is for Claude Code, Codex, Antigravity, and OpenCode, not %s\n", tool)
+				os.Exit(2)
+			}
 		}
 		cwd, _ := os.Getwd()
-		check(setupProject(cwd, *yes, *removeHooks))
+		for _, tool := range projectTools {
+			switch {
+			case !want(tool):
+			case tool == "Claude Code":
+				check(setupProject(cwd, *yes, *removeHooks))
+			default:
+				check(setupToolProject(cwd, tool, *yes, *removeHooks))
+			}
+		}
 		return
 	}
 
@@ -114,6 +126,9 @@ func runSetup(args []string) {
 	if want("OpenCode") {
 		fmt.Fprintf(w, "  OpenCode\t%s\t%s\n", openCodeDir(), openCodeStatus(journal))
 	}
+	if want("Antigravity") {
+		fmt.Fprintf(w, "  Antigravity\t%s\t%s\n", geminiDir(), antigravityStatus(journal))
+	}
 	w.Flush()
 	if len(warnings) > 0 {
 		fmt.Printf("\n  %s could not be read and will be skipped (run `teardrop -verbose` to list them).\n", plural(len(warnings), "log file"))
@@ -150,18 +165,24 @@ func runSetup(args []string) {
 	if want("OpenCode") {
 		found["OpenCode"] = checkOpenCodePlugin(*yes, *removeHooks) || openCodeInstalled()
 	}
+	if want("Antigravity") {
+		checkAntigravity(*yes, *removeHooks)
+		found["Antigravity"] = antigravityInstalled()
+	}
 	if _, err := exec.LookPath("git"); err != nil {
 		fmt.Println("\n  Note: git is not installed, so projects are grouped by folder instead of by repository.")
 	}
 
 	fmt.Println()
 	anyFound := false
-	for _, tool := range []string{"Claude Code", "Codex", "Amp", "OpenCode"} {
+	for _, tool := range []string{"Claude Code", "Codex", "Amp", "OpenCode", "Antigravity"} {
 		anyFound = anyFound || found[tool]
 		switch {
 		case !only[tool] || found[tool]:
 		case tool == "OpenCode":
 			fmt.Println("OpenCode was not found on this machine. If its config is in a custom place, set OPENCODE_CONFIG_DIR.")
+		case tool == "Antigravity":
+			fmt.Printf("Antigravity was not found on this machine; it keeps its settings in %s.\n", geminiDir())
 		default:
 			fmt.Printf("%s was not found on this machine. If its logs are in a custom place, pass -%s-dir.\n", tool, strings.ToLower(strings.Fields(tool)[0]))
 		}

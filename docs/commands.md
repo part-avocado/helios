@@ -4,8 +4,8 @@
 | --- | --- |
 | `teardrop` | Print your timeline and project totals. |
 | `teardrop setup` | Check tools, keep history, install hooks and the Amp and OpenCode plugins. |
-| `teardrop setup amp` | The same for the tools you name: `claude`, `codex`, `amp`, `opencode`, `copilot`, or `cursor`. |
-| `teardrop setup claude -project` | Put hooks in this repository's `.claude/settings.json`, to commit, for [cloud sessions](claude-code.md#or-commit-the-hooks-to-the-repository). |
+| `teardrop setup amp` | The same for the tools you name: `claude`, `codex`, `amp`, `opencode`, `antigravity`, `copilot`, or `cursor`. |
+| `teardrop setup -project` | Put hooks in this repository, to commit, for [cloud sessions](cloud.md): Claude Code's `.claude/settings.json`, Codex's `.codex/hooks.json`, Antigravity's `.agents/hooks.json`, and an OpenCode plugin. Name tools, as in `teardrop setup claude -project`, for only theirs. |
 | `teardrop status` | Show the account this computer syncs to, whether each tool's hooks are installed, what is waiting to send, and when it last synced. |
 | `teardrop doctor` | Check everything that decides whether your time counts (this binary, the site and key, the clock, each tool's hooks, records waiting to send, the last background error, and updates) and say how to fix each problem. Exits 1 when something needs fixing. It never prints your key. |
 | `teardrop update` | Download the latest teardrop, check it against the release's checksums, replace this one with it, and run setup again. `-check` only says whether a newer version is out; `teardrop update v0.5.0` installs that version, even if it is older. `-auto on` or `-auto off` turns installing new releases by itself on or off. |
