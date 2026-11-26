@@ -5,5 +5,9 @@
 	{"name": "agent output with no prompt earns nothing", "events": [[0, "a"], [100, "a"]], "engaged": 0},
 	{"name": "a quick reply and a quick prompt", "events": [[0, "h"], [30, "a"], [90, "h"]], "engaged": 90},
 	{"name": "out of order records are sorted first", "events": [[90, "h"], [0, "h"], [30, "a"]], "engaged": 90},
-	{"name": "a second prompt restarts the watch window", "events": [[0, "h"], [500, "h"], [1000, "a"], [1300, "a"]], "engaged": 540}
+	{"name": "a second prompt restarts the watch window, and a prompt after a prompt earns its first 3 minutes as watching, no compose time", "events": [[0, "h"], [500, "h"], [1000, "a"], [1300, "a"]], "engaged": 420},
+	{"name": "an interrupted turn earns the gap to the next prompt", "events": [[0, "h"], [100, "h"], [130, "a"]], "engaged": 130},
+	{"name": "prompts 5 minutes apart with no output earn 3 minutes each, 60%", "events": [[0, "h"], [300, "h"], [600, "h"], [900, "h"], [1200, "h"]], "engaged": 720},
+	{"name": "a session's first prompt earns no compose time, so a session_start can't buy it", "events": [[0, "a"], [300, "h"]], "engaged": 0},
+	{"name": "a prompt after agent output earns compose time once a prompt has started the session", "events": [[0, "h"], [100, "a"], [400, "h"]], "engaged": 400}
 ]

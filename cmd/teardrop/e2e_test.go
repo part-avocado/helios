@@ -19,6 +19,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -51,12 +52,14 @@ func TestE2E(t *testing.T) {
 	var bodies [][]byte
 	var records []map[string]any
 	var loginComputer string
+	var paths []string
 	allowed := false // set once the person types the code on the site
 	var site *httptest.Server
 	site = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		mu.Lock()
 		bodies = append(bodies, b)
+		paths = append(paths, r.URL.Path)
 		mu.Unlock()
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/login":
@@ -99,6 +102,7 @@ func TestE2E(t *testing.T) {
 		for _, line := range bytes.Split(bytes.TrimSpace(b), []byte("\n")) {
 			var rec map[string]any
 			if json.Unmarshal(line, &rec) == nil {
+				rec["sent as"] = r.Header.Get("X-Teardrop-Computer")
 				mu.Lock()
 				records = append(records, rec)
 				mu.Unlock()
@@ -256,6 +260,113 @@ func TestE2E(t *testing.T) {
 		t.Errorf("setup -remove-hooks left teardrop's hooks:\n%s", settings)
 	}
 
+	// In a cloud container, named so by its environment, the same hooks keep
+	// no journal: each event goes straight to the site as the "cloud"
+	// computer, and the reply's end sends the turn's tokens, read from the
+	// transcript, as a usage record, since no sync will read it later.
+	workspace, cloudData := filepath.Join(root, "workspace"), filepath.Join(root, "cloud-data")
+	os.MkdirAll(workspace, 0o700)
+	transcript := filepath.Join(root, "cloud-session.jsonl")
+	os.WriteFile(transcript, []byte(`{"type":"user","timestamp":"2026-11-20T15:00:00.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"first"}}
+{"type":"assistant","timestamp":"2026-11-20T15:00:05.000Z","requestId":"r1","message":{"id":"m1","content":"x","usage":{"input_tokens":7,"output_tokens":3}}}
+`), 0o600)
+	cloud := append(slices.Clone(env), "TEARDROP_DATA_DIR="+cloudData, "TEARDROP_SERVER="+site.URL, "TEARDROP_KEY=tdk_e2e", "TEARDROP_CLOUD=1")
+	for _, ev := range []map[string]string{
+		{"hook_event_name": "UserPromptSubmit", "prompt": secretPrompt},
+		{"hook_event_name": "Stop"},
+		// The turn stops again with no prompt typed between, as after a background task's notice.
+		{"hook_event_name": "Stop"},
+	} {
+		ev["session_id"], ev["cwd"], ev["transcript_path"] = "cloud-session", workspace, transcript
+		payload, _ := json.Marshal(ev)
+		hook := exec.Command(exe, "hook", "claude-code")
+		hook.Env, hook.Dir = cloud, workspace
+		hook.Stdin = bytes.NewReader(payload)
+		if out, err := hook.CombinedOutput(); err != nil || len(out) != 0 {
+			t.Fatalf("cloud hook %s: %v, printed %q", ev["hook_event_name"], err, out)
+		}
+	}
+	// In a clone, the repository's key names the project, and the folder's path stays on the machine.
+	clone := filepath.Join(root, "clone")
+	os.MkdirAll(clone, 0o700)
+	for _, args := range [][]string{{"init", "-q"}, {"remote", "add", "origin", "https://github.com/ada/thing.git"}} {
+		git := exec.Command("git", args...)
+		git.Dir, git.Env = clone, env
+		if out, err := git.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	{
+		payload, _ := json.Marshal(map[string]string{"hook_event_name": "UserPromptSubmit", "prompt": "add a test", "session_id": "cloud-clone", "cwd": clone})
+		hook := exec.Command(exe, "hook", "claude-code")
+		hook.Env, hook.Dir = cloud, clone
+		hook.Stdin = bytes.NewReader(payload)
+		if out, err := hook.CombinedOutput(); err != nil || len(out) != 0 {
+			t.Fatalf("cloud hook in a clone: %v, printed %q", err, out)
+		}
+	}
+	flush := exec.Command(exe, "relay", "-verbose")
+	flush.Env, flush.Dir = cloud, workspace
+	if out, err := flush.CombinedOutput(); err != nil {
+		t.Fatalf("relay in the cloud: %v\n%s", err, out)
+	}
+	mu.Lock()
+	var cloudPrompt, cloudEnd map[string]any
+	var cloudUsage []map[string]any
+	cloned := false
+	for _, rec := range records {
+		if rec["session"] == "cloud-clone" {
+			cloned = true
+			if rec["git"] != "github.com/ada/thing" || rec["cwd"] != nil {
+				t.Errorf("a cloud record from a clone: git %v, cwd %v; want the repository's key and no folder", rec["git"], rec["cwd"])
+			}
+		}
+		if rec["session"] != "cloud-session" {
+			continue
+		}
+		if rec["sent as"] != "cloud" || rec["cwd"] != workspace {
+			t.Errorf("a cloud record was sent as %q from folder %v", rec["sent as"], rec["cwd"])
+		}
+		if rec["human"] == true {
+			cloudPrompt = rec
+		} else if rec["event"] == "Stop" {
+			if rec["in"] != nil || rec["out"] != nil {
+				t.Errorf("a cloud turn end carries tokens, which a second Stop would add again: %v", rec)
+			}
+			cloudEnd = rec
+		} else if rec["event"] == "usage" {
+			cloudUsage = append(cloudUsage, rec)
+		}
+	}
+	mu.Unlock()
+	if cloudPrompt == nil || cloudPrompt["in"] != nil || cloudPrompt["judged"] == nil {
+		t.Errorf("the cloud prompt's record: %v; want one, scored, without the transcript's tokens", cloudPrompt)
+	}
+	if !cloned {
+		t.Error("the cloud prompt from a clone was not sent")
+	}
+	if cloudEnd == nil {
+		t.Error("the cloud turn's end was not sent")
+	}
+	// Each Stop sends the turn's usage keyed by the turn's prompt time, so the site replaces it and never adds it twice.
+	// Background relays may send a record more than once, so only its key is checked, not how often it came.
+	if len(cloudUsage) == 0 {
+		t.Error("the cloud turn's usage was not sent")
+	}
+	for _, u := range cloudUsage {
+		if u["t"] != "2026-11-20T15:00:00Z" || u["in"] != float64(7) || u["out"] != float64(3) || u["human"] != nil {
+			t.Errorf("a cloud usage record: %v; want the turn's 7 tokens in and 3 out at its prompt's time", u)
+		}
+	}
+	if journal, _ := filepath.Glob(filepath.Join(cloudData, "events-*.jsonl")); len(journal) != 0 {
+		t.Errorf("a cloud hook kept a journal: %v", journal)
+	}
+	for _, f := range []string{"account.key", localOutbox} {
+		if _, err := os.Stat(filepath.Join(cloudData, f)); err == nil {
+			t.Errorf("a cloud hook made %s", f)
+		}
+	}
+
 	// Let background syncs finish writing before reading every file.
 	time.Sleep(4 * time.Second)
 	filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -269,6 +380,10 @@ func TestE2E(t *testing.T) {
 	})
 	mu.Lock()
 	defer mu.Unlock()
+	// Counting cloud threads is Amp's, so Claude Code's turn end asks for none.
+	if slices.Contains(paths, "/api/v1/cloud") {
+		t.Error("a Claude Code hook in the cloud counted cloud threads, which only Amp's does")
+	}
 	for _, b := range bodies {
 		if bytes.Contains(b, []byte("marmalade")) {
 			t.Errorf("a request to the site held the prompt text: %.200s", b)

@@ -257,7 +257,7 @@ var errSyncBusy = errors.New("another sync is running")
 // a turn just ended, it starts one at once. Otherwise it starts one only if
 // the last was more than syncEvery ago. Hooks call it, so it never waits.
 func syncSoon(now bool) {
-	if _, err := os.Stat(filepath.Join(dataDir(), "server")); err != nil {
+	if !siteSet() {
 		return
 	}
 	if now {

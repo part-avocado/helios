@@ -10,8 +10,8 @@ import { DurableObject } from 'cloudflare:workers'
 import type { User } from './auth.ts'
 import { type Commit, remember } from './git.ts'
 import { Refusal } from './http.ts'
-import { refreshRecordComputer } from './reports.ts'
-import { blocks, type Clock, corrected, nextClock, RULES, type Rec, timed, totals, WATCH } from './timeline.ts'
+import { computerAlias, refreshRecordComputer } from './reports.ts'
+import { blocks, type Clock, corrected, nextClock, nextOffset, type OffsetPin, RULES, type Rec, timed, totals, WATCH } from './timeline.ts'
 
 const FLUSH = 10 * 60_000
 const SEAL = 48 * 3600_000
@@ -20,6 +20,12 @@ const DAY = 86400_000
 const CLOCK_SKEW = 5 * 60_000
 /** The longest one record's line may be. */
 const MAX_LINE = 2000
+/** How many visitors may watch one profile live at once. */
+export const MAX_PUBLIC_SOCKETS = 50
+/** How many messages a profile's visitor may send in a minute before their socket is closed. */
+const PUBLIC_MESSAGES = 30
+/** How long a worked-out live state is shown before it is worked out again, unless a record arrives first. */
+const LIVE_FOR = 5000
 
 /** A record as a client sends it, one JSON object per line. */
 interface Line {
@@ -62,9 +68,12 @@ export interface Live {
 }
 
 export class UserHub extends DurableObject<Env> {
-	/** Uploads left in this account's burst, and when it was last topped up. Kept in memory only. */
-	private uploads = NaN
-	private uploadsAt = 0
+	/** Records kept on one UTC day, recent and old: read from storage once, shared by batches at once, and written back as they grow. */
+	private sent: { day: string; recent: number; old: number } | null = null
+	/** The name each computer's records are kept under: its own, or a stand-in when another account holds its ID. */
+	private names = new Map<string, string>()
+	/** The live state last worked out, and when. */
+	private shown: { at: number; live: Live } | null = null
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env)
@@ -102,7 +111,7 @@ export class UserHub extends DurableObject<Env> {
 	async add(
 		userID: number,
 		computer: string,
-		offset: number,
+		offsetSent: number | null,
 		lines: string[],
 		reading: number | null = null,
 	): Promise<{ stored: number; future: number; records: Rec[]; limited?: { message: string; retryAfter: number } }> {
@@ -112,20 +121,47 @@ export class UserHub extends DurableObject<Env> {
 		const kept: Rec[] = []
 		let future = 0
 
+		// Uploads left in the account's burst, topped up one a second. Kept in storage, so a hub that restarts doesn't start a new burst.
 		const burst = setting(this.env.UPLOAD_BURST, 1000)
-		if (Number.isNaN(this.uploads)) this.uploads = burst
-		this.uploads = Math.min(burst, this.uploads + (now - this.uploadsAt) / 1000)
-		this.uploadsAt = now
-		if (this.uploads < 1) {
-			return { stored: 0, future: 0, records: [], limited: { message: 'This account is sending too many uploads at once. teardrop sends the rest in a moment.', retryAfter: Math.ceil(1 - this.uploads) } }
+		const had = sql.exec(`SELECT v FROM meta WHERE k = 'uploads'`).toArray()[0]?.v
+		const bucket = had ? (JSON.parse(String(had)) as { n: number; at: number }) : { n: burst, at: now }
+		const uploads = Math.min(burst, bucket.n + Math.max(0, now - bucket.at) / 1000)
+		sql.exec(`INSERT OR REPLACE INTO meta (k, v) VALUES ('uploads', ?)`, JSON.stringify({ n: uploads < 1 ? uploads : uploads - 1, at: now }))
+		if (uploads < 1) {
+			return { stored: 0, future: 0, records: [], limited: { message: 'This account is sending too many uploads at once. teardrop sends the rest in a moment.', retryAfter: Math.ceil(1 - uploads) } }
 		}
-		this.uploads--
-		// Records a UTC day, recent and old, counted as they are written.
+		// A computer ID another account holds is kept under a stand-in of this account's own.
+		computer = await this.named(userID, computer)
+		// Days are counted at the account's pinned offset, not the batch's own.
+		const pinned = sql.exec(`SELECT v FROM meta WHERE k = 'offset'`).toArray()[0]?.v
+		// Only a computer's own offset can move it: a cloud machine and a batch that names none follow it.
+		// Until a computer pins one, their days are UTC days, whatever offset they name: a cloud batch can't pick its own calendar.
+		const was = pinned ? (JSON.parse(String(pinned)) as OffsetPin) : null
+		const pin = offsetSent === null || computer === 'cloud' ? (was ?? { pin: 0 }) : nextOffset(was, offsetSent, now)
+		// `seen` is kept to the hour, so a busy account doesn't write this on every batch.
+		if (was && pin.seen != null && was.seen != null && pin.seen - was.seen < 3600_000) pin.seen = was.seen
+		// An account whose first batch is a cloud one, or has no offset, isn't pinned yet: its first computer's offset is the one to pin.
+		const unpinned = !was && (offsetSent === null || computer === 'cloud')
+		if (!unpinned && JSON.stringify(pin) !== pinned) sql.exec(`INSERT OR REPLACE INTO meta (k, v) VALUES ('offset', ?)`, JSON.stringify(pin))
+		const offset = pin.pin
+		// Records a UTC day, recent and old, counted as they are kept.
 		const today = new Date(now).toISOString().slice(0, 10)
-		const caps = { recent: setting(this.env.RECENT_RECORDS_PER_DAY, 30_000), old: setting(this.env.OLD_RECORDS_PER_DAY, 1_000_000) }
-		// Read and counted in storage at each record, never held across an await, so batches at once share the count.
-		const used = (kind: 'recent' | 'old') => Number(sql.exec('SELECT v FROM meta WHERE k = ?', `${kind}:${today}`).toArray()[0]?.v ?? 0)
-		sql.exec(`DELETE FROM meta WHERE (k LIKE 'recent:%' OR k LIKE 'old:%') AND k NOT IN (?, ?)`, `recent:${today}`, `old:${today}`)
+		const caps = { recent: setting(this.env.RECENT_RECORDS_PER_DAY, 30_000), old: setting(this.env.OLD_RECORDS_PER_DAY, 100_000) }
+		// The counts are read from storage once and held by the hub, not the
+		// batch, so batches at once share them. They are written back before
+		// each wait and when the batch ends, not at every record.
+		if (this.sent?.day !== today) {
+			const stored = (kind: 'recent' | 'old') => Number(sql.exec('SELECT v FROM meta WHERE k = ?', `${kind}:${today}`).toArray()[0]?.v ?? 0)
+			this.sent = { day: today, recent: stored('recent'), old: stored('old') }
+			sql.exec(`DELETE FROM meta WHERE (k LIKE 'recent:%' OR k LIKE 'old:%') AND k NOT IN (?, ?)`, `recent:${today}`, `old:${today}`)
+		}
+		const sent = this.sent
+		let counted = false
+		const saveCounts = () => {
+			if (!counted) return
+			counted = false
+			for (const kind of ['recent', 'old'] as const) sql.exec('INSERT OR REPLACE INTO meta (k, v) VALUES (?, ?)', `${kind}:${today}`, String(sent[kind]))
+		}
 		let limited: { message: string; retryAfter: number } | undefined
 		// Cloud records carry the cloud machine's times, not the sender's, so only a computer's own are corrected.
 		let skew = 0
@@ -147,7 +183,9 @@ export class UserHub extends DurableObject<Env> {
 			} catch {
 				continue
 			}
-			const t = typeof ev?.t === 'string' ? Date.parse(ev.t) : NaN
+			// `null`, a number, or a list is JSON too, and no record.
+			if (!ev || typeof ev !== 'object') continue
+			const t = typeof ev.t === 'string' ? Date.parse(ev.t) : NaN
 			const tool = text(ev.tool, 32), session = text(ev.session, 200), event = text(ev.event, 64)
 			if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(tool) || !session || !event || !(t > 0)) continue
 			if (t + corrected(skew) > now + CLOCK_SKEW) {
@@ -176,9 +214,12 @@ export class UserHub extends DurableObject<Env> {
 			// of them. They are read at once, and asked again until all three are
 			// loaded together: a flush can forget a day between a read ending and
 			// this going on.
-			const sealed = [-DAY, 0, DAY].map((near) => dayOf(Date.parse(day) + near, 0)).filter((d) => now - (Date.parse(d) + DAY - offset * 60_000) > SEAL)
-			for (let reads; (reads = sealed.map((d) => this.load(userID, d)).filter(Boolean)).length; ) await Promise.all(reads)
-			if (used(kind) >= caps[kind]) {
+			const sealed = [-2 * DAY, -DAY, 0, DAY, 2 * DAY].map((near) => dayOf(Date.parse(day) + near, 0)).filter((d) => now - (Date.parse(d) + DAY - offset * 60_000) > SEAL)
+			for (let reads; (reads = sealed.map((d) => this.load(userID, d)).filter(Boolean)).length; ) {
+				saveCounts()
+				await Promise.all(reads)
+			}
+			if (sent[kind] >= caps[kind]) {
 				const midnight = Date.parse(today) + DAY
 				limited = {
 					message: `This account sent ${caps[kind].toLocaleString('en-US')} ${kind === 'recent' ? 'records from the last two days' : 'older records'} today, the most a day takes. The rest wait on your computer until midnight UTC.`,
@@ -197,16 +238,52 @@ export class UserHub extends DurableObject<Env> {
 				sql.exec('INSERT OR IGNORE INTO dirty (day) VALUES (?)', at)
 				this.marks.set(at, (this.marks.get(at) ?? 0) + 1)
 				kept.push(rec)
-				sql.exec(`INSERT INTO meta (k, v) VALUES (?, '1') ON CONFLICT (k) DO UPDATE SET v = CAST(v AS INTEGER) + 1`, `${kind}:${today}`)
+				sent[kind]++
+				counted = true
 				// Set at the first kept, not only after the batch, which may fail partway on a read.
-				if (kept.length === 1 && (await this.ctx.storage.getAlarm()) == null) await this.ctx.storage.setAlarm(now + FLUSH)
+				if (kept.length === 1) {
+					saveCounts()
+					if ((await this.ctx.storage.getAlarm()) == null) await this.ctx.storage.setAlarm(now + FLUSH)
+				}
 			}
 		}
+		saveCounts()
 		// And after it: the alarm may have gone off while the batch waited on a read.
 		if (kept.length && (await this.ctx.storage.getAlarm()) == null) await this.ctx.storage.setAlarm(Date.now() + FLUSH)
 		// Open dashboards hear of it at once; a send never waits on the socket.
-		if (kept.length) this.broadcast()
+		if (kept.length) {
+			this.shown = null
+			this.broadcast()
+		}
 		return { stored: kept.length, future, records: kept, ...(limited ? { limited } : {}) }
+	}
+
+	/**
+	 * named returns the name a computer's records are kept under: its own ID,
+	 * or, when another account's computer already holds that ID, a stand-in
+	 * made from this account and the ID. So naming someone else's computer
+	 * neither takes it over nor hides one's own. An ID no one holds yet is
+	 * asked about again at the next batch. A stand-in, once used, is kept in
+	 * storage and used from then on, whoever holds the ID later and whenever
+	 * the hub restarts: going back to the real ID would file one computer's
+	 * records under two names, and count time on both twice.
+	 */
+	private async named(userID: number, computer: string): Promise<string> {
+		if (computer === 'cloud') return computer
+		const known = this.names.get(computer)
+		if (known) return known
+		const sql = this.ctx.storage.sql
+		const kept = sql.exec('SELECT v FROM meta WHERE k = ?', `name:${computer}`).toArray()[0]?.v
+		if (kept) {
+			this.names.set(computer, String(kept))
+			return String(kept)
+		}
+		const row = await this.env.DB.prepare('SELECT user_id FROM computers WHERE id = ?').bind(computer).first<{ user_id: number }>()
+		if (!row) return computer
+		const name = row.user_id === userID ? computer : await computerAlias(userID, computer)
+		if (name !== computer) sql.exec('INSERT OR REPLACE INTO meta (k, v) VALUES (?, ?)', `name:${computer}`, name)
+		this.names.set(computer, name)
+		return name
 	}
 
 	/** The sealed days being read back from R2, and the read each one's records wait on. */
@@ -288,7 +365,14 @@ export class UserHub extends DurableObject<Env> {
 		// The computers the days came from show their new totals on the dashboard and in the review app.
 		const touched = new Set<string>()
 		for (const day of days) for (const r of sql.exec('SELECT DISTINCT computer FROM recs WHERE day = ?', day).toArray()) touched.add(String(r.computer))
-		for (const c of touched) await refreshRecordComputer(this.env, user, c)
+		// One computer's row failing must not keep the rest from theirs, nor sealed days from being forgotten below; the next flush of its days tries again.
+		for (const c of touched) {
+			try {
+				await refreshRecordComputer(this.env, user, c)
+			} catch (e) {
+				console.error(JSON.stringify({ message: 'could not refresh a computer from its records', user, computer: c, error: String(e) }))
+			}
+		}
 		// Sealed days live in R2 alone from here on.
 		const sealed = dayOf(Date.now() - SEAL - DAY, 0)
 		sql.exec('DELETE FROM recs WHERE day < ? AND day NOT IN (SELECT day FROM dirty)', sealed)
@@ -303,7 +387,10 @@ export class UserHub extends DurableObject<Env> {
 		await this.env.REPORTS.put(dayKey(user, day), gzip)
 		const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(body)))].map((b) => b.toString(16).padStart(2, '0')).join('')
 		const recs = lines.map((l) => JSON.parse(l) as Rec & { computer: string; offset: number })
-		const offset = recs[0]?.offset ?? 0
+		// Records are filed in a day by the offset the account had then. Should it have moved, the day's window is the one most were filed under.
+		const seen = new Map<number, number>()
+		for (const r of recs) seen.set(r.offset ?? 0, (seen.get(r.offset ?? 0) ?? 0) + 1)
+		const offset = [...seen].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 0
 		const from = Date.parse(day) - offset * 60_000
 		const rows: [string, Rec[]][] = [['', recs]]
 		for (const c of new Set(recs.map((r) => r.computer))) rows.push([c, recs.filter((r) => r.computer === c)])
@@ -315,11 +402,12 @@ export class UserHub extends DurableObject<Env> {
 				// A computer's work blocks, for the dashboard and review graphs: [start, end, engaged s, prompts, in, out, added, removed, project, tools].
 				const day_blocks = computer ? blocks(list, from, from + DAY).map((b) => [b.start, b.end, Math.round(b.engaged / 1000), b.prompts, b.in, b.out, b.added, b.removed, b.project, b.tools.join(',')]) : []
 				return this.env.DB.prepare(
-					`INSERT INTO prompt_days (user_id, computer_id, day, witnessed_seconds, unwitnessed_seconds, prompts, tokens_in, tokens_out, lines_added, lines_removed, projects, sha256, rules, updated_at, blocks)
-					 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+					`INSERT INTO prompt_days (user_id, computer_id, day, witnessed_seconds, unwitnessed_seconds, prompts, tokens_in, tokens_out, lines_added, lines_removed, projects, sha256, rules, updated_at, blocks, uncapped_seconds)
+					 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
 					 ON CONFLICT (user_id, computer_id, day) DO UPDATE SET witnessed_seconds = ?4, unwitnessed_seconds = ?5, prompts = ?6, tokens_in = ?7,
-						tokens_out = ?8, lines_added = ?9, lines_removed = ?10, projects = ?11, sha256 = ?12, rules = ?13, updated_at = ?14, blocks = ?15`,
-				).bind(user, computer, day, Math.round(s.witnessed / 1000), Math.round(s.unwitnessed / 1000), s.prompts, s.tokens_in, s.tokens_out, s.lines_added, s.lines_removed, JSON.stringify(projects), computer ? '' : hash, RULES, now, JSON.stringify(day_blocks))
+						tokens_out = ?8, lines_added = ?9, lines_removed = ?10, projects = ?11, sha256 = ?12, rules = ?13, updated_at = ?14, blocks = ?15, uncapped_seconds = ?16`,
+				// uncapped_seconds: what the day's records added up to when that was more than the 16 hours credited, else NULL.
+				).bind(user, computer, day, Math.round(s.witnessed / 1000), Math.round(s.unwitnessed / 1000), s.prompts, s.tokens_in, s.tokens_out, s.lines_added, s.lines_removed, JSON.stringify(projects), computer ? '' : hash, RULES, now, JSON.stringify(day_blocks), s.uncapped ? Math.round(s.uncapped / 1000) : null)
 			}),
 		)
 		// Commits go to their project's row, for links and the GitHub check.
@@ -350,9 +438,15 @@ export class UserHub extends DurableObject<Env> {
 		}
 	}
 
-	/** view is what one kind of socket is sent: a profile's visitors never learn the project. */
+	/**
+	 * view is what one kind of socket is sent: a profile's visitors never learn
+	 * the project. The state is worked out at most once in LIVE_FOR, or when a
+	 * record arrives, however many sockets ask.
+	 */
 	private view(tag: string): Live {
-		const l = this.live()
+		const now = Date.now()
+		if (!this.shown || now - this.shown.at > LIVE_FOR) this.shown = { at: now, live: this.live(now) }
+		const l = this.shown.live
 		return tag === 'owner' || !l.working ? l : { ...l, working: { tool: l.working.tool, since: l.working.since, kind: l.working.kind } }
 	}
 
@@ -377,6 +471,8 @@ export class UserHub extends DurableObject<Env> {
 	async fetch(request: Request): Promise<Response> {
 		if (request.headers.get('Upgrade') !== 'websocket') return Response.json(this.view(request.headers.get('X-Live') ?? 'public'))
 		const tag = request.headers.get('X-Live') === 'owner' ? 'owner' : 'public'
+		// Anyone can open a profile's socket, so one account holds only so many.
+		if (tag === 'public' && this.ctx.getWebSockets('public').length >= MAX_PUBLIC_SOCKETS) return new Response(null, { status: 429 })
 		const [client, server] = Object.values(new WebSocketPair())
 		this.ctx.acceptWebSocket(server!, [tag])
 		server!.send(JSON.stringify(this.view(tag)))
@@ -384,8 +480,65 @@ export class UserHub extends DurableObject<Env> {
 	}
 
 	webSocketMessage(ws: WebSocket) {
+		const tag = this.ctx.getTags(ws)[0] ?? 'public'
+		// A page asks when it wakes, which is seldom. A visitor's socket that asks over and over is closed.
+		if (tag !== 'owner') {
+			const now = Date.now()
+			const seen = (ws.deserializeAttachment() as { at: number; n: number } | null) ?? { at: now, n: 0 }
+			const next = now - seen.at > 60_000 ? { at: now, n: 1 } : { at: seen.at, n: seen.n + 1 }
+			if (next.n > PUBLIC_MESSAGES) return ws.close(1008, 'Too many messages.')
+			ws.serializeAttachment(next)
+		}
 		// Anything a page sends asks for the current state, such as after it wakes.
-		ws.send(JSON.stringify(this.view(this.ctx.getTags(ws)[0] ?? 'public')))
+		ws.send(JSON.stringify(this.view(tag)))
+	}
+
+	/** closePublic closes every visitor's socket, when the profile stops being one anyone may see. */
+	async closePublic() {
+		for (const ws of this.ctx.getWebSockets('public')) {
+			try {
+				ws.close(1000, 'This profile is no longer public.')
+			} catch {}
+		}
+	}
+
+	/**
+	 * forgetComputer removes one computer's records on the days given, which
+	 * are the days D1 has totals of it for, and on any day the working copy
+	 * holds some, from the working copy and from each day's file in R2, and
+	 * works those days out again without it. A sealed day is read back first.
+	 * It returns how many records it removed. The caller deletes the
+	 * computer's own rows of day totals after.
+	 */
+	async forgetComputer(userID: number, computer: string, days: string[]): Promise<number> {
+		const sql = this.ctx.storage.sql
+		sql.exec(`INSERT OR REPLACE INTO meta (k, v) VALUES ('user', ?)`, String(userID))
+		// The pass takes its turn among the flushes. A flush forgets the sealed
+		// days that have nothing new, so one that ran while a later day was
+		// still being read would drop the days already read back, and the
+		// computer's records would stay in their files in R2.
+		const pass = this.flushes.then(async () => {
+			let removed = 0
+			for (const day of days) {
+				// Asked again after each read, as in add: the day counts as loaded only once its records are in.
+				for (let read; (read = this.load(userID, day)); ) await read
+			}
+			// Every day of it the working copy now holds: the ones read back, and ones not yet written to D1.
+			for (const { day } of sql.exec('SELECT DISTINCT day FROM recs WHERE computer = ?', computer).toArray()) {
+				removed += sql.exec('DELETE FROM recs WHERE computer = ? AND day = ?', computer, String(day)).rowsWritten
+				sql.exec('INSERT OR IGNORE INTO dirty (day) VALUES (?)', String(day))
+				this.marks.set(String(day), (this.marks.get(String(day)) ?? 0) + 1)
+			}
+			return removed
+		})
+		this.flushes = pass.catch(() => {})
+		const removed = await pass
+		// The stand-in an ID is kept under stays (see named): only its clock goes.
+		sql.exec('DELETE FROM meta WHERE k = ?', `clock:${computer}`)
+		this.names.delete(computer)
+		this.shown = null
+		await this.flush()
+		return removed
 	}
 
 	webSocketClose(ws: WebSocket, code: number) {
@@ -396,8 +549,16 @@ export class UserHub extends DurableObject<Env> {
 
 	/** forget empties the hub, when its person deletes their account. */
 	async forget() {
+		for (const ws of this.ctx.getWebSockets()) {
+			try {
+				ws.close(1000, 'This account was deleted.')
+			} catch {}
+		}
 		await this.ctx.storage.deleteAlarm()
 		await this.ctx.storage.deleteAll()
+		this.sent = null
+		this.shown = null
+		this.names.clear()
 		this.schema()
 	}
 }

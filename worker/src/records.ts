@@ -14,7 +14,9 @@ const computerOf = (request: Request) => /^td-[0-9a-f]{12}$|^cloud$/.exec(reques
  * client's UTC offset, in minutes, decides its calendar days.
  */
 export async function relayRecords(env: Env, user: User, request: Request, body: string): Promise<{ stored: number; future: number }> {
-	const offset = Math.max(-840, Math.min(840, Number(request.headers.get('X-Teardrop-UTC-Offset')) || 0))
+	// Real offsets run from -12:00 to +14:00. A batch without one (a cloud machine's) doesn't move the calendar.
+	const header = request.headers.get('X-Teardrop-UTC-Offset')
+	const offset = header == null || header === '' || Number.isNaN(Number(header)) ? null : Math.max(-720, Math.min(840, Math.round(Number(header))))
 	const hub = env.HUB.get(env.HUB.idFromName(String(user.id)))
 	// How far the computer's clock runs behind this one, from when it says it sent the batch.
 	const sentAt = Date.parse(request.headers.get('X-Teardrop-Sent-At') ?? '')

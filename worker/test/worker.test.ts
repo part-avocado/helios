@@ -211,7 +211,7 @@ test('an account past its upload limits is told to wait, and its records are kep
 		workers: [
 			{
 				configPath: new URL('../wrangler.jsonc', import.meta.url),
-				vars: { DEV_LOGIN: 'UDEV', UPLOAD_BURST: '5', RECENT_RECORDS_PER_DAY: '5', OLD_RECORDS_PER_DAY: '4' },
+				vars: { DEV_LOGIN: 'UDEV', UPLOAD_BURST: '5', RECENT_RECORDS_PER_DAY: '5', OLD_RECORDS_PER_DAY: '4', REPORT_BYTES_PER_DAY: '3000' },
 				secrets: { SESSION_SECRET: 'x', HCA_CLIENT_ID: 'a', HCA_CLIENT_SECRET: 'b', ADMINS: '' },
 			},
 		],
@@ -261,6 +261,14 @@ test('an account past its upload limits is told to wait, and its records are kep
 		}
 		assert.equal(text.trim().split('\n').length, 9, 'the records sent before a limit are kept')
 		assert.match(text, /"in":200000000,.*"added":1000000,.*"clamped":true/)
+
+		// Reports: 3,000 bytes of them a day. Each of these is a little over 1,000, so the third is refused, and not kept.
+		const signed = computer()
+		const report = (i: number) => site.fetch('/api/v1/reports', { method: 'POST', headers: { Authorization: `Bearer ${key}` }, body: signed({ engaged_seconds: 600, blocks: [block(now - 9000)], pad: 'x'.repeat(1000) }, now - 3000 + i) })
+		assert.deepEqual([(await report(0)).status, (await report(1)).status], [200, 200])
+		await refused(await report(2), /more reports today than the site keeps in a day/, 3600)
+		const kept = await env.DB.prepare(`SELECT COUNT(*) AS n FROM account_log WHERE user_id = ? AND report_key IS NOT NULL`).bind(id).first<{ n: number }>()
+		assert.equal(kept!.n, 2)
 	} finally {
 		await site.close()
 	}
@@ -1281,18 +1289,18 @@ test('programs read a person\'s witnessed time through the review API, with a re
 	// Read at once: the hub writes what it holds before the answer.
 	const all = await stats('slack=ULEARNER')
 	assert.equal(all.person.slack_id, 'ULEARNER')
-	// Time on two projects at once counts once in the total.
+	// Time on two projects at once counts once in the total, and is shared between them.
 	assert.deepEqual([all.witnessed_seconds, all.unwitnessed_seconds, all.prompts], [240, 240, 5])
-	// A reviewer's key sees project names, never keys, which can name a folder on their computer.
-	assert.deepEqual(all.projects.map((p) => [p.name, p.key, p.witnessed_seconds, p.unwitnessed_seconds]), [['game', undefined, 240, 240], ['site', undefined, 120, 0]])
+	// A reviewer's key sees project names, never keys, which can name a folder on their computer. The minute both ran at once is split, 30 seconds each way.
+	assert.deepEqual(all.projects.map((p) => [p.name, p.key, p.witnessed_seconds, p.unwitnessed_seconds]), [['game', undefined, 180, 240], ['site', undefined, 60, 0]])
 	// Narrowed to one project, by name; and to days, which leave out the ones before.
 	const game = await stats('slack=ULEARNER&project=game')
-	assert.deepEqual([game.witnessed_seconds, game.unwitnessed_seconds, game.projects.length], [240, 240, 1])
+	assert.deepEqual([game.witnessed_seconds, game.unwitnessed_seconds, game.projects.length], [180, 240, 1])
 	const tomorrow = new Date(now + 2 * DAY).toISOString().slice(0, 10)
 	assert.deepEqual((await stats(`slack=ULEARNER&start=${tomorrow}`)).days, [])
 	// A neoadmin's session sees keys too, and filters by them. Flags read the records behind it.
 	const full = (await (await call('/api/review/stats?slack=ULEARNER&project=github.com/kid/site&flags=true', { cookie: admin })).json()) as Stats
-	assert.deepEqual(full.projects.map((p) => [p.key, p.witnessed_seconds]), [['github.com/kid/site', 120]])
+	assert.deepEqual(full.projects.map((p) => [p.key, p.witnessed_seconds]), [['github.com/kid/site', 60]])
 	assert.deepEqual(full.flags, [])
 	// Bad dates, someone unknown, and no key are refused; a person's own sync key is no key here.
 	assert.equal((await call('/api/review/stats?slack=ULEARNER&start=jan', { key: made.key })).status, 400)
@@ -1546,6 +1554,11 @@ test('a computer that sends only records shows on the dashboard, and usage earns
 	const otherID = (await env.DB.prepare('SELECT id FROM users WHERE slack_id = ?').bind('USQUATTER').first<{ id: number }>())!.id
 	await (env.HUB.get(env.HUB.idFromName(String(otherID))) as unknown as { flush(): Promise<string[]> }).flush()
 	assert.equal((await env.DB.prepare('SELECT user_id FROM computers WHERE id = ?').bind(pc).first<{ user_id: number }>())!.user_id, id)
+	// Their own records are kept all the same, under a stand-in for the ID they named.
+	const theirs = (await me(await signIn('squatter'))).computers.map((x) => x.id)
+	assert.equal(theirs.length, 1)
+	assert.match(theirs[0]!, /^td-[0-9a-f]{12}$/)
+	assert.notEqual(theirs[0], pc)
 })
 
 test('old log rows move to R2, and reviewers still read every one', async () => {
@@ -1721,4 +1734,318 @@ test('teardrop login connects a computer once, only by a typed code, and never f
 	assert.equal(banned.status, 200, await banned.text())
 	assert.equal((await call(`/api/v1/login/${before.code}`)).status, 403)
 	assert.equal((await call('/connect', { cookie })).status, 403)
+})
+
+/** recordKit is what the tests of records share: lines, a way to send them as a computer, and each person's hub and number. */
+function recordKit() {
+	const iso = (t: number) => new Date(t).toISOString()
+	const line = (t: number, event: string, extra: object = {}) => JSON.stringify({ t: iso(t), tool: 'claude-code', event, session: 's1', project: 'github.com/kid/kit', ...extra })
+	/** One turn: a prompt and the agent's reply two minutes later, which earns 120 seconds. */
+	const turn = (start: number, session = 's1', extra: object = {}) => [line(start, 'UserPromptSubmit', { human: true, judged: 6, real: 6, session, ...extra }), line(start + 120_000, 'Stop', { session, ...extra })]
+	const send = (key: string, lines: string[], headers: Record<string, string> = {}) => server.fetch(SITE + '/api/v1/events', { method: 'POST', body: lines.join('\n'), headers: { Authorization: `Bearer ${key}`, ...headers } })
+	const as = (computer: string) => ({ 'X-Teardrop-Computer': computer, 'X-Teardrop-UTC-Offset': '0' })
+	type DB = { prepare(sql: string): { bind(...v: unknown[]): { first<T>(): Promise<T | null>; all<T>(): Promise<{ results: T[] }>; run(): Promise<unknown> } } }
+	const person = async (slack: string) => {
+		const env = await server.getWorker<{ HUB: { idFromName(name: string): unknown; get(id: unknown): unknown }; DB: DB; REPORTS: { get(key: string): Promise<{ body: ReadableStream } | null>; list(o: { prefix: string }): Promise<{ objects: { key: string }[] }> } }>().getEnv()
+		const id = (await env.DB.prepare('SELECT id FROM users WHERE slack_id = ?').bind(slack).first<{ id: number }>())!.id
+		const flush = () => (env.HUB.get(env.HUB.idFromName(String(id))) as unknown as { flush(): Promise<string[]> }).flush()
+		const rollup = async () => (await env.DB.prepare(`SELECT COALESCE(SUM(witnessed_seconds + unwitnessed_seconds), 0) AS s FROM prompt_days WHERE user_id = ? AND computer_id = ''`).bind(id).first<{ s: number }>())!.s
+		return { env, id, flush, rollup }
+	}
+	return { iso, line, turn, send, as, person }
+}
+
+test('pages may load scripts from this site only', async () => {
+	const cookie = await signIn('policy')
+	for (const [path, as] of [['/', ''], ['/login', ''], ['/dashboard', cookie], ['/settings', cookie], ['/review/', await signIn('admin')], ['/api/me', cookie], ['/nowhere', '']] as const) {
+		const policy = (await call(path, { cookie: as })).headers.get('Content-Security-Policy') ?? ''
+		const rules = Object.fromEntries(policy.split('; ').map((r) => [r.split(' ')[0], r.split(' ').slice(1).join(' ')]))
+		assert.deepEqual([rules['default-src'], rules['script-src'], rules['object-src'], rules['frame-ancestors'], rules['connect-src']], ["'self'", "'self'", "'none'", "'none'", "'self'"], path)
+	}
+	// And nothing the pages themselves hold breaks it: no script or handler written in a page.
+	const site = new URL('../../site/', import.meta.url)
+	for (const file of ['index.html', 'login.html', 'dashboard.html', 'projects.html', 'settings.html', 'profile.html', 'docs.html', 'review/index.html']) {
+		const html = readFileSync(new URL(file, site), 'utf8')
+		assert.doesNotMatch(html, /<script(?![^>]*\ssrc=)[^>]*>|\son[a-z]+\s*=\s*["']|javascript:/i, file)
+		for (const [, src] of html.matchAll(/<script[^>]*\ssrc="([^"]+)"/g)) assert.doesNotMatch(src!, /^(https?:)?\/\//, `${file} loads ${src}`)
+	}
+})
+
+test('a cloud batch before any computer counts its days in UTC, and a line that is no record is skipped', async () => {
+	const { line, turn, send, person, iso } = recordKit()
+	const key = await newSyncKey(await signIn('cloudfirst'))
+	const now = Date.now()
+	// An offset that puts these records on another day than UTC does: the cloud's word, which must not be taken.
+	const offset = new Date(now).getUTCHours() >= 12 ? 840 : -720
+	const res = await send(key, ['null', '7', '[]', '"prompt"', 'true', ...turn(now - 290_000), line(now, 'not json').slice(1)], { 'X-Teardrop-UTC-Offset': String(offset) })
+	assert.deepEqual([res.status, await res.json()], [200, { stored: 0, records: 2 }])
+	const { env, id, flush } = await person('UCLOUDFIRST')
+	await flush()
+	const { results } = await env.DB.prepare(`SELECT day FROM prompt_days WHERE user_id = ? AND computer_id = ''`).bind(id).all<{ day: string }>()
+	const utc = new Set([iso(now - 290_000).slice(0, 10), iso(now - 170_000).slice(0, 10)])
+	assert.ok(results.length >= 1 && results.every((r) => utc.has(r.day)), `days ${results.map((r) => r.day)} are UTC days`)
+})
+
+test('a report from a computer that sends records is refused, and its time counts once', async () => {
+	const { turn, send, as, person } = recordKit()
+	const admin = await signIn('admin')
+	const cookie = await signIn('both')
+	const key = await newSyncKey(cookie)
+	const now = Date.now()
+	const keys = generateKeyPairSync('ed25519')
+	const signed = computer(keys)
+	const pc = 'td-' + createHash('sha256').update(Buffer.from(keys.publicKey.export({ format: 'jwk' }).x!, 'base64url')).digest('hex').slice(0, 12)
+	const report = (generated: number) => call('/api/v1/reports', { method: 'POST', key, body: signed({ engaged_seconds: 600, blocks: [block(generated - 60_000)] }, generated) })
+	const engaged = async () => {
+		const { people } = (await (await call('/api/review/people', { cookie: admin })).json()) as { people: { slack_id: string; engaged_seconds: number }[] }
+		const { handle } = await me(cookie)
+		const profile = (await (await call(`/api/public/v1/users/${handle}`)).json()) as { engaged_seconds: number; days: { engaged_seconds: number }[] }
+		return [people.find((p) => p.slack_id === 'UBOTH')!.engaged_seconds, profile.engaged_seconds, profile.days.reduce((n, d) => n + d.engaged_seconds, 0)]
+	}
+	// An old teardrop synced a report; then the computer starts to send records.
+	assert.equal((await report(now - 20 * 60_000)).status, 200)
+	assert.deepEqual(await engaged(), [600, 600, 600])
+	assert.equal((await send(key, turn(now - 290_000), as(pc))).status, 200)
+	const { env, flush } = await person('UBOTH')
+	await flush()
+	assert.deepEqual(await engaged(), [120, 120, 120], 'the records replace the report')
+	// A newer report can't put the report's time back on top of the records'.
+	const again = await report(now - 1000)
+	assert.equal(again.status, 409)
+	assert.match(await again.text(), /sends its time to the site as it happens/)
+	assert.deepEqual(await engaged(), [120, 120, 120])
+	// Nor does a row left that way by an older site count twice.
+	await env.DB.prepare(`UPDATE computers SET since = '365d', engaged_seconds = 600, days = ? WHERE id = ?`).bind(JSON.stringify({ [new Date(now).toISOString().slice(0, 10)]: 600 }), pc).run()
+	assert.deepEqual(await engaged(), [120, 120, 120])
+})
+
+test('the dashboard counts time on two computers once, shows cloud sessions as a computer, and a removed computer stays gone', async () => {
+	const { turn, send, as, person } = recordKit()
+	const cookie = await signIn('twopcs')
+	const key = await newSyncKey(cookie)
+	const now = Date.now()
+	const [pc1, pc2] = ['td-0000000000a1', 'td-0000000000a2']
+	type Shown = { days: { date: string; engaged_seconds: number }[]; computers: { id: string; report: { since: string; report: { engaged_seconds: number; blocks: unknown[] } } }[] }
+	const dashboard = async () => (await (await call('/api/report', { cookie })).json()) as Shown
+	const total = (d: Shown) => d.days.reduce((n, x) => n + x.engaged_seconds, 0)
+	// Both computers at once for two minutes, and the second alone for two more, earlier.
+	await send(key, turn(now - 290_000, 'one'), as(pc1))
+	await send(key, [...turn(now - 290_000, 'two'), ...turn(now - 900_000, 'three')], as(pc2))
+	const { env, id, flush, rollup } = await person('UTWOPCS')
+	await flush()
+	let shown = await dashboard()
+	assert.deepEqual(shown.computers.map((c) => [c.id, c.report.report.engaged_seconds]), [[pc1, 120], [pc2, 240]])
+	assert.equal(total(shown), 240, 'the two minutes on both computers count once')
+	assert.equal(await rollup(), 240)
+
+	// Removing the second takes its records with it: its time goes, and the next flush doesn't bring it back.
+	assert.equal((await call(`/api/computers/${pc2}`, { method: 'DELETE', cookie, origin: SITE })).status, 200)
+	assert.deepEqual((await me(cookie)).computers.map((c) => c.id), [pc1])
+	assert.equal(total(await dashboard()), 120)
+	await send(key, turn(now - 100_000, 'four').slice(0, 1), as(pc1))
+	const days = await flush()
+	shown = await dashboard()
+	assert.deepEqual([shown.computers.map((c) => c.id), total(shown)], [[pc1], 120])
+	for (const day of days) {
+		const obj = await env.REPORTS.get(`${id}/prompts/${day.slice(0, 4)}/${day.slice(5)}.ndjson.gz`)
+		assert.doesNotMatch(await new Response(obj!.body.pipeThrough(new DecompressionStream('gzip'))).text(), new RegExp(pc2))
+	}
+	assert.equal((await call(`/api/computers/${pc2}`, { method: 'DELETE', cookie, origin: SITE })).status, 404)
+
+	// Cloud sessions have no computer of their own: they show as one named "cloud", which can be removed too.
+	await send(key, turn(now - 1500_000, 'cloudy'))
+	await flush()
+	shown = await dashboard()
+	assert.deepEqual(shown.computers.map((c) => [c.id, c.report.since, c.report.report.engaged_seconds]), [[pc1, 'records', 120], ['cloud', 'records', 120]])
+	assert.equal(shown.computers[1]!.report.report.blocks.length, 1)
+	assert.equal(total(shown), 240)
+	assert.deepEqual((await me(cookie)).computers.map((c) => [c.id, c.cloud]).sort(), [['cloud', true], [pc1, false]])
+	assert.equal((await call('/api/computers/cloud', { method: 'DELETE', cookie, origin: SITE })).status, 200)
+	assert.deepEqual([(await me(cookie)).computers.map((c) => c.id), total(await dashboard()), await rollup()], [[pc1], 120, 120])
+})
+
+test('a day past 16 hours is cut to them, and reviewers still see what its records held', async () => {
+	const { line, send, as, person } = recordKit()
+	const admin = await signIn('admin')
+	const key = await newSyncKey(await signIn('marathon'))
+	// 240 turns, five minutes apart, from one in the morning three days ago: 18 hours of credit in one UTC day.
+	const start = Math.floor(Date.now() / DAY) * DAY - 3 * DAY + 3600_000
+	const lines = Array.from({ length: 240 }, (_, i) => [line(start + i * 300_000, 'UserPromptSubmit', { human: true, judged: 6, real: 6 }), line(start + i * 300_000 + 240_000, 'Stop')]).flat()
+	assert.deepEqual(await (await send(key, lines, as('td-0000000000b1'))).json(), { stored: 0, records: 480 })
+	const { env, id, flush } = await person('UMARATHON')
+	await flush()
+	const day = new Date(start).toISOString().slice(0, 10)
+	const { results } = await env.DB.prepare(`SELECT computer_id, witnessed_seconds + unwitnessed_seconds AS s, uncapped_seconds, rules FROM prompt_days WHERE user_id = ? AND day = ? ORDER BY computer_id`).bind(id, day).all<{ computer_id: string; s: number; uncapped_seconds: number; rules: number }>()
+	// Each turn earns 3 minutes 30 of watching and, but for the first, a minute of writing the next prompt.
+	const held = 240 * 210 + 239 * 60
+	assert.deepEqual(results, [{ computer_id: '', s: 16 * 3600, uncapped_seconds: held, rules: 3 }, { computer_id: 'td-0000000000b1', s: 16 * 3600, uncapped_seconds: held, rules: 3 }])
+	const stats = (await (await call('/api/review/stats?slack=UMARATHON&flags=true', { cookie: admin })).json()) as { days: { date: string; witnessed_seconds: number; unwitnessed_seconds: number; uncapped_seconds?: number }[]; flags: { kind: string; text: string }[] }
+	assert.deepEqual(stats.days.map((d) => [d.date, d.witnessed_seconds + d.unwitnessed_seconds, d.uncapped_seconds]), [[day, 16 * 3600, held]])
+	const long = stats.flags.find((f) => f.kind === 'long-day')
+	assert.match(long?.text ?? '', new RegExp(`${day} \\(its records held 18 hours\\)`))
+	const seen = (await (await call('/api/review/person?slack=UMARATHON', { cookie: admin })).json()) as { impossible_days: string[] }
+	assert.deepEqual(seen.impossible_days, [`${day}: their records add up to 17h 59m, which was cut to the 16 hours a day is credited.`])
+})
+
+test('a profile takes only so many live sockets, and closes them when it stops being public', async () => {
+	const admin = await signIn('admin')
+	const cookie = await signIn('watched')
+	const { handle } = await me(cookie)
+	let closed = 0
+	const open = async (path = `/api/public/v1/users/${handle}/live`, as = '') => {
+		const res = await server.fetch(SITE + path, { headers: { Upgrade: 'websocket', Origin: SITE, Cookie: as } })
+		if (res.status !== 101) return res.status
+		const ws = (res as unknown as { webSocket: WebSocket & { accept(): void } }).webSocket
+		ws.accept()
+		ws.addEventListener('close', () => closed++)
+		return ws
+	}
+	const settle = () => new Promise((r) => setTimeout(r, 300))
+	// As many as a profile takes, which is all of them when the ones before were closed.
+	const fill = async () => {
+		const sockets = []
+		for (let i = 0; i < 50; i++) sockets.push(await open())
+		return sockets
+	}
+	const sockets = await fill()
+	assert.ok(sockets.every((s) => typeof s !== 'number'), 'fifty visitors may watch')
+	assert.equal(await open(), 429, 'and no more')
+	// The owner's own dashboard is not one of them.
+	const mine = await open('/api/live/ws', cookie)
+	assert.notEqual(typeof mine, 'number')
+	// A visitor who asks over and over is cut off.
+	const noisy = sockets[0] as WebSocket
+	for (let i = 0; i < 40; i++) noisy.send('state')
+	await settle()
+	assert.equal(closed, 1)
+	// Made private, the profile closes every visitor's socket, and opens no new one.
+	const settings = (body: string) => call('/api/profile', { method: 'POST', cookie, origin: SITE, body })
+	assert.equal((await settings('{"public":false}')).status, 200)
+	assert.equal(await open(), 404)
+	// Public again, it has room for fifty new ones: the old ones are gone, not merely unanswered.
+	await settle()
+	assert.equal((await settings('{"public":true}')).status, 200)
+	assert.ok((await fill()).every((s) => typeof s !== 'number'), 'the sockets open before the profile went private were closed')
+	assert.equal(await open(), 429)
+	// A ban closes them too.
+	const ban = (await (await call('/api/review/bans', { method: 'POST', cookie: admin, origin: SITE, body: JSON.stringify({ slack_id: 'UWATCHED', reason: 'test' }) })).json()) as { id: number }
+	assert.equal(await open(), 404)
+	await settle()
+	assert.equal((await call(`/api/review/bans/${ban.id}`, { method: 'DELETE', cookie: admin, origin: SITE })).status, 200)
+	assert.ok((await fill()).every((s) => typeof s !== 'number'), 'the sockets open before the ban were closed')
+	;(mine as WebSocket).close()
+})
+
+test('reports whose key does not match are kept only so many at a time', async () => {
+	const admin = await signIn('admin')
+	const key = await newSyncKey(await signIn('forger'))
+	const now = Date.now()
+	const signed = computer()
+	for (let i = 0; i < 23; i++) {
+		const forged = JSON.parse(signed({ engaged_seconds: 1800, blocks: [block(now - 5000)] }, now - 4000 + i))
+		forged.payload = forged.payload.replace('"engaged_seconds":1800', '"engaged_seconds":180000')
+		assert.equal((await call('/api/v1/reports', { method: 'POST', key, body: JSON.stringify(forged) })).status, 400)
+	}
+	const { person, log } = (await (await call('/api/review/person?slack=UFORGER', { cookie: admin })).json()) as { person: { id: number }; log: (LogRow & { has_report: boolean })[] }
+	// Every one is logged and flagged; the newest twenty are kept in full.
+	assert.equal(log.filter((r) => /changed after it was made/.test(r.refusal) && r.flagged).length, 23)
+	assert.deepEqual(log.map((r) => r.has_report), [...Array(20).fill(true), false, false, false])
+	const bucket = (await server.getWorker<{ REPORTS: { list(options: { prefix: string }): Promise<{ objects: { key: string }[] }> } }>().getEnv()).REPORTS
+	assert.equal((await bucket.list({ prefix: `${person.id}/` })).objects.length, 20)
+})
+
+test('cloud-only work has work blocks, its usage counts once, and the old Amp-cloud computer hides behind "cloud" and goes with it', async () => {
+	const { iso, send, person } = recordKit()
+	const cookie = await signIn('ampcloud')
+	const key = await newSyncKey(cookie)
+	const now = Date.now()
+	const repo = 'github.com/kid/cloudy'
+	const line = (t: number, tool: string, event: string, session: string, extra: object = {}) => JSON.stringify({ t: iso(t), tool, event, session, git: repo, ...extra })
+	// An Amp cloud thread, sent with no computer named: kept as records, and the old way as events.
+	const amp = [line(now - 900_000, 'amp', 'agent.start', 'T-9', { human: true, judged: 6, real: 6 }), line(now - 780_000, 'amp', 'agent.end', 'T-9', { in: 5, out: 2 })]
+	// A Claude Code cloud session whose turn stops twice: each Stop sends the turn's usage again, at its prompt's time.
+	const start = now - 400_000
+	const usage = line(start, 'claude-code', 'usage', 'c1', { in: 7, out: 3 })
+	const claude = [line(start, 'claude-code', 'UserPromptSubmit', 'c1', { human: true, judged: 6, real: 6 }), line(start + 60_000, 'claude-code', 'Stop', 'c1'), usage, line(start + 90_000, 'claude-code', 'Stop', 'c1'), usage]
+	assert.equal((await send(key, [...amp, ...claude])).status, 200)
+	const { env, id, flush } = await person('UAMPCLOUD')
+	await flush()
+	const tokens = await env.DB.prepare(`SELECT SUM(tokens_in) AS tin, SUM(tokens_out) AS tout FROM prompt_days WHERE user_id = ? AND computer_id = 'cloud'`).bind(id).first<{ tin: number; tout: number }>()
+	assert.deepEqual(tokens, { tin: 12, tout: 5 }, 'the second Stop replaced the turn\'s usage and added nothing')
+
+	// The Amp thread's own count arrives as the report of the person's Amp-cloud computer.
+	const read = (await (await call('/api/v1/cloud?after=0', { key })).json()) as { key: string; lines: string[] }
+	assert.equal(read.lines.length, 2)
+	const privateKey = createPrivateKey({ key: Buffer.concat([Buffer.from('302e020100300506032b657004220420', 'hex'), Buffer.from(read.key, 'base64url')]), format: 'der', type: 'pkcs8' })
+	const counted = computer({ publicKey: createPublicKey(privateKey), privateKey })({ engaged_seconds: 120, blocks: [{ ...block(now - 780_000), project: { key: repo, name: 'cloudy' }, engaged_seconds: 120 }], projects: [{ project: { key: repo, name: 'cloudy' }, engaged_seconds: 120 }] })
+	const stored = await call('/api/v1/reports', { method: 'POST', key, body: counted })
+	assert.equal(stored.status, 200, await stored.clone().text())
+	const ampID = ((await stored.json()) as { account: string }).account
+	assert.equal((await env.DB.prepare('SELECT COUNT(*) AS n FROM computers WHERE id = ? AND user_id = ?').bind(ampID, id).first<{ n: number }>())!.n, 1)
+
+	// Both are the same sessions, so the person, and reviewers, see one computer: "cloud".
+	assert.deepEqual((await me(cookie)).computers.map((c) => [c.id, c.cloud]), [['cloud', true]])
+	const admin = await signIn('admin')
+	const { slack_id } = await me(cookie)
+	type Seen = { computers: { id: string }[]; activity: { key: string; engaged_seconds: number; first_active: number; last_active: number; blocks: number[][] }[] }
+	const seen = (await (await call(`/api/review/person?slack=${slack_id}`, { cookie: admin })).json()) as Seen
+	assert.deepEqual(seen.computers.map((c) => c.id), ['cloud'])
+	// The records' work blocks, which no computers row holds, and not the report's copy of the first of them.
+	assert.deepEqual(seen.activity.map((p) => [p.key, p.engaged_seconds, p.blocks.length, p.first_active]), [[repo, 210, 1, now - 900_000]])
+	assert.equal(new Set(seen.activity[0]!.blocks.map((b) => b[9])).size, 1, 'one computer sent them')
+
+	// The public API dates the project from them too.
+	const made = (await (await call('/api/keys', { method: 'POST', cookie, origin: SITE, body: JSON.stringify({ name: 'portfolio' }) })).json()) as { key: string }
+	const { projects } = (await (await call('/api/public/v1/projects', { key: made.key })).json()) as { projects: { repo: string; first_active: number | null; last_active: number | null }[] }
+	assert.deepEqual(projects.map((p) => [p.repo, p.first_active, p.last_active]), [[repo, now - 900_000, start + 90_000]])
+
+	// Removing "cloud" removes the Amp-cloud report and the events it was counted from, so no thread's next count brings it back.
+	assert.equal((await call('/api/computers/cloud', { method: 'DELETE', cookie, origin: SITE })).status, 200)
+	assert.deepEqual((await me(cookie)).computers, [])
+	assert.equal((await env.DB.prepare('SELECT COUNT(*) AS n FROM computers WHERE user_id = ?').bind(id).first<{ n: number }>())!.n, 0)
+	assert.deepEqual(((await (await call('/api/v1/cloud?after=0', { key })).json()) as { lines: string[] }).lines, [])
+	assert.deepEqual(((await (await call(`/api/review/person?slack=${slack_id}`, { cookie: admin })).json()) as Seen).activity, [])
+})
+
+test('naming another account\'s computer does not lock its owner out', async () => {
+	const { turn, send, as, person } = recordKit()
+	const now = Date.now()
+	const keys = generateKeyPairSync('ed25519')
+	const pc = 'td-' + createHash('sha256').update(Buffer.from(keys.publicKey.export({ format: 'jwk' }).x!, 'base64url')).digest('hex').slice(0, 12)
+	// Someone sends records under an ID that is not theirs before its owner ever syncs.
+	const first = await newSyncKey(await signIn('namer'))
+	await send(first, turn(now - 290_000), as(pc))
+	const namer = await person('UNAMER')
+	await namer.flush()
+	assert.equal((await namer.env.DB.prepare('SELECT user_id FROM computers WHERE id = ?').bind(pc).first<{ user_id: number }>())!.user_id, namer.id)
+	// The owner's report is signed with the ID's key, so the computer is theirs.
+	const cookie = await signIn('rightful')
+	const key = await newSyncKey(cookie)
+	const res = await call('/api/v1/reports', { method: 'POST', key, body: computer(keys)({ engaged_seconds: 600, blocks: [block(now - 9000)] }, now - 3000) })
+	assert.deepEqual([res.status, ((await res.json()) as { account: string }).account], [200, pc])
+	assert.deepEqual((await me(cookie)).computers.map((c) => c.id), [pc])
+	// And an owner who sends records instead has them kept, and shown, under a stand-in.
+	const other = await signIn('recorder2')
+	const otherKey = await newSyncKey(other)
+	await send(otherKey, turn(now - 290_000), as(pc))
+	const theirs = await person('URECORDER2')
+	await theirs.flush()
+	assert.equal(await theirs.rollup(), 120)
+	const listed = (await me(other)).computers.map((c) => c.id)
+	assert.equal(listed.length, 1)
+	assert.notEqual(listed[0], pc)
+})
+
+test('deleting an account removes its commits, sign-in codes, and logins', async () => {
+	const { person } = recordKit()
+	const cookie = await signIn('tidy')
+	const { env, id } = await person('UTIDY')
+	const now = Date.now()
+	await env.DB.prepare(`INSERT INTO project_git (user_id, project_key) VALUES (?, 'github.com/kid/site')`).bind(id).run()
+	await env.DB.prepare(`INSERT INTO sign_in_codes (hash, user_id, site, name, redirect_uri, created_at, expires_at) VALUES ('tidy-code', ?, 'https://a.example', 'a', 'https://a.example/cb', ?, ?)`).bind(id, now, now + 60_000).run()
+	await env.DB.prepare(`INSERT INTO cli_logins (hash, user_code_hash, computer_id, created_at, expires_at, user_id, allowed_at) VALUES ('tidy-login', 'tidy-user-code', 'td-0000000000c1', ?, ?, ?, ?)`).bind(now, now + 60_000, id, now).run()
+	assert.equal((await call('/api/account', { method: 'DELETE', cookie, origin: SITE })).status, 200)
+	for (const table of ['project_git', 'sign_in_codes', 'cli_logins', 'prompt_days', 'computers', 'sync_keys']) {
+		assert.equal((await env.DB.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE user_id = ?`).bind(id).first<{ n: number }>())!.n, 0, table)
+	}
 })

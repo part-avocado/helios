@@ -1,9 +1,10 @@
 // What reviewers read. A reviewer gets a person's totals per project and no
 // more. Neoadmins and superadmins get everyone with an account, and one
 // person's computers and log. Who is which is in staff.ts.
+import { cloudComputer } from './events.ts'
 import { Refusal } from './http.ts'
 import { archivedRows, archiveTotals, type Detail, dur, type Entry, findings, parseStored, remarks } from './log.ts'
-import { computers, personDays, personProjects, projectBlocks } from './reports.ts'
+import { cappedDays, computers, personTotals, projectBlocks } from './reports.ts'
 import { type Level, type User } from './auth.ts'
 import { dayKey } from './hub.ts'
 import { flags, type Rec } from './timeline.ts'
@@ -23,12 +24,32 @@ const LONGEST_DAY = 25 * 3600
 export async function people(env: Env) {
 	const { results } = await env.DB.prepare(
 		`SELECT u.id, u.name, u.slack_id, u.created_at, u.deleted_at, COUNT(c.id) AS computers,
-			COALESCE(SUM(c.engaged_seconds), 0) AS engaged_seconds, MAX(c.synced_at) AS synced_at,
+			COALESCE(SUM(CASE WHEN c.since != 'records' THEN c.engaged_seconds ELSE 0 END), 0) AS engaged_seconds, MAX(c.synced_at) AS synced_at,
 			(SELECT COUNT(*) FROM account_log l WHERE l.user_id = u.id AND l.flagged = 1) + (SELECT COALESCE(SUM(a.flagged), 0) FROM log_archives a WHERE a.user_id = u.id) AS flagged,
 			EXISTS (SELECT 1 FROM bans b WHERE b.slack_id = u.slack_id AND u.slack_id != '' AND b.lifted_at IS NULL) AS banned
 		 FROM users u LEFT JOIN computers c ON c.user_id = u.id
 		 GROUP BY u.id ORDER BY synced_at DESC NULLS LAST, u.created_at DESC LIMIT ${PEOPLE_LIMIT}`,
-	).all()
+	).all<{ id: number; engaged_seconds: number }>()
+	const byID = new Map(results.map((p) => [p.id, p]))
+	// Each account's own rollup of its records, in one pass over the rollup rows (the prompt_days_computer index).
+	const { results: rolled } = await env.DB.prepare(`SELECT user_id, SUM(witnessed_seconds + unwitnessed_seconds) AS n FROM prompt_days WHERE computer_id = '' GROUP BY user_id`).all<{ user_id: number; n: number }>()
+	for (const r of rolled) {
+		const person = byID.get(r.user_id)
+		if (person) person.engaged_seconds += r.n
+	}
+	// A report whose time is also in the records counts once, as in personTotals: one from a computer that has records
+	// of its own, and an old Amp-cloud report when the cloud sends records (see duplicateCloud).
+	const { results: twice } = await env.DB.prepare(
+		`SELECT c.id, c.user_id, c.engaged_seconds, EXISTS (SELECT 1 FROM prompt_days p WHERE p.user_id = c.user_id AND p.computer_id = c.id) AS own
+		 FROM computers c WHERE c.since != 'records' AND c.user_id IN (SELECT DISTINCT user_id FROM prompt_days WHERE computer_id = '')`,
+	).all<{ id: string; user_id: number; engaged_seconds: number; own: number }>()
+	const { results: clouds } = await env.DB.prepare(`SELECT DISTINCT user_id FROM prompt_days WHERE computer_id = 'cloud'`).all<{ user_id: number }>()
+	const cloudy = new Map<number, string>()
+	for (const { user_id } of clouds) if (byID.has(user_id) && twice.some((c) => c.user_id === user_id)) cloudy.set(user_id, (await cloudComputer(env, { id: user_id } as User)).id)
+	for (const c of twice) {
+		const person = byID.get(c.user_id)
+		if (person && (c.own || cloudy.get(c.user_id) === c.id)) person.engaged_seconds -= c.engaged_seconds
+	}
 	return results
 }
 
@@ -118,7 +139,7 @@ export async function person(env: Env, actor: User, params: URLSearchParams) {
 	const show = { flagged: 'AND flagged = 1', refused: `AND refusal != ''` }[shown] ?? ''
 	// A computer that isn't one of theirs has no rows in their log.
 	const computer = params.get('computer') ?? ''
-	const [rows, counts, unchecked, theirComputers, days, projects, theirBans, activity, archived] = await Promise.all([
+	const [rows, counts, unchecked, theirComputers, { days, projects }, capped, theirBans, activity, archived] = await Promise.all([
 		env.DB.prepare(`SELECT * FROM account_log WHERE user_id = ?1 AND id < ?2 AND (?3 = '' OR computer_id = ?3) ${show} ORDER BY id DESC LIMIT ${LOG_PAGE + 1}`)
 			.bind(who.id, before, computer)
 			.all<Row>(),
@@ -134,8 +155,8 @@ export async function person(env: Env, actor: User, params: URLSearchParams) {
 			.bind(who.id)
 			.first<{ seconds: number }>(),
 		computers(env, who.id),
-		personDays(env, who.id),
-		personProjects(env, who.id),
+		personTotals(env, who.id),
+		cappedDays(env, who.id),
 		who.slack_id ? bans(env, who.slack_id) : [],
 		// Older log pages draw nothing new.
 		params.has('before') ? [] : withCommits(env, who.id, true),
@@ -150,12 +171,18 @@ export async function person(env: Env, actor: User, params: URLSearchParams) {
 	const archivedUnchecked = theirComputers.reduce((n, c) => n + (archived.unchecked[c.id] ?? 0), 0)
 
 	// One person can't be engaged for longer than a day lasts, on however many computers.
+	// Records are credited 16 hours a day at most, so their days never add up to
+	// more than a day had: a day that was cut is listed with what its records held.
 	const perDay: Record<string, number> = {}
 	for (const computer of days) for (const [date, seconds] of Object.entries(computer)) perDay[date] = (perDay[date] ?? 0) + seconds
-	const impossible = Object.entries(perDay)
-		.filter(([, seconds]) => seconds > LONGEST_DAY)
-		.sort(([a], [b]) => (a < b ? 1 : -1))
-		.map(([date, seconds]) => `${date}: their computers add up to ${dur(seconds)}, which is more than the day had.`)
+	const cut = new Map(capped.map((d) => [d.day, d.uncapped_seconds]))
+	const impossible = [...new Set([...Object.keys(perDay).filter((date) => perDay[date]! > LONGEST_DAY), ...cut.keys()])]
+		.sort((a, b) => (a < b ? 1 : -1))
+		.map((date) =>
+			perDay[date]! > LONGEST_DAY
+				? `${date}: their computers add up to ${dur(perDay[date]!)}, which is more than the day had.`
+				: `${date}: their records add up to ${dur(cut.get(date)!)}, which was cut to the 16 hours a day is credited.`,
+		)
 
 	const page = log.slice(0, LOG_PAGE)
 	return {
@@ -184,9 +211,9 @@ export async function person(env: Env, actor: User, params: URLSearchParams) {
  */
 export async function summary(env: Env, params: URLSearchParams) {
 	const who = await lookup(env, params, false)
-	const [theirComputers, projects, flagged, theirBans, activity] = await Promise.all([
+	const [theirComputers, { projects, engaged_seconds }, flagged, theirBans, activity] = await Promise.all([
 		computers(env, who.id),
-		personProjects(env, who.id),
+		personTotals(env, who.id),
 		env.DB.prepare('SELECT (SELECT COUNT(*) FROM account_log WHERE user_id = ?1 AND flagged = 1) + (SELECT COALESCE(SUM(flagged), 0) FROM log_archives WHERE user_id = ?1) AS n').bind(who.id).first<{ n: number }>(),
 		bans(env, who.slack_id),
 		withCommits(env, who.id, false),
@@ -195,7 +222,7 @@ export async function summary(env: Env, params: URLSearchParams) {
 	return {
 		limited: true,
 		person: { name: who.name, slack_id: who.slack_id, created_at: who.created_at, deleted_at: who.deleted_at },
-		engaged_seconds: theirComputers.reduce((sum, c) => sum + c.engaged_seconds, 0),
+		engaged_seconds,
 		synced_at: theirComputers[0]?.synced_at ?? null,
 		// How many of their reports the server could not square with the one before. A neoadmin can read them.
 		flagged_reports: flagged?.n ?? 0,
@@ -237,13 +264,14 @@ export async function stats(env: Env, level: Level, params: URLSearchParams) {
 	// Records reach D1 within minutes; the person's hub writes what it holds first, so the answer is up to the moment.
 	await env.HUB.get(env.HUB.idFromName(String(who.id))).flush()
 	const [{ results: rows }, theirBans] = await Promise.all([
-		env.DB.prepare(`SELECT day, witnessed_seconds, unwitnessed_seconds, prompts, projects FROM prompt_days WHERE user_id = ? AND computer_id = '' AND day BETWEEN ? AND ? ORDER BY day`)
+		env.DB.prepare(`SELECT day, witnessed_seconds, unwitnessed_seconds, prompts, projects, uncapped_seconds FROM prompt_days WHERE user_id = ? AND computer_id = '' AND day BETWEEN ? AND ? ORDER BY day`)
 			.bind(who.id, start, end)
-			.all<{ day: string; witnessed_seconds: number; unwitnessed_seconds: number; prompts: number; projects: string }>(),
+			.all<{ day: string; witnessed_seconds: number; unwitnessed_seconds: number; prompts: number; projects: string; uncapped_seconds: number | null }>(),
 		who.slack_id ? bans(env, who.slack_id) : [],
 	])
 	const projects = new Map<string, { key: string; name: string; witnessed_seconds: number; unwitnessed_seconds: number; prompts: number; first_day: string; last_day: string }>()
-	const days: { date: string; witnessed_seconds: number; unwitnessed_seconds: number; prompts: number }[] = []
+	// uncapped_seconds, on a day cut to the 16 hours one is credited: what its records added up to, over every project.
+	const days: { date: string; witnessed_seconds: number; unwitnessed_seconds: number; prompts: number; uncapped_seconds?: number }[] = []
 	for (const row of rows) {
 		const theirs = Object.entries(JSON.parse(row.projects) as Record<string, [number, number, number]>).filter(([key]) => picked(key))
 		for (const [key, [witnessed, unwitnessed, prompts]] of theirs) {
@@ -259,7 +287,7 @@ export async function stats(env: Env, level: Level, params: URLSearchParams) {
 		const day = wanted.size
 			? { date: row.day, witnessed_seconds: sum(0), unwitnessed_seconds: sum(1), prompts: sum(2) }
 			: { date: row.day, witnessed_seconds: row.witnessed_seconds, unwitnessed_seconds: row.unwitnessed_seconds, prompts: row.prompts }
-		if (day.witnessed_seconds || day.unwitnessed_seconds || day.prompts) days.push(day)
+		if (day.witnessed_seconds || day.unwitnessed_seconds || day.prompts) days.push(row.uncapped_seconds ? { ...day, uncapped_seconds: row.uncapped_seconds } : day)
 	}
 	const ban = theirBans.find((b) => b.active)
 	const total = (k: 'witnessed_seconds' | 'unwitnessed_seconds' | 'prompts') => days.reduce((n, d) => n + d[k], 0)
@@ -278,7 +306,7 @@ export async function stats(env: Env, level: Level, params: URLSearchParams) {
 }
 
 /** recordFlags reads the records of the days given, of the projects picked, and flags them. */
-async function recordFlags(env: Env, userID: number, days: { date: string; witnessed_seconds: number }[], picked: (key: string) => boolean) {
+async function recordFlags(env: Env, userID: number, days: { date: string; witnessed_seconds: number; uncapped_seconds?: number }[], picked: (key: string) => boolean) {
 	if (days.length > FLAG_DAYS) throw new Refusal(400, `Flags read at most ${FLAG_DAYS} days of records, and this asks for ${days.length}. Narrow start and end.`)
 	const recs: (Rec & { event: string })[] = []
 	for (const d of days) {
@@ -290,5 +318,5 @@ async function recordFlags(env: Env, userID: number, days: { date: string; witne
 			if (picked(r.project)) recs.push(r)
 		}
 	}
-	return flags(recs, days.map((d) => ({ day: d.date, witnessed_seconds: d.witnessed_seconds })))
+	return flags(recs, days.map((d) => ({ day: d.date, witnessed_seconds: d.witnessed_seconds, uncapped_seconds: d.uncapped_seconds })))
 }

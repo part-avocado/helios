@@ -261,7 +261,7 @@ function checks(blocks) {
 		else working.delete(c)
 	}
 	out.push(overlap > 15 * 60_000
-		? ['bad', `${dur(overlap / 1000)} was worked on two computers at the same time.`, 'Both computers count it, so the total holds it twice.']
+		? ['bad', `${dur(overlap / 1000)} was worked on two computers at the same time.`, 'Each computer shows it. The total counts it once when both send records, and twice when either sends reports.']
 		: ['ok', 'No time counted on two computers at once.'])
 	// Long stretches with attention on almost every minute.
 	const steady = blocks.filter((b) => b[B.end] - b[B.start] > 4 * HOUR && b[B.engaged] / ((b[B.end] - b[B.start]) / 1000) > 0.9)
@@ -797,7 +797,7 @@ function summaryView(b) {
 			<div class="stat"><div class="label">Flagged reports</div><div class="value${b.flagged_reports ? ' bad' : ''}">${b.flagged_reports}</div><div class="hint">${b.flagged_reports ? 'ask a neoadmin to read them' : 'nothing stood out'}</div></div>
 		</div>
 		${projectsSection(b)}
-		<p class="muted fine">These totals come from the person's own computers, so they show activity and are not proof of it. Time on two computers at once counts for both.${p.deleted_at ? ' They deleted their account, so nothing more will arrive.' : ''}</p>
+		<p class="muted fine">These totals come from the person's own computers, so they show activity and are not proof of it. Time on two computers at once counts once when they send records, and for both when they sync reports.${p.deleted_at ? ' They deleted their account, so nothing more will arrive.' : ''}</p>
 	</div>`
 }
 

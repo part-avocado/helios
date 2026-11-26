@@ -194,6 +194,9 @@ export async function issueBan(env: Env, actor: User, body: { slack_id?: unknown
 		env.DB.prepare('INSERT INTO bans (slack_id, reason, by_slack_id, by_level, at) VALUES (?, ?, ?, ?, ?) RETURNING id').bind(slack, reason, actor.slack_id, mine, now),
 		log(env, actor, 'ban', slack, reason),
 	])
+	// A banned person's profile is gone, so visitors who have it open stop hearing whether they are at work.
+	const { results: theirs } = await env.DB.prepare('SELECT id FROM users WHERE slack_id = ? COLLATE NOCASE').bind(slack).all<{ id: number }>()
+	for (const u of theirs) await env.HUB.get(env.HUB.idFromName(String(u.id))).closePublic().catch((e) => console.error('could not close the live sockets of a banned person', e))
 	return { id: (added!.results[0] as { id: number }).id, slack_id: slack }
 }
 

@@ -54,6 +54,10 @@ func runLogin(args []string) {
 	_, err = syncKey(key, srv)
 	check(err)
 	fmt.Printf("Connected to %s's account on %s.\n\n", name, srv)
+	if env := os.Getenv("TEARDROP_KEY"); env != "" && env != key {
+		// syncKey reads the environment first, so the key just saved would go unused.
+		check(errors.New("TEARDROP_KEY is set in this environment, and is used in place of the key this login saved. Unset it, or replace it with a sync key from the site's Settings page, then run `teardrop sync`"))
+	}
 	runSync(nil)
 	fmt.Println("\nRun `teardrop doctor` any time to check that your time is reaching the site.")
 }

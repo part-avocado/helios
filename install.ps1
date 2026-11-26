@@ -4,6 +4,9 @@
 #
 # Settings, all optional: $env:TEARDROP_VERSION (such as v0.1.0),
 # $env:TEARDROP_INSTALL_DIR, $env:TEARDROP_NO_MODIFY_PATH, $env:TEARDROP_NO_SETUP.
+# $env:TEARDROP_CLOUD = '1' is for a cloud environment: it sets up Claude Code and
+# every other tool found, without asking. Also set $env:TEARDROP_SERVER and
+# $env:TEARDROP_KEY as secrets there; hooks then send time straight to the site.
 # Rerunning it updates teardrop in place. Works in Windows PowerShell 5.1 and PowerShell 7.
 
 # Everything runs inside this block so `iex` doesn't change the caller's session
@@ -122,7 +125,21 @@
 
 	if (-not $env:TEARDROP_NO_SETUP) {
 		Write-Host ''
-		& $exe setup
+		if ($env:TEARDROP_CLOUD -in '1', 'true') {
+			# -in ignores case, so True and TRUE count too.
+			if (-not $env:TEARDROP_SERVER -or -not $env:TEARDROP_KEY) {
+				Write-Host 'Warning: TEARDROP_CLOUD is set, but TEARDROP_SERVER and TEARDROP_KEY are not both set.'
+				Write-Host 'Add them as secrets of this environment, or its hooks will send nothing to your site.'
+				Write-Host ''
+			}
+			# Naming claude makes its folder on a fresh container; the second run
+			# sets up every other tool found, such as Codex, Copilot, or Cursor.
+			& $exe setup -yes claude
+			& $exe setup -yes
+		}
+		else {
+			& $exe setup
+		}
 	}
 	if ($newTerminal) {
 		Write-Host ''

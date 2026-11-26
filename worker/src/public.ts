@@ -7,7 +7,7 @@ import { keyHash, type User, userKeyUser } from './auth.ts'
 import { json, randomToken, Refusal } from './http.ts'
 import { profileBadge, profileJSON } from './profile.ts'
 import { tradeCode } from './signin.ts'
-import { computers, personDays, personProjects, projectBlocks } from './reports.ts'
+import { computers, personDays, personEngaged, personProjects, projectBlocks } from './reports.ts'
 import { banMessage } from './staff.ts'
 
 /** How many read keys one person may have. */
@@ -102,7 +102,7 @@ async function answer(request: Request, env: Env, url: URL): Promise<Response> {
 			name: user.name,
 			slack_id: user.slack_id,
 			created_at: user.created_at,
-			engaged_seconds: theirs.reduce((sum, c) => sum + c.engaged_seconds, 0),
+			engaged_seconds: await personEngaged(env, user.id),
 			synced_at: theirs[0]?.synced_at ?? null,
 		})
 	}

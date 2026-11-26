@@ -68,6 +68,12 @@ func Analyze(text string) Score {
 		}
 	}
 	s.signals(words)
+	if len(words) == 0 && strings.TrimSpace(text) != "" {
+		// "." or "?" or an emoji is not an image, which has no text at all. With
+		// no words it would skip every check, so it counts as a low-effort
+		// prompt, and a run of them earns nothing.
+		s.Sim, s.Low = 1, true
+	}
 	return s
 }
 

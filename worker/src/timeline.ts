@@ -6,12 +6,22 @@
 // Time between two records of a session is credited like this: before a
 // prompt, the last COMPOSE of the gap (reading the reply, writing the prompt);
 // before agent output, the gap while it lies within WATCH of the last prompt,
-// in full for the first WATCH_FULL and at half after that.
+// in full for the first WATCH_FULL and at half after that; before a prompt
+// that follows a prompt (an interrupted turn), the first WATCH_FULL of the gap.
 // Here each credited stretch is also marked witnessed when the site received
 // the records at both of its ends within WITNESS of the time they claim.
 
-/** The version of these rules, stamped on what they compute. */
-export const RULES = 2
+/**
+ * The version of these rules, stamped on what they compute (prompt_days.rules).
+ * 3: time on two projects at once is shared between them, and a day is held
+ * to DAY_CAP. A day is worked out again only when a record for it arrives, so
+ * a sealed day keeps the version it was last worked out under: a row with
+ * rules = 2 holds numbers from before the split and the cap, and is not
+ * comparable project by project with a row of rules = 3. They are left as
+ * they are; reading every old day back from R2 to redo them is not worth
+ * moving totals people have already been shown.
+ */
+export const RULES = 3
 export const COMPOSE = 5 * 60_000
 export const WATCH_FULL = 3 * 60_000
 export const WATCH = 5 * 60_000
@@ -136,7 +146,13 @@ export function credit(recs: Rec[]): Stretch[] {
 		if (i > 0) {
 			const prev = ev[i - 1]!.t
 			let start = 0, end = 0
-			if (k[i] === 'human') (start = Math.max(prev, ev[i]!.t - COMPOSE)), (end = ev[i]!.t)
+			// Only agent output read before a prompt earns composing time, not a skipped prompt, and not before a session's first prompt (a session_start is no output).
+			if (k[i] === 'human') {
+				if (k[i - 1] === 'agent' && lastHuman >= 0) (start = Math.max(prev, ev[i]!.t - COMPOSE)), (end = ev[i]!.t)
+				// A prompt straight after a prompt: the turn between them ended with no record, as an interrupted one does.
+				// That is watching time, never composing, and only its first WATCH_FULL counts, so a prompt every few minutes with no output can't be paid in full.
+				else if (k[i - 1] === 'human') (start = prev), (end = prev + Math.min(ev[i]!.t - prev, WATCH_FULL, WATCH))
+			}
 			else if (lastHuman >= 0) {
 				// The credit sits at the start of the gap, where the agent's time counts most.
 				const from = ev[lastHuman]!.t
@@ -181,12 +197,68 @@ export interface Totals {
 	lines_added: number
 	lines_removed: number
 	projects: Record<string, { witnessed: number; unwitnessed: number; prompts: number }>
+	/** What the records added up to before capDay cut it, in milliseconds; absent when nothing was cut. */
+	uncapped?: number
+}
+
+/**
+ * splitProjects shares time between projects. Where stretches of several
+ * projects overlap, that time is divided equally between them, so the
+ * projects add up to the total and working on two at once can't be paid
+ * twice. A shared moment is witnessed when any stretch over it was, as in
+ * union.
+ */
+export function splitProjects(byProject: Map<string, Stretch[]>): Map<string, { witnessed: number; unwitnessed: number }> {
+	const out = new Map<string, { witnessed: number; unwitnessed: number }>()
+	// A sweep over the stretches' edges, keeping how many of each project's are open.
+	const edges: [number, number, string, boolean][] = []
+	for (const [project, list] of byProject) {
+		out.set(project, { witnessed: 0, unwitnessed: 0 })
+		for (const s of list) edges.push([s.start, 1, project, s.witnessed], [s.end, -1, project, s.witnessed])
+	}
+	edges.sort((a, b) => a[0] - b[0])
+	const open = new Map<string, number>()
+	let seen = 0
+	for (let i = 0; i < edges.length; i++) {
+		const [t, delta, project, witnessed] = edges[i]!
+		const n = (open.get(project) ?? 0) + delta
+		if (n > 0) open.set(project, n)
+		else open.delete(project)
+		if (witnessed) seen += delta
+		const next = edges[i + 1]?.[0]
+		if (next === undefined || next === t || !open.size) continue
+		for (const p of open.keys()) out.get(p)![seen > 0 ? 'witnessed' : 'unwitnessed'] += (next - t) / open.size
+	}
+	for (const v of out.values()) (v.witnessed = Math.round(v.witnessed)), (v.unwitnessed = Math.round(v.unwitnessed))
+	return out
+}
+
+/** No one is credited more than this in a day, whatever their records say. */
+export const DAY_CAP = 16 * 3600_000
+
+/**
+ * capDay holds a day's credited time to DAY_CAP. What is cut comes off
+ * unwitnessed time first, then witnessed, and the projects shrink by the same
+ * share, so they still add up to the total. What the records added up to
+ * is kept as `uncapped`, for reviewers. Spans longer than a day are left alone.
+ */
+export function capDay(t: Totals, span: number): Totals {
+	const sum = t.witnessed + t.unwitnessed
+	if (span > 86_400_000 || sum <= DAY_CAP) return t
+	const witnessed = Math.min(t.witnessed, DAY_CAP)
+	const unwitnessed = DAY_CAP - witnessed
+	const [wf, uf] = [t.witnessed ? witnessed / t.witnessed : 1, t.unwitnessed ? unwitnessed / t.unwitnessed : 1]
+	for (const p of Object.values(t.projects)) (p.witnessed = Math.round(p.witnessed * wf)), (p.unwitnessed = Math.round(p.unwitnessed * uf))
+	t.witnessed = witnessed
+	t.unwitnessed = unwitnessed
+	t.uncapped = sum
+	return t
 }
 
 /**
  * totals credits records by session, clips the stretches to [from, to), and
  * adds them up. Time on two projects or tools at once counts once in the
- * total and once in each project.
+ * total, and is shared between the projects (see splitProjects).
  */
 export function totals(all_: Rec[], from: number, to: number): Totals {
 	const recs = all_.filter((r) => !r.sha)
@@ -218,8 +290,8 @@ export function totals(all_: Rec[], from: number, to: number): Totals {
 		})
 	}
 	Object.assign(t, union(all))
-	for (const [project, list] of byProject) Object.assign(t.projects[project]!, union(list))
-	return t
+	for (const [project, share] of splitProjects(byProject)) Object.assign(t.projects[project]!, share)
+	return capDay(t, to - from)
 }
 
 /** The furthest off a reading may be to be pinned, and flagged; a reading further off is ignored. Witnessing uses at most MOST_CORRECTED of a pin. */
@@ -254,7 +326,38 @@ export function nextClock(clock: Clock | null, reading: number | null, now: numb
 	return { pin: clock.pin, cand: r, since: now }
 }
 
-/** A day with more witnessed time than this, across a person's computers, is worth a look. */
+/** How long a different UTC offset must be the only one sent before an account's calendar moves to it. */
+export const OFFSET_HOLD = 3 * 86_400_000
+
+export interface OffsetPin {
+	pin: number
+	/** When the pin was last sent. */
+	seen?: number
+	cand?: number
+	since?: number
+}
+
+/**
+ * nextOffset folds the UTC offset a batch names into the account's pin, which
+ * is the offset its days are counted at. The offset is the client's word, so
+ * a pin that moved at once would let the same hours be counted in several
+ * days by sending them at +14h, 0 and -14h. The pin moves only to an offset
+ * that has been sent for OFFSET_HOLD while the pin itself has not been sent
+ * for that long, which is what travel and daylight saving look like. Sending
+ * another offset alongside the pin, from a second computer or by flipping
+ * between two, never moves it. Pass the result's pin as the offset to count at.
+ */
+export function nextOffset(was: OffsetPin | null, offset: number, now: number): OffsetPin {
+	if (!was) return { pin: offset, seen: now }
+	// Sent again, the pin drops any candidate: a new offset has to hold on its own.
+	if (offset === was.pin) return { pin: was.pin, seen: now }
+	if (was.cand === offset && was.since != null) {
+		return now - was.since >= OFFSET_HOLD && now - (was.seen ?? 0) >= OFFSET_HOLD ? { pin: offset, seen: now } : was
+	}
+	return { ...was, cand: offset, since: now }
+}
+
+/** A day with this much witnessed time, across a person's computers, or one cut to DAY_CAP, is worth a look. */
 const LONG_DAY = 16 * 3600
 /** A prompt sent this soon after the agent's reply was sent before the reply could be read. */
 const QUICK = 15_000
@@ -296,11 +399,12 @@ function mostIn(spans: { start: number; end: number }[], window: number): number
 }
 
 /** flags looks for what a script that sends records live would leave behind. */
-export function flags(all: (Rec & { event: string })[], dayTotals: { day: string; witnessed_seconds: number }[]): Flag[] {
+export function flags(all: (Rec & { event: string })[], dayTotals: { day: string; witnessed_seconds: number; uncapped_seconds?: number | null }[]): Flag[] {
 	const recs = all.filter(timed)
 	const out: Flag[] = []
-	const long = dayTotals.filter((d) => d.witnessed_seconds > LONG_DAY)
-	if (long.length) out.push({ kind: 'long-day', text: `More than 16 witnessed hours in a day across their computers, on ${long.map((d) => d.day).join(', ')}.` })
+	// A day is credited 16 hours at most (DAY_CAP), so one that was cut says what its records held.
+	const long = dayTotals.filter((d) => d.witnessed_seconds >= LONG_DAY || d.uncapped_seconds)
+	if (long.length) out.push({ kind: 'long-day', text: `16 witnessed hours or more in a day across their computers, or a day cut to the 16 hours one is credited, on ${long.map((d) => (d.uncapped_seconds ? `${d.day} (its records held ${hours(d.uncapped_seconds * 1000)})` : d.day)).join(', ')}.` })
 	const prompts = recs.filter((r) => r.human).sort((a, b) => a.t - b.t)
 	const gaps = prompts.slice(1).map((r, i) => r.t - prompts[i]!.t).filter((g) => g < 30 * 60_000)
 	if (gaps.length >= 10) {

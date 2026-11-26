@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,10 +13,12 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/part-avocado/teardrop/internal/sources"
 	"github.com/part-avocado/teardrop/internal/textscore"
+	"github.com/part-avocado/teardrop/internal/timeline"
 )
 
 // hookEvents are the Claude Code events teardrop records. Tool calls are left
@@ -22,6 +27,47 @@ import (
 var hookEvents = []string{"SessionStart", "UserPromptSubmit", "Stop", "SessionEnd"}
 
 const hookArgs = "hook claude-code"
+
+// A committed project hook is told apart from a person's own by this flag.
+const projectFlag = "-project"
+
+// sameHook is how close two records of one event of one session must be to
+// be one event that two hooks reported.
+const sameHook = 2 * time.Second
+
+// userHooked reports whether the person's own Claude Code settings, in any of
+// its config folders, already run teardrop's hook. A repository's committed
+// hook then stands down, or each event would be recorded twice.
+func userHooked() bool {
+	for _, loc := range locations("", "") {
+		if loc.Tool != "Claude Code" {
+			continue
+		}
+		settings, err := readSettings(filepath.Join(loc.Dir, "settings.json"))
+		if err != nil {
+			continue
+		}
+		var hooks map[string][]struct {
+			Hooks []struct {
+				Command string `json:"command"`
+			} `json:"hooks"`
+		}
+		if json.Unmarshal(settings["hooks"], &hooks) != nil {
+			continue
+		}
+		for _, groups := range hooks {
+			for _, g := range groups {
+				for _, h := range g.Hooks {
+					// A repository in the home folder has its own hooks in ~/.claude; those are not the person's.
+					if ourCommand(h.Command, "claude-code") && !strings.Contains(h.Command, " "+projectFlag) {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
+}
 
 // turnLeftOpen reports whether the last thing the journal holds for a session
 // is a prompt. When the next event is a prompt too, the turn between them
@@ -44,7 +90,8 @@ type hookInput struct {
 	Event2       string   `json:"hookEventName"`
 	Type         string   `json:"type"` // Codex notify
 	Prompt       string   `json:"prompt"`
-	Time         string   `json:"time"` // when it happened, if the plugin hands it over late
+	Time         string   `json:"time"`            // when it happened, if the plugin hands it over late
+	Transcript   string   `json:"transcript_path"` // Claude Code's: the session file, read in the cloud for the turn's usage
 	// What the model read and wrote in the turn that this event ends.
 	TokensIn     int64 `json:"tokens_in"`
 	TokensOut    int64 `json:"tokens_out"`
@@ -72,7 +119,9 @@ func hookRecord(tool, event string, in hookInput, now time.Time) (ev sources.Jou
 	}
 	session := first(in.SessionID, in.SessionID2, in.Conversation, in.Thread)
 	if session == "" && cwd != "" {
-		session = "cwd:" + cwd // Copilot CLI's payload names no session
+		// Copilot CLI's payload names no session, so its folder stands in for
+		// one: hashed, since the session's name goes to the site.
+		session = folderSession(cwd)
 	}
 	if session == "" {
 		return ev, "", false
@@ -98,6 +147,13 @@ func hookRecord(tool, event string, in hookInput, now time.Time) (ev sources.Jou
 	return ev, kind, true
 }
 
+// folderSession names the session of a harness that names none, by the folder
+// it runs in.
+func folderSession(cwd string) string {
+	sum := sha256.Sum256([]byte(cwd))
+	return "cwd-" + hex.EncodeToString(sum[:8])
+}
+
 func first(s ...string) string {
 	for _, v := range s {
 		if v != "" {
@@ -117,7 +173,9 @@ func first(s ...string) string {
 // the event goes only to the site, and a turn that ends has the person's
 // cloud threads counted (cloud.go); Amp's cloud plugin uses it. With -notify
 // (Codex's notify program), the payload is the last argument. With -check,
-// it prints the record a payload makes and writes nothing.
+// it prints the record a payload makes and writes nothing. With -project,
+// which a repository's committed hooks pass, it does nothing where the
+// person's own Claude Code settings already run teardrop's hook.
 func runHook(args []string) {
 	check := false
 	defer func() {
@@ -126,9 +184,11 @@ func runHook(args []string) {
 		}
 	}()
 	var tool, event, payload string
-	relay, notify := false, false
+	relay, notify, project := false, false, false
 	for i := 0; i < len(args); i++ {
 		switch a := args[i]; {
+		case a == projectFlag:
+			project = true
 		case a == "-relay":
 			relay = true
 		case a == "-notify":
@@ -144,10 +204,17 @@ func runHook(args []string) {
 			payload = a
 		}
 	}
+	if cloudEnv() {
+		relay = true
+	}
 	if !toolName.MatchString(tool) {
 		if check {
 			fmt.Printf("teardrop hook: %q is not a tool name; use lowercase letters, digits, and dashes\n", tool)
 		}
+		return
+	}
+	// A repository's hook, where the person's own settings run teardrop too: theirs records the event.
+	if project && !check && userHooked() {
 		return
 	}
 	var b []byte
@@ -164,6 +231,17 @@ func runHook(args []string) {
 		return
 	}
 	ev, kind, ok := hookRecord(tool, event, in, time.Now())
+	// There is no sync in the cloud to read the transcript later, so the turn's
+	// end sends the turn's usage. It goes as a usage record at the time of the
+	// turn's prompt, which the site replaces when it is sent again: a turn that
+	// stops twice, as after a background task's notice or a Stop hook that
+	// sends it on, is counted once. The turn end itself carries no tokens.
+	var usage *sources.JournalEvent
+	if ok && kind == "turn_end" && !check && cloudEnv() && tool == "claude-code" && in.Transcript != "" && ev.In+ev.Out == 0 {
+		if at, in, out, added, removed := lastTurnUsage(in.Transcript); !at.IsZero() && (in+out > 0 || added+removed > 0) {
+			usage = &sources.JournalEvent{Time: at.UTC(), Tool: tool, Event: "usage", Session: ev.Session, In: in, Out: out, Added: added, Removed: removed}
+		}
+	}
 	if check {
 		if !ok {
 			fmt.Println("teardrop hook: not recorded: it needs a session_id and an event that is one of prompt, turn_end, session_start, session_end, or edit")
@@ -191,24 +269,45 @@ func runHook(args []string) {
 		if remote := gitOut(ev.Cwd, "config", "--get", "remote.origin.url"); remote != "" {
 			ev.Git = nameProject(ev.Cwd, remote).Key
 		}
+		// The repository's key says which project it is; the folder's path on
+		// this machine goes only when there is no key.
+		root := ev.Cwd
+		if ev.Git != "" {
+			ev.Cwd = ""
+		}
 		if err := queueRelay(relayOutbox, ev); err != nil {
 			fmt.Fprintln(os.Stderr, "teardrop hook:", err)
 		}
+		if usage != nil {
+			usage.Cwd, usage.Git = ev.Cwd, ev.Git
+			if err := queueRelay(relayOutbox, *usage); err != nil {
+				fmt.Fprintln(os.Stderr, "teardrop hook:", err)
+			}
+		}
 		// There is no sync in the cloud to send commits, so the turn's end does.
 		if ended {
-			queueRelayCommits(ev.Cwd, ev.Git, time.Now())
+			queueRelayCommits(root, ev.Git, time.Now())
 		}
-		relaySoon(ended)
+		// Counting cloud threads is Amp's; it would only fail for other tools.
+		relaySoon(ended && tool == "amp")
 		return
 	}
 	// Looked up before this event is written, which would otherwise be the last.
-	interrupted := ev.Human && turnLeftOpen(dataDir(), tool, ev.Session, ev.Time)
+	last, found := sources.LastJournalEvent(dataDir(), ev.Time, tool, ev.Session)
+	// The same event again within moments is a second hook reporting it, such
+	// as a repository's hooks from before they stood down for the person's own.
+	// Only Claude Code's: its events come one to a turn, where another
+	// harness may report several edits in a moment.
+	if tool == "claude-code" && repeatedHook(last, found, ev) {
+		return
+	}
+	interrupted := ev.Human && found && last.Human
 	if err := sources.AppendJournal(dataDir(), ev); err != nil {
 		fmt.Fprintln(os.Stderr, "teardrop hook:", err)
 	}
 	// The site gets the record as it happens, so it can witness it: with the
 	// project's key in place of the folder.
-	if _, err := os.Stat(filepath.Join(dataDir(), "server")); err == nil {
+	if siteSet() {
 		p, _ := resolveProject(ev.Cwd, "")
 		ev.Git, ev.Cwd = p.Key, ""
 		if queueRelay(localOutbox, ev) == nil {
@@ -216,6 +315,90 @@ func runHook(args []string) {
 		}
 	}
 	syncSoon(turnEnds[tool][ev.Event] || ended || interrupted || notify)
+}
+
+// repeatedHook reports whether ev is the event the journal last holds for its
+// session, reported again within sameHook.
+func repeatedHook(last sources.JournalEvent, found bool, ev sources.JournalEvent) bool {
+	d := ev.Time.Sub(last.Time)
+	return found && last.Event == ev.Event && d >= 0 && d < sameHook
+}
+
+// siteSet reports whether this machine has a site to send to: one remembered
+// by `teardrop login` or `sync -server`, or one named, with its key, by
+// TEARDROP_SERVER and TEARDROP_KEY, as on an SSH box or in a dev container.
+func siteSet() bool {
+	if os.Getenv("TEARDROP_SERVER") != "" && os.Getenv("TEARDROP_KEY") != "" {
+		return true
+	}
+	_, err := os.Stat(filepath.Join(dataDir(), "server"))
+	return err == nil
+}
+
+// usageTail is how much of the end of a transcript lastTurnUsage reads. A
+// hook must be quick, and a long session's file runs to hundreds of megabytes.
+const usageTail = 8 << 20
+
+// lastTurnUsage returns the tokens and lines of the latest turn of a Claude
+// Code transcript: everything after the last prompt a person typed, and when
+// that prompt was sent, which names the turn. Subagent records are not
+// counted (see sources.ClaudeParser). It returns zeros when the file can't be
+// read, or when what it read of it holds no prompt: then there is no telling
+// where the turn began, and the whole file is not a turn.
+func lastTurnUsage(path string) (at time.Time, in, out int64, added, removed int) {
+	f, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	var r io.Reader = f
+	if info, err := f.Stat(); err == nil && info.Size() > usageTail {
+		if _, err := f.Seek(-usageTail, io.SeekEnd); err != nil {
+			return
+		}
+		// The read starts mid-line, so the first line goes unread.
+		b, err := io.ReadAll(f)
+		if err != nil {
+			return
+		}
+		_, rest, _ := bytes.Cut(b, []byte("\n"))
+		r = bytes.NewReader(rest)
+	}
+	raw, _ := sources.ClaudeParser()(r, "")
+	start := -1
+	for i, e := range raw.Events {
+		if e.Kind == timeline.Human {
+			start = i
+		}
+	}
+	if start < 0 {
+		return
+	}
+	at = raw.Events[start].Time
+	for _, e := range raw.Events[start:] {
+		in, out, added, removed = in+e.In, out+e.Out, added+e.Added, removed+e.Removed
+	}
+	return
+}
+
+// cloudEnv reports whether this is a disposable machine set up with a site and
+// a key in the environment: a Claude Code cloud environment, a Codespace, or
+// anything with TEARDROP_CLOUD=1. Its hooks send events straight to the site,
+// as the stable "cloud" computer, rather than journaling on a machine that
+// will be gone, and no sign-in or per-container key is needed.
+func cloudEnv() bool {
+	return os.Getenv("TEARDROP_SERVER") != "" && os.Getenv("TEARDROP_KEY") != "" && cloudFlag() != ""
+}
+
+// cloudFlag names the environment variable that marks this machine as a
+// disposable one, or is "" on a machine that has none.
+func cloudFlag() string {
+	for _, v := range []string{"TEARDROP_CLOUD", "CLAUDE_CODE_REMOTE", "CODESPACES"} {
+		if s := strings.ToLower(os.Getenv(v)); s == "1" || s == "true" {
+			return v
+		}
+	}
+	return ""
 }
 
 // dataDir is where teardrop keeps its own records, such as the hook journal.
@@ -265,6 +448,19 @@ func setHooks(settings map[string]json.RawMessage, command string, install bool)
 // setHooksFor does what setHooks does, for a harness whose hooks file has
 // Claude Code's shape, such as Codex's hooks.json.
 func setHooksFor(settings map[string]json.RawMessage, command, tool string, events []string, install bool) (bool, error) {
+	add := map[string]map[string]any{}
+	if install {
+		for _, e := range events {
+			add[e] = map[string]any{"type": "command", "command": command, "timeout": 10}
+		}
+	}
+	return setHookEntries(settings, tool, add)
+}
+
+// setHookEntries takes tool's teardrop hooks out of the "hooks" setting and
+// puts in add's, one hook per event, keeping every other hook as it was. It
+// reports whether the setting changed.
+func setHookEntries(settings map[string]json.RawMessage, tool string, add map[string]map[string]any) (bool, error) {
 	hooks := map[string][]map[string]json.RawMessage{}
 	raw, had := settings["hooks"]
 	if had && string(raw) != "null" {
@@ -299,11 +495,9 @@ func setHooksFor(settings map[string]json.RawMessage, command, tool string, even
 			delete(hooks, event)
 		}
 	}
-	if install {
-		ours, _ := json.Marshal([]map[string]any{{"type": "command", "command": command, "timeout": 10}})
-		for _, e := range events {
-			hooks[e] = append(hooks[e], map[string]json.RawMessage{"hooks": ours})
-		}
+	for e, h := range add {
+		ours, _ := json.Marshal([]map[string]any{h})
+		hooks[e] = append(hooks[e], map[string]json.RawMessage{"hooks": ours})
 	}
 	if len(hooks) == 0 && !had {
 		return false, nil

@@ -50,9 +50,12 @@ func runSetup(args []string) {
 	removeHooks := fs.Bool("remove-hooks", false, "remove teardrop's hooks and its Amp and OpenCode plugins, keeping teardrop installed (teardrop uninstall removes everything)")
 	claudeDir := fs.String("claude-dir", "", "Claude Code config directories, comma-separated")
 	codexDir := fs.String("codex-dir", "", "Codex home directories, comma-separated")
+	project := fs.Bool("project", false, "with claude: put the hooks in this repository's .claude/settings.json, to commit, so cloud sessions of it record time")
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage: teardrop setup [flags] [claude] [codex] [amp] [opencode] [copilot] [cursor]")
 		fmt.Fprintln(os.Stderr, "       Sets up every tool it finds, or only the ones you name.")
+		fmt.Fprintln(os.Stderr, "       teardrop setup claude -project")
+		fmt.Fprintln(os.Stderr, "       Sets up Claude Code's cloud sessions of the repository you are in.")
 		fmt.Fprintln(os.Stderr)
 		fs.PrintDefaults()
 	}
@@ -62,6 +65,15 @@ func runSetup(args []string) {
 		os.Exit(2)
 	}
 	want := func(tool string) bool { return len(only) == 0 || only[tool] }
+	if *project {
+		if len(only) != 1 || !only["Claude Code"] {
+			fmt.Fprintln(os.Stderr, "teardrop setup: -project is for Claude Code; run `teardrop setup claude -project`")
+			os.Exit(2)
+		}
+		cwd, _ := os.Getwd()
+		check(setupProject(cwd, *yes, *removeHooks))
+		return
+	}
 
 	fmt.Println("Looking for AI coding tools on this machine...")
 	fmt.Println()
@@ -70,6 +82,15 @@ func runSetup(args []string) {
 		if want(loc.Tool) {
 			locs = append(locs, loc)
 		}
+	}
+	if home, err := os.UserHomeDir(); err == nil && *yes && only["GitHub Copilot"] && !*removeHooks {
+		// Copilot reads hooks from ~/.copilot, which it may not have made yet.
+		os.MkdirAll(filepath.Join(home, ".copilot"), 0o700)
+	}
+	if *yes && !*removeHooks && only["Claude Code"] {
+		// A fresh cloud container has no ~/.claude yet, and naming claude
+		// means it is wanted, so make the default folder for the hooks.
+		makeDefaultDir(locs, "Claude Code")
 	}
 	_, stats, warnings := load(locs, time.Time{})
 	journal, _ := sources.ReadJournal(dataDir())
@@ -259,4 +280,112 @@ func ago(t time.Time) string {
 	default:
 		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
 	}
+}
+
+// makeDefaultDir creates tool's first folder in locs, its default, when none
+// of its folders exists. With one there, the tool is already set up in it.
+func makeDefaultDir(locs []location, tool string) {
+	first := ""
+	for _, loc := range locs {
+		if loc.Tool != tool {
+			continue
+		}
+		if exists(loc.Dir) {
+			return
+		}
+		if first == "" {
+			first = loc.Dir
+		}
+	}
+	if first != "" {
+		os.MkdirAll(first, 0o755)
+	}
+}
+
+// What a repository's own Claude Code settings run, on whatever machine the
+// repository is opened: a cloud session's container starts without teardrop
+// and without ~/.claude. Both do nothing unless TEARDROP_KEY is set, so
+// nothing changes for a teammate who doesn't use teardrop. With -project the
+// hook also does nothing where the person's own Claude Code settings already
+// run teardrop's hook (userHooked), as on a computer that is signed in, or a
+// cloud machine the installer set up: one event is recorded once. teardrop is
+// found on PATH, or where the installer puts it. Neither prints anything:
+// Claude Code would show a session's start and a prompt's output to the model.
+const (
+	projectHook = `[ -z "$TEARDROP_KEY" ] || PATH="$PATH:$HOME/.local/bin" teardrop ` + hookArgs + ` ` + projectFlag + ` 2>/dev/null || true`
+	// At a session's start, teardrop is installed first if it is missing.
+	projectStart = `[ -z "$TEARDROP_KEY" ] || { PATH="$PATH:$HOME/.local/bin"; command -v teardrop >/dev/null || curl -fsSL https://raw.githubusercontent.com/part-avocado/teardrop/main/install.sh | TEARDROP_NO_SETUP=1 sh >/dev/null 2>&1; teardrop ` + hookArgs + ` ` + projectFlag + ` 2>/dev/null; } || true`
+)
+
+// setProjectHooks puts teardrop's hooks for a repository in its Claude Code
+// settings, or with install false takes them out, keeping every other hook
+// and setting. It reports whether the settings changed.
+func setProjectHooks(settings map[string]json.RawMessage, install bool) (bool, error) {
+	add := map[string]map[string]any{}
+	if install {
+		for _, e := range hookEvents {
+			add[e] = map[string]any{"type": "command", "command": projectHook, "timeout": 10}
+		}
+		// Long enough to download teardrop.
+		add["SessionStart"] = map[string]any{"type": "command", "command": projectStart, "timeout": 120}
+	}
+	return setHookEntries(settings, "claude-code", add)
+}
+
+// setupProject writes teardrop's hooks to .claude/settings.json of the git
+// repository that holds dir, or removes them from it.
+func setupProject(dir string, yes, remove bool) error {
+	root := gitOut(dir, "rev-parse", "--show-toplevel")
+	if root == "" {
+		return errors.New("this folder is not in a git repository; run `teardrop setup claude -project` inside the one to set up")
+	}
+	path := filepath.Join(root, ".claude", "settings.json")
+	settings, err := readSettings(path)
+	if err != nil {
+		return fmt.Errorf("could not read %s: %v", path, err)
+	}
+	changed, err := setProjectHooks(settings, !remove)
+	if err != nil {
+		return fmt.Errorf("could not set up hooks in %s: %v", path, err)
+	}
+	if !changed {
+		if remove {
+			fmt.Printf("%s has no teardrop hooks.\n", path)
+		} else {
+			fmt.Printf("Claude Code project hooks: installed (%s)\n", path)
+		}
+		return nil
+	}
+	if !remove {
+		fmt.Println("Add teardrop hooks to this repository's Claude Code settings? In a session where")
+		fmt.Println("TEARDROP_KEY is set, such as a cloud environment with your secrets, they install")
+		fmt.Println("teardrop if it is missing and record time. Everywhere else they do nothing.")
+		if !yes && !confirm("This edits "+path+" [Y/n] ") {
+			fmt.Println("Skipped.")
+			return nil
+		}
+	}
+	// No backup next to it, and readable by all: this file is committed.
+	b, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	tmp := path + ".teardrop-tmp"
+	if err := os.WriteFile(tmp, append(b, '\n'), 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	if remove {
+		fmt.Printf("Removed teardrop hooks from %s\n", path)
+		return nil
+	}
+	fmt.Printf("Added to %s. Commit it, and add TEARDROP_SERVER and TEARDROP_KEY as secrets\n", path)
+	fmt.Println("of the cloud environment. Where your own Claude Code settings already have teardrop's")
+	fmt.Println("hooks, these do nothing, so each event is recorded once.")
+	return nil
 }

@@ -19,7 +19,7 @@ The [Projects](../site/projects.html) page lists every project you've worked on;
 
 | Pane | What it's for |
 | --- | --- |
-| Setup | What to run to connect another computer, and your sync keys. A sync key only uploads stats: each computer gets its own, and Amp cloud threads get one named "Amp cloud". Revoke one and only it stops working. |
+| Setup | What to run to connect another computer, and your sync keys. A sync key only uploads stats: each computer gets its own, and cloud sessions (Claude Code in the cloud, Amp threads) get one named "Cloud sessions". Revoke one and only it stops working. |
 | Computers | Each computer that syncs to you and when it last did. Remove one to drop its hours. |
 | Data | Upload a stats file from a computer that can't reach the website (make it with `teardrop export -o stats.json`, and upload it within 7 days), or download a copy of everything the site holds about you. |
 | Account | Your name, Slack ID, and member-since date from Hack Club Auth, sign out, and deleting your account. Deleting removes every computer and all of your stats from the site. |

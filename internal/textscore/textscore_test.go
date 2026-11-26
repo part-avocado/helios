@@ -89,3 +89,26 @@ func TestNoiseCorpus(t *testing.T) {
 		t.Errorf("caught %.0f%% of %d mash prompts, want at least 93%%", caught*100, len(mash))
 	}
 }
+
+// A prompt of punctuation alone has no words to judge, but it is text: it
+// counts as steering, with a fingerprint, so a run of them is caught. An
+// image, which has no text at all, keeps the zero score of a prompt that
+// can't be judged.
+func TestWordlessPrompts(t *testing.T) {
+	for _, text := range []string{".", "?", " ... ", "!?", "👍"} {
+		if s := Analyze(text); !s.Low || s.Sim == 0 || s.Judged != 0 || s.Real != 0 {
+			t.Errorf("Analyze(%q) = %+v, want a low-effort prompt with a fingerprint", text, s)
+		}
+	}
+	if Analyze(".").Sim != Analyze("?!").Sim {
+		t.Error("two wordless prompts should count as repeats of each other")
+	}
+	for _, text := range []string{"", "  \n\t"} {
+		if s := Analyze(text); s.Low || s.Sim != 0 || s.Judged != 0 {
+			t.Errorf("Analyze(%q) = %+v, want the zero score", text, s)
+		}
+	}
+	if s := Analyze("add a login page with tests"); s.Low || s.Sim == 0 || s.Sim == 1 {
+		t.Errorf("a real prompt scored %+v", s)
+	}
+}

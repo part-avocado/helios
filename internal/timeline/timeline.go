@@ -5,8 +5,13 @@
 // (a prompt or an interrupt) or agent output (a reply, a tool call, a tool
 // result). Time between two consecutive events is credited as follows:
 //
-//   - If the later event is a human input, the human was reading the agent's
-//     output and writing the next prompt. Credit the last ComposeCap of the gap.
+//   - If the later event is a human input that follows agent output, the
+//     human was reading that output and writing the next prompt. Credit the
+//     last ComposeCap of the gap. A prompt that is the session's first, or
+//     that follows a skipped prompt, had nothing to read and earns nothing.
+//   - If the later event is a human input that follows another one, the turn
+//     between them was interrupted. Credit the first WatchFull of the gap, as
+//     time spent watching, and no composing time.
 //   - If the later event is agent output, the agent was working. Credit the gap
 //     only while it lies within WatchCap of the last human input, and less of
 //     it the longer ago that input was: the first WatchFull count in full, the
@@ -120,6 +125,16 @@ func Credit(events []Event, r Rules) []Interval {
 			prev := ev[i-1].Time
 			var start, end time.Time
 			switch {
+			case e.Kind == Human && ev[i-1].Kind == Human:
+				// A prompt straight after a prompt: the turn between them ended with
+				// no record, as an interrupted one does. That is time spent watching
+				// the agent, never composing, and only its first WatchFull counts:
+				// a prompt every few minutes with no output can't be paid in full.
+				start, end = prev, prev.Add(min(e.Time.Sub(prev), r.WatchFull, r.WatchCap))
+			case e.Kind == Human && (ev[i-1].Kind != Agent || !haveHuman):
+				// Only agent output read before a prompt earns composing time. A
+				// prompt after a skipped one has read nothing. Nor has the first
+				// prompt of a session, which a session_start event would let anyone start.
 			case e.Kind == Human:
 				start, end = later(prev, e.Time.Add(-r.ComposeCap)), e.Time
 			case haveHuman:

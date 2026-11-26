@@ -41,8 +41,18 @@ not json
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.ID != "s1" || r.Cwd != "/src/app" || kinds(r.Events) != "HAAAAHAAAH" {
-		t.Errorf("got id %q cwd %q kinds %s, want s1 /src/app HAAAAHAAAH", r.ID, r.Cwd, kinds(r.Events))
+	if r.ID != "s1" || r.Cwd != "/src/app" || kinds(r.Events) != "HAAAHAAAH" {
+		t.Errorf("got id %q cwd %q kinds %s, want s1 /src/app HAAAHAAAH", r.ID, r.Cwd, kinds(r.Events))
+	}
+}
+
+func TestClaudeSubagentIgnored(t *testing.T) {
+	log := `{"type":"assistant","timestamp":"2026-11-20T15:00:05.000Z","isSidechain":true,"requestId":"s1","message":{"id":"m1","content":"x","usage":{"input_tokens":500,"output_tokens":50}}}
+{"type":"assistant","timestamp":"2026-11-20T15:09:05.000Z","requestId":"r1","message":{"id":"m2","content":"y","usage":{"input_tokens":5,"output_tokens":3}}}
+`
+	r, _ := ClaudeParser()(strings.NewReader(log), "f")
+	if in, out := sum(r); in != 5 || out != 3 || len(r.Events) != 1 {
+		t.Errorf("subagent counted: tokens %d/%d, %d events; want 5/3, 1", in, out, len(r.Events))
 	}
 }
 
@@ -147,7 +157,7 @@ func TestJournal(t *testing.T) {
 	for _, ev := range []JournalEvent{
 		{Time: at("2026-10-31T23:50:00Z"), Tool: "claude-code", Event: "SessionStart", Session: "a", Cwd: "/src/game"},
 		{Time: at("2026-10-31T23:55:00Z"), Tool: "claude-code", Event: "UserPromptSubmit", Human: true, Session: "a", Judged: 6, Real: 5, Sim: 0xabc, Low: true},
-		{Time: at("2026-11-01T00:02:00Z"), Tool: "claude-code", Event: "Stop", Session: "a"}, // next month's file
+		{Time: at("2026-11-01T00:02:00Z"), Tool: "claude-code", Event: "Stop", Session: "a", In: 900, Out: 40, Added: 12, Removed: -3}, // next month's file
 		{Time: at("2026-11-01T00:03:00Z"), Tool: "amp", Event: "message", Human: true, Session: "a"},
 	} {
 		if err := AppendJournal(dir, ev); err != nil {
@@ -163,6 +173,10 @@ func TestJournal(t *testing.T) {
 	r := raws[0]
 	if r.Tool != "claude-code" || r.Cwd != "/src/game" || kinds(r.Events) != "AHA" || r.Scores[1].Judged != 6 || r.Scores[1].Real != 5 || r.Scores[1].Sim != 0xabc || !r.Scores[1].Low {
 		t.Errorf("claude session: %+v", r)
+	}
+	// What a harness reported of the turn stays with the event that ends it.
+	if end := r.Events[2]; end.In != 900 || end.Out != 40 || end.Added != 12 || end.Removed != 0 {
+		t.Errorf("turn end: %+v, want 900 in, 40 out, 12 added, and a count below zero dropped", end)
 	}
 	if raws[1].Tool != "amp" || kinds(raws[1].Events) != "H" {
 		t.Errorf("same session ID from another tool must stay separate: %+v", raws[1])

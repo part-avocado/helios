@@ -136,7 +136,7 @@ const [liveRuns, backfillRuns] = await Promise.all([
 let bad = report('Live', liveRuns.flat(), liveSeconds)
 for (const [i, b] of backfillRuns.entries()) bad += report(`First sync ${i + 1}`, b.r, b.seconds)
 // What src/hub.ts allows, to read the numbers against.
-console.log(`\nDefault limits per account (wrangler.jsonc): 1,000 uploads at once, then one a second; 30,000 recent and 1,000,000 older records a day.`)
+console.log(`\nDefault limits per account (wrangler.jsonc): 1,000 uploads at once, then one a second; 30,000 recent and 100,000 older records a day.`)
 console.log(`scripts/cost-model.ts assumes 2.15 records a turn and 3 ms of CPU an upload; wrangler dev can't measure CPU.`)
 if (bad) {
 	console.log(`\n${bad} upload${bad === 1 ? ' was' : 's were'} not taken. Honest use must never be refused.`)
