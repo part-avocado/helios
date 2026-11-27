@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.2
+
+### Changed
+
+- **New logo.** helios has a new mark, on the website, in the browser tab,
+  and in `helios dashboard`. It shows in white on the dark theme and in
+  black on the light one.
+
 ## v1.0.1
 
 ### Fixed
