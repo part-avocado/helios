@@ -140,7 +140,7 @@ export function page(status: number, title: string, body: string): Response {
 <main class="signin">
 	<div>
 		<div class="card authorize">
-			<img src="/favicon.svg" alt="">
+			<img class="logo" src="/logo.png" alt="">
 			<h1>${esc(title)}</h1>
 			${body}
 		</div>

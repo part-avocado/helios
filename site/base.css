@@ -251,3 +251,5 @@ footer a { color: var(--text); }
 	html:is([data-hosted], :not([data-web])) .nav .docs-link, html[data-hosted] .nav .settings-link { display: none; }
 	html:is([data-hosted], :not([data-web])) .nav .brand { font-size: 0; } /* the logo stands alone; the name would not fit */
 }
+/* The logo is drawn in black; on the dark theme it shows in white. */
+html:not([data-theme="light"]) img.logo { filter: invert(1); }

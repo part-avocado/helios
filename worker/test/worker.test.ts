@@ -325,9 +325,10 @@ test('signing in creates one account per person, with no key of its own', async 
 	const page = await call('/dashboard', { cookie })
 	const html = await page.text()
 	assert.match(html, /<html[^>]* data-hosted/)
-	assert.match(html, /&lt;b&gt;ada&lt;\/b&gt;/, 'the name from Hack Club Auth is shown as text, not markup')
+	assert.ok(html.includes(`id="account-name">@${first.handle}<`), 'the menu names them by their @handle')
+	assert.doesNotMatch(html, /<b>ada<\/b>|&lt;b&gt;ada/, 'the name from Hack Club Auth is not shown')
 	assert.doesNotMatch(html, /data-admin/)
-	assert.match(html, /id="account-initial"[^>]*>b</, 'the avatar shows the name\'s first letter')
+	assert.match(html, /id="account-initial"[^>]*>u</, 'the avatar shows the handle\'s first letter')
 })
 
 test('a sign-in that this browser did not start is refused', async () => {
