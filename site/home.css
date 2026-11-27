@@ -4,28 +4,31 @@ html { scroll-behavior: smooth; }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 section[id], .install { scroll-margin-top: 88px; } /* clear of the header bar */
 h1, h2, h3, p { margin: 0; }
-h1 { font: 700 clamp(36px, 4.6vw, 54px)/1.08 var(--sans); letter-spacing: -0.03em; text-wrap: balance; }
-h2 { font: 600 clamp(28px, 3.4vw, 36px)/1.15 var(--sans); letter-spacing: -0.02em; text-wrap: balance; }
-h3 { font: 600 18px/1.3 var(--sans); }
+h1 { font: 800 clamp(40px, 5.6vw, 68px)/1 var(--display); letter-spacing: -0.04em; text-wrap: balance; }
+h2 { font: 700 clamp(30px, 3.8vw, 44px)/1.05 var(--display); letter-spacing: -0.035em; text-wrap: balance; }
+h3 { font: 600 18px/1.3 var(--sans); letter-spacing: -0.012em; }
 main p a { text-decoration: underline; text-underline-offset: 3px; }
 
 /* Hero: what it is and how to install it, beside what it prints */
-.hero { padding: 72px 0 80px; }
+.hero { padding: 80px 0 88px; }
 .hero .wrap { display: grid; grid-template-columns: minmax(0, 9fr) minmax(0, 11fr); gap: 48px; align-items: center; }
-.lead { margin-top: 20px; font-size: 19px; color: var(--muted); }
-.install { margin-top: 28px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); overflow: hidden; }
-.install .tabs { display: flex; gap: 2px; padding: 6px 6px 0; border-bottom: 1px solid var(--line); }
-.install .tabs button { padding: 7px 12px 9px; border: 0; border-bottom: 2px solid transparent; background: none; font: 500 14px var(--sans); color: var(--muted); cursor: pointer; }
-.install .tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
-.install .cmd { padding: 12px 12px 12px 16px; }
-.install .copy { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
-.install .note { padding: 10px 16px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+.lead { max-width: 34em; margin-top: 22px; font-size: 19px; line-height: 1.5; color: var(--muted); }
+.install { margin-top: 30px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); box-shadow: var(--card-shadow); overflow: hidden; }
+.install .tabs { display: inline-flex; gap: 2px; margin: 10px 10px 0; padding: 3px; border-radius: var(--r-md); background: var(--panel-2); }
+.install .tabs button { min-height: 30px; padding: 0 12px; border: 0; border-radius: 8px; background: none; font: 500 14px var(--sans); color: var(--muted); cursor: pointer; }
+.install .tabs button[aria-selected="true"] { background: var(--raised); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgb(0 0 0 / 0.12); }
+.install .cmd { margin: 10px; padding: 10px 10px 10px 16px; border-radius: var(--r-md); background: var(--term-bg); }
+.install .cmd code { color: var(--term-text); }
+.install .cmd code::before { color: var(--term-head); }
+.install .copy { background: var(--accent); color: var(--on-accent); }
+.install .copy:hover { background: color-mix(in srgb, var(--accent) 86%, #fff); }
+.install .note { padding: 10px 16px 12px; border-top: var(--sep); font-size: 13px; color: var(--muted); }
 /* The second way in: the website, for every computer's hours */
 .web { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; margin-top: 14px; font-size: 15px; color: var(--muted); }
 .web span { flex: 1 1 16em; }
 .web b { font-weight: 600; color: var(--text); }
 .under { margin-top: 16px; font-size: 15px; color: var(--muted); }
-.term { margin: 0; padding: 20px 22px; border: 1px solid var(--line); border-radius: 12px; background: var(--term-bg); color: var(--term-text); font: 12.5px/1.75 var(--mono); overflow-x: auto; white-space: pre; }
+.term { margin: 0; padding: 22px 24px; border: 0; border-radius: var(--radius); background: var(--term-bg); color: var(--term-text); font: 12.5px/1.75 var(--mono); overflow-x: auto; white-space: pre; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.07), 0 30px 60px -30px rgb(10 9 18 / 0.6); }
 /* On a narrow screen the report scrolls sideways. An edge it runs past is
    shaded, and the shade lifts once that end is scrolled into view. */
 .term { --more: color-mix(in srgb, var(--term-text) 26%, transparent); background:
@@ -40,26 +43,31 @@ main p a { text-decoration: underline; text-underline-offset: 3px; }
 .caption { margin: 10px 2px 0; font-size: 14px; color: var(--muted); }
 
 /* One line on which tools work */
-.works { padding: 22px 0; border-top: 1px solid var(--line); font-size: 16px; color: var(--muted); }
+.works { padding: 24px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: 16px; color: var(--muted); }
 .works b { font-weight: 600; color: var(--text); }
 
 /* Getting started */
-.start { padding: 80px 0; }
-.how { list-style: none; margin: 36px 0 0; padding: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 32px; counter-reset: how; }
-.how li { counter-increment: how; padding-left: 18px; border-left: 2px solid var(--line); }
-.how li::before { content: "0" counter(how); display: block; margin-bottom: 8px; font: 500 14px var(--mono); color: var(--accent); }
+.start { padding: 96px 0; }
+.how { list-style: none; margin: 40px 0 0; padding: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 16px; counter-reset: how; }
+.how li { counter-increment: how; padding: 24px 24px 26px; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--panel); box-shadow: var(--card-shadow); }
+.how li::before { content: "0" counter(how); display: block; margin-bottom: 28px; font: 500 13px var(--mono); color: var(--faint); }
 .how p { margin-top: 6px; color: var(--muted); }
 
 /* Questions */
-.faq { padding: 80px 0 88px; border-top: 1px solid var(--line); }
-.faq .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 36px 48px; margin-top: 32px; }
+.faq { padding: 0 0 96px; }
+.faq .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 48px; margin-top: 36px; }
+.faq .grid > div { padding: 24px 0 26px; border-top: var(--sep); }
 .faq p { margin-top: 6px; color: var(--muted); }
 
 /* Closing band: the one thing to do next, as the page's primary button */
-.close { padding: 72px 0; background: var(--panel); border-top: 1px solid var(--line); text-align: center; }
-.close p { margin-top: 12px; font-size: 18px; color: var(--muted); }
+.close { padding: 0 20px 72px; text-align: center; }
+.close .wrap { padding: 72px 32px; border-radius: var(--r-lg); background: var(--field); color: var(--field-text); }
+.close p { margin-top: 14px; font-size: 18px; color: var(--field-muted); }
 .close .actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 28px; }
-.close .btn { height: 46px; padding: 0 22px; font-size: 16px; }
+.close .btn { --btn: transparent; height: 46px; padding: 0 22px; border-color: var(--field-line); color: var(--field-text); font-size: 16px; }
+.close .btn:hover { border-color: var(--field-muted); background: rgb(255 255 255 / 0.1); }
+.close .btn.primary { border-color: #fff; background: #fff; color: #15131f; }
+.close .btn.primary:hover { border-color: #fff; background: #e6e5f0; }
 
 @media (max-width: 1080px) {
 	.how { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -68,15 +76,18 @@ main p a { text-decoration: underline; text-underline-offset: 3px; }
 	.hero { padding: 40px 0 56px; }
 	.hero .wrap, .how, .faq .grid { grid-template-columns: minmax(0, 1fr); }
 	.hero .wrap { gap: 32px; }
-	.start, .faq { padding: 56px 0; }
-	.how { gap: 24px; }
-	.faq .grid { gap: 28px; }
+	.start { padding: 56px 0; }
+	.faq { padding-bottom: 56px; }
+	.close { padding: 0 12px 48px; }
+	.close .wrap { padding: 52px 22px; }
+	.how { gap: 12px; }
+	.faq .grid { gap: 0; }
 	.term { font-size: 11px; padding: 16px; }
 }
 /* On a phone, the install box comes into view without scrolling far. */
 @media (max-width: 520px) {
 	.hero { padding-top: 24px; }
-	h1 { font-size: 29px; }
+	h1 { font-size: 34px; }
 	.lead { margin-top: 12px; font-size: 16.5px; line-height: 1.55; }
 	.install { margin-top: 18px; }
 	.install .cmd { padding-left: 12px; }

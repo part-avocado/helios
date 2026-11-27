@@ -5,6 +5,11 @@ import (
 	"strings"
 )
 
+// letterpairs.bin holds letter-pair odds for 31 Latin-script languages, built
+// by scripts/letter-pairs.py. Without this directive the table is empty and
+// no keyboard mash is ever flagged as noise.
+//
+//go:embed letterpairs.bin
 var letterPairs []byte
 
 const pairTable = 27 * 27

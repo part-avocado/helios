@@ -32,7 +32,7 @@ function heatmapHTML(perDay, now, { clickable = false, selected = () => false } 
 		// The level's class colors the day, so the chart follows the dark or light theme.
 		const cls = `l${level(s)}${click ? ' has' : ''}${click && selected(d) ? ' sel' : ''}`
 		const attrs = click ? ` data-ts="${d.getTime()}" data-span="1"` : ''
-		rects += `<rect class="${cls}" x="${30 + col * (cell + gap)}" y="${18 + row * (cell + gap)}" width="${cell}" height="${cell}" rx="2"${attrs}${tipAttrs(fmtDate.format(d), s ? dur(s) : t('common.noActivity'), click ? t('dash.clickDay') : '')}/>`
+		rects += `<rect class="${cls}" x="${30 + col * (cell + gap)}" y="${18 + row * (cell + gap)}" width="${cell}" height="${cell}" rx="3"${attrs}${tipAttrs(fmtDate.format(d), s ? dur(s) : t('common.noActivity'), click ? t('dash.clickDay') : '')}/>`
 	}
 	// Monday, Wednesday, and Friday, named in the page's language. 2023-01-02 was a Monday.
 	const labels = [0, 2, 4].map((n, i) => `<text x="0" y="${18 + (i * 2 + 1) * (cell + gap) + 10}">${new Date(2023, 0, 2 + n).toLocaleDateString(LANG, { weekday: 'short' })}</text>`).join('')
