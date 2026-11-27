@@ -92,3 +92,10 @@ main p a { text-decoration: underline; text-underline-offset: 3px; }
 	.install { margin-top: 18px; }
 	.install .cmd { padding-left: 12px; }
 }
+/* On a desktop, the install command shows in full, wrapping at the URL's
+   slashes, so the whole address can be read before it is pasted. A phone
+   keeps the one sideways-scrolling line. */
+@media (min-width: 861px) {
+	.install .cmd { align-items: flex-start; }
+	.install .cmd code { white-space: normal; overflow: visible; overflow-wrap: anywhere; mask-image: none; padding: 5px 0; line-height: 1.6; }
+}

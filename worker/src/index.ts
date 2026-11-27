@@ -446,13 +446,14 @@ async function servePage(request: Request, env: Env, user: User | null): Promise
 		})
 		.on('#account-name, #account-name-full, #side-name', {
 			element(el) {
-				el.setInnerContent(user.name || 'Account')
+				// Their @handle, the name the site knows them by in public.
+				el.setInnerContent(user.handle ? '@' + user.handle : user.name || 'Account')
 			},
 		})
 		.on('#account-initial, #side-initial', {
 			element(el) {
-				// The first letter or digit of their name.
-				el.setInnerContent(Array.from(user.name).find((c) => /[\p{L}\p{N}]/u.test(c)) ?? '?')
+				// The first letter or digit of their handle.
+				el.setInnerContent(Array.from(user.handle || user.name).find((c) => /[\p{L}\p{N}]/u.test(c)) ?? '?')
 			},
 		})
 		.transform(asset)

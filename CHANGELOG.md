@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.0.1
+
+### Fixed
+
+- **Installing.** The install commands failed with a 404, because v1.0.0's
+  downloads still carried the old `teardrop_*` names. This release's
+  downloads are named `helios_*`, as `install.sh`, `install.ps1`, and
+  `helios update` expect. Anyone with the old `teardrop` binary should run
+  the install command again rather than `teardrop update`.
+
+### Changed
+
+- **The website** is dark unless you pick light with the switch, has a new
+  sun logo, shows the whole install command on a desktop, and names you by
+  your @handle in the account menu.
+
 ## v1.0.0
 
 helios now counts time in every place you work with an agent: on your

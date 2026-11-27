@@ -1,7 +1,7 @@
 /* Shared by every page: colors, type, the header bar, buttons, and the footer.
    The site is dark unless theme.js sets data-theme="light" on <html>, which it
-   does when the visitor chose light, or chose nothing and their system is
-   light. Every color on the site comes from here. */
+   does only when the visitor chose light with the switch. Every color on the
+   site comes from here. */
 /* The fonts, for a page whose own <head> does not link them. */
 @import url("https://fonts.googleapis.com/css2?family=Funnel+Display:wght@500..800&family=Geist:wght@400..700&family=Geist+Mono:wght@400..500&display=swap");
 :root {

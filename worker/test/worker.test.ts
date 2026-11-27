@@ -1405,7 +1405,10 @@ test('home and docs work for anyone, and show the account menu once signed in', 
 		const signedIn = await (await call(page, { cookie })).text()
 		assert.match(signedIn, /<html[^>]* data-hosted/, page)
 		assert.match(signedIn, /<html[^>]* data-web/, page)
-		assert.match(signedIn, /id="account-name-full"[^>]*>&lt;b&gt;menu&lt;\/b&gt;</, page)
+		// The menu names them by their @handle, not their name.
+		const { handle } = await me(cookie)
+		assert.ok(signedIn.includes(`id="account-name-full">@${handle}<`), page)
+		assert.doesNotMatch(signedIn, /&lt;b&gt;menu/, page)
 	}
 	// Home stays up before the secrets exist.
 	const bare = createTestHarness({ workers: [{ configPath: new URL('../wrangler.jsonc', import.meta.url), vars: { DEV_LOGIN: '' }, secrets: { SESSION_SECRET: '' } }] })
