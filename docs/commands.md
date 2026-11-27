@@ -38,7 +38,7 @@
 | --- | --- |
 | `helios login` | Connect this computer by typing a code on the site, instead of copying a key. Pass `-server URL` the first time. `-no-open` prints the address instead of opening a browser. |
 | `helios sync` | Send your records to your account. Pass `-server URL -key KEY` the first time; both are remembered. `-dry-run` prints the records it would send, and sends nothing. |
-| `helios export` | Write a signed report to upload under Settings on the website. Takes `-o file` and `-since` (default `365d`). |
+| `helios export` | Write a signed report to upload under Settings, Data on the website. Takes `-o file` and `-since` (default `365d`). |
 
 ## Update and uninstall
 

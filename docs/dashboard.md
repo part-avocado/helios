@@ -15,9 +15,10 @@ The graphs are interactive:
 
 The [dashboard on the website](../site/dashboard.html) adds up the hours from every computer you code on. Only you and your server's reviewers can see it. Your [public profile](#profile) shows a summary to anyone.
 
-1. Open the [dashboard](../site/dashboard.html) and sign in with Hack Club. Your first sign-in creates your account.
-2. Run the command the dashboard shows. Your terminal prints a code; type it on the site. That connects this computer to your account. Do the same on each computer you code on.
-3. Keep working. The page fills in as soon as the first sync arrives. helios syncs again each time a reply finishes in Claude Code or Amp, or you stop one. Run `helios sync` to update it right away.
+1. Open the [dashboard](../site/dashboard.html) and choose **Sign in with Hack Club**. Your first sign-in creates your account.
+2. With nothing synced yet, the dashboard shows the setup steps. Choose **Start setup** and run the command it shows. Your terminal prints a code; type it on the last step and choose **Connect**. That connects this computer to your account.
+3. For each other computer you code on, do the same from Settings, Setup, **Add a computer**.
+4. Keep working. The page fills in as soon as the first sync arrives. helios syncs again each time a reply finishes in Claude Code or Amp, or you stop one. Run `helios sync` to update it right away.
 
 ### Projects
 
@@ -32,9 +33,11 @@ The [Projects](../site/projects.html) page lists every project you've worked on.
 
 | Pane | What it's for |
 | --- | --- |
-| Setup | What to run to connect another computer, and your sync keys. A sync key only uploads stats. Each computer gets its own, and cloud sessions (Claude Code in the cloud, Amp threads) get one named "Cloud sessions". Revoke one and only it stops working. |
+| Setup | The steps that connect another computer, the steps for [Amp cloud threads](amp.md#amp-cloud), and your sync keys. A sync key works like a password that lets one computer or cloud session send your hours to the site; it can't read your stats. Each computer gets its own, listed by its computer ID, and Amp's cloud threads get one named "Cloud sessions". Revoke one and only what uses it stops syncing. |
+| Profile | Your [public profile](#profile): its handle, whether anyone can see it, and a badge for a README. |
 | Computers | Each computer that syncs to you and when it last did. Remove one to drop its hours. |
-| Data | Upload a stats file from a computer that can't reach the website, or download a copy of everything the site holds about you. Make the stats file with `helios export -o stats.json`, and upload it within 7 days. |
+| Data | Upload a stats file from a computer that can't reach the website, or download your name, Slack ID, handle, and each computer's latest stats as one file. Make the stats file with `helios export -o stats.json`, and upload it within 7 days. |
+| API | Read keys, which let a script or another site read your own stats. See the [Public API](run-server.md#public-api). |
 | Account | Your name, Slack ID, and member-since date from Hack Club Auth, signing out, and deleting your account. Deleting removes every computer and all of your stats from the site. |
 
 You can sign out from the sidebar, or on a narrow window from the menu at the top right.
@@ -69,7 +72,7 @@ Each account starts with a neutral handle, such as `u-3f9a0c12b4d1`, never one m
 Under Settings, Profile, you can:
 
 - change your handle;
-- make the whole profile private;
+- make the whole profile private, by turning off **Anyone can see my profile**;
 - copy a badge of your hours to paste into a README, linked to your profile.
 
 A private profile answers "no such profile", as a banned or deleted account does. So its address doesn't say that the account exists.

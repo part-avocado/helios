@@ -108,19 +108,75 @@ function setupCommands() {
 	}
 }
 
+// A command, or a prompt, in a box with a Copy button.
+const cmd = (text, kind = '') => `<div class="cmd ${kind}"><code>${esc(text)}</code><button class="copy" type="button">${t('common.copy')}</button></div>`
+const promptBox = (text) => `<div class="prompt"><code>${esc(text)}</code><button class="copy" type="button">${t('common.copy')}</button></div>`
+
+// renderCloudSetup fills el with the three steps that count Amp's cloud
+// threads, which need no computer: make a sync key, named "Cloud sessions"
+// (CLOUD_KEY; it was "Amp cloud" once) and shown once; paste a prompt into
+// Amp, which adds the plugin and this site's address; and paste the key when
+// Amp asks for it. The key is left out of the prompt: Amp asks for a
+// secret's value in a private dialog. Settings shows this under Setup.
+function renderCloudSetup(el) {
+	el.innerHTML = `<details class="setup-more" id="amp-cloud">
+		<summary>${t('setup.cloud.h')}</summary>
+		<p>${t('setup.cloud.p1')}</p>
+		<ol class="steps">
+			<li><div>
+				<h3>${t('setup.cloud.step1.h')}</h3>
+				<p>${t('setup.cloud.step1.p')}</p>
+				<p><button class="btn small primary" type="button" data-cloud-key>${t('setup.cloud.make')}</button></p>
+				<div class="cmdbox" data-cloud-key-box hidden></div>
+				<p class="fine" data-cloud-key-note role="status" hidden></p>
+			</div></li>
+			<li><div>
+				<h3>${t('setup.cloud.step2.h')}</h3>
+				<p>${t('setup.cloud.step2.p')}</p>
+				${promptBox(t('setup.cloudPrompt', { origin: location.origin }))}
+			</div></li>
+			<li><div>
+				<h3>${t('setup.cloud.step3.h')}</h3>
+				<p>${t('setup.cloud.step3.p')}</p>
+			</div></li>
+		</ol>
+		<p>${t('setup.cloud.check')}</p>
+	</details>`
+	const note = el.querySelector('[data-cloud-key-note]')
+	// A new key for cloud sessions replaces the last one, which stops working.
+	el.querySelector('[data-cloud-key]').addEventListener('click', async (e) => {
+		const button = e.currentTarget
+		button.disabled = true
+		try {
+			const made = await api('/api/sync-keys', { method: 'POST', body: JSON.stringify({ name: CLOUD_KEY, replace: true }) })
+			// So is one made when the key was still named after Amp.
+			const { keys } = await api('/api/sync-keys').catch(() => ({ keys: [] }))
+			for (const k of keys) if (k.name === 'Amp cloud') await api('/api/sync-keys/' + k.id, { method: 'DELETE' }).catch(() => {})
+			const box = el.querySelector('[data-cloud-key-box]')
+			box.innerHTML = cmd(made.key, 'plain')
+			box.hidden = false
+			Object.assign(note, { textContent: t('setup.cloud.made'), hidden: false })
+			button.textContent = t('setup.cloud.again')
+			button.classList.remove('primary')
+			document.dispatchEvent(new Event('sync-keys-changed')) // so a list of them shows it
+		} catch (err) {
+			Object.assign(note, { textContent: err.message, hidden: false })
+		} finally {
+			button.disabled = false
+		}
+	})
+}
+
 // renderSetup fills el with the flow that connects a computer to this
 // account, one step at a time: an opening card, then how to set it up (by
 // hand or by an agent), the command or prompt, what each tool needs, and
 // last the code the terminal shows, typed into a form that posts to
-// /connect, which still asks to allow the computer by its ID. Cloud
-// sessions, such as Amp's cloud threads, need a sync key pasted as a secret,
-// so the tools step can make one, named "Cloud sessions", and shows it once
-// (CLOUD_KEY; it was "Amp cloud" once). With again, for a person who
-// has a computer already, the opening card says "Add another computer".
+// /connect, which still asks to allow the computer by its ID. Amp's cloud
+// threads need no computer, so the tools step only points to their own
+// steps (renderCloudSetup). With again, for a person who has a computer
+// already, the opening card says "Add another computer".
 function renderSetup(el, again = false) {
 	const { sh, ps } = setupCommands()
-	const cmd = (text, kind = '') => `<div class="cmd ${kind}"><code>${esc(text)}</code><button class="copy" type="button">${t('common.copy')}</button></div>`
-	const promptBox = (text) => `<div class="prompt"><code>${esc(text)}</code><button class="copy" type="button">${t('common.copy')}</button></div>`
 	// What to paste into an agent so it does the setup itself. The questions
 	// helios setup asks are answered up front, since an agent can't answer them.
 	const prompt = t('setup.agentPrompt', {
@@ -128,9 +184,6 @@ function renderSetup(el, again = false) {
 		ps: `$env:HELIOS_NO_SETUP=1; irm ${INSTALL}.ps1 | iex`,
 		connect: `helios login -server ${location.origin}`,
 	})
-	// What to paste into Amp so its cloud threads count. The sync key is left
-	// out: Amp asks for a secret's value in a private dialog.
-	const cloudPrompt = t('setup.cloudPrompt', { origin: location.origin })
 
 	let mode = 'self' // or 'agent'
 	let os = null // the tab picked on the install step, kept when coming back to it
@@ -171,16 +224,7 @@ function renderSetup(el, again = false) {
 					<div class="tab-panel" data-tab="claude"><p>${t('setup.tools.claude')}</p></div>
 					<div class="tab-panel" data-tab="codex"><p>${t('setup.tools.codex')}</p></div>
 					<div class="tab-panel" data-tab="amp"><p>${t('setup.tools.amp1')}</p>${cmd('helios setup amp')}<p>${t('setup.tools.amp2')}</p>
-						<details class="setup-more" id="amp-cloud">
-							<summary>${t('setup.cloud.h')}</summary>
-							<p>${t('setup.cloud.p1')}</p>
-							${promptBox(cloudPrompt)}
-							<p>${t('setup.cloud.p2')}</p>
-							<p><button class="btn small" type="button" data-amp-key>${t('setup.cloud.make')}</button></p>
-							<div class="cmdbox" data-amp-key-box hidden></div>
-							<p class="fine" data-amp-key-note hidden>${t('setup.cloud.made')}</p>
-							<p>${t('setup.cloud.p3')}</p>
-						</details>
+							<p>${t('setup.tools.ampCloud')}</p>
 					</div>
 				</div>`,
 			next: () => t('setup.next'),
@@ -227,35 +271,14 @@ function renderSetup(el, again = false) {
 		;(code || el.querySelector('h2, h3')).focus()
 	}
 
-	el.onclick = async (e) => {
+	el.onclick = (e) => {
 		const choice = e.target.closest('[data-mode]')
 		if (choice) {
 			mode = choice.dataset.mode
 			return show(1)
 		}
 		const go = e.target.closest('[data-go]')
-		if (go) return show(Number(go.dataset.go))
-		// A new key for cloud sessions replaces the last one, which stops working.
-		const ampButton = e.target.closest('[data-amp-key]')
-		if (!ampButton) return
-		ampButton.disabled = true
-		const note = el.querySelector('[data-amp-key-note]')
-		try {
-			const made = await api('/api/sync-keys', { method: 'POST', body: JSON.stringify({ name: CLOUD_KEY, replace: true }) })
-			// So is one made when the key was still named after Amp.
-			const { keys } = await api('/api/sync-keys').catch(() => ({ keys: [] }))
-			for (const k of keys) if (k.name === 'Amp cloud') await api('/api/sync-keys/' + k.id, { method: 'DELETE' }).catch(() => {})
-			const box = el.querySelector('[data-amp-key-box]')
-			box.innerHTML = cmd(made.key, 'plain')
-			box.hidden = false
-			Object.assign(note, { textContent: t('setup.cloud.made'), hidden: false })
-			ampButton.textContent = t('setup.cloud.again')
-			document.dispatchEvent(new Event('sync-keys-changed')) // so a list of them shows it
-		} catch (err) {
-			Object.assign(note, { textContent: err.message, hidden: false })
-		} finally {
-			ampButton.disabled = false
-		}
+		if (go) show(Number(go.dataset.go))
 	}
 	show(-1, false)
 }

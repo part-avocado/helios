@@ -35,6 +35,8 @@ type Links = { pages: Map<string, string>; used: { where: string; id: string }[]
 
 function href(url: string, links: Links, where: string): string {
 	if (/^(https?:|mailto:)/.test(url)) return url
+	// A bare domain, as in [ampcode.com](ampcode.com), is a web address without its https://.
+	if (/^[a-z0-9-]+(\.[a-z0-9-]+)+(\/\S*)?$/i.test(url) && !/\.(md|html)(#|$)/i.test(url)) return `https://${url}`
 	if (url.startsWith('#')) {
 		links.used.push({ where, id: url.slice(1) })
 		return url
@@ -194,7 +196,8 @@ function blocks(file: string, text: string, down: number, id: string, links: Lin
 		} else if (line.startsWith('>')) {
 			const quoted: string[] = []
 			for (; more() && lines[i]!.startsWith('>'); i++) quoted.push(lines[i]!.replace(/^> ?/, ''))
-			const kind = /^\[!(\w+)\]\s*$/.exec(quoted[0]!)?.[1]
+			// Any case, as GitHub reads it: [!Warning] is [!WARNING].
+			const kind = /^\[!(\w+)\]\s*$/.exec(quoted[0]!)?.[1]?.toUpperCase()
 			const paragraphs = (kind ? quoted.slice(1) : quoted).join('\n').split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean).map((p) => `<p>${inline(p.replace(/\n/g, ' '), links, where)}</p>`).join('')
 			if (!kind) built.html.push(`\t<blockquote>${paragraphs}</blockquote>`)
 			else {

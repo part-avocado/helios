@@ -117,10 +117,12 @@
 	<h4>On the website</h4>
 	<p>To see every computer's hours in one place:</p>
 	<ol>
-		<li>Open the <a href="dashboard.html">dashboard</a> and sign in with Hack Club. Your first sign-in creates your account.</li>
-		<li>Run the command the dashboard shows. Your terminal prints a code; type it on the site.</li>
-		<li>Do the same on each computer you code on. Each one syncs by itself from then on.</li>
+		<li>Open the <a href="dashboard.html">dashboard</a> and choose <strong>Sign in with Hack Club</strong>. Your first sign-in creates your account.</li>
+		<li>Choose <strong>Start setup</strong>, then <strong>Do it yourself</strong>, and run the command it shows. It is the install command again, which is harmless, followed by <code>helios login</code>.</li>
+		<li>Your terminal prints a code. Type it on the setup's last step, check that the computer ID matches the one in your terminal, and choose <strong>Connect</strong>. The dashboard fills in by itself.</li>
+		<li>Do the same on each computer you code on, from Settings, Setup, <strong>Add a computer</strong>. Each one syncs by itself from then on.</li>
 	</ol>
+	<p>Only use Amp in its app or on ampcode.com? You need no computer at all: see <a href="#amp-cloud">Amp cloud threads</a>.</p>
 
 	<h2 id="install">Install</h2>
 	<h3>macOS, Linux, and Git Bash on Windows</h3>
@@ -230,8 +232,9 @@
 	<h3 id="account">On the website, with an account</h3>
 	<p>The <a href="dashboard.html">dashboard on the website</a> adds up the hours from every computer you code on. Only you and your server's reviewers can see it. Your <a href="#profile">public profile</a> shows a summary to anyone.</p>
 	<ol>
-		<li>Open the <a href="dashboard.html">dashboard</a> and sign in with Hack Club. Your first sign-in creates your account.</li>
-		<li>Run the command the dashboard shows. Your terminal prints a code; type it on the site. That connects this computer to your account. Do the same on each computer you code on.</li>
+		<li>Open the <a href="dashboard.html">dashboard</a> and choose <strong>Sign in with Hack Club</strong>. Your first sign-in creates your account.</li>
+		<li>With nothing synced yet, the dashboard shows the setup steps. Choose <strong>Start setup</strong> and run the command it shows. Your terminal prints a code; type it on the last step and choose <strong>Connect</strong>. That connects this computer to your account.</li>
+		<li>For each other computer you code on, do the same from Settings, Setup, <strong>Add a computer</strong>.</li>
 		<li>Keep working. The page fills in as soon as the first sync arrives. helios syncs again each time a reply finishes in Claude Code or Amp, or you stop one. Run <code>helios sync</code> to update it right away.</li>
 	</ol>
 	<h4>Projects</h4>
@@ -244,9 +247,11 @@
 	<p><a href="settings.html">Settings</a> has the rest:</p>
 	<table>
 		<tr><th>Pane</th><th>What it's for</th></tr>
-		<tr><td>Setup</td><td>What to run to connect another computer, and your sync keys. A sync key only uploads stats. Each computer gets its own, and cloud sessions (Claude Code in the cloud, Amp threads) get one named "Cloud sessions". Revoke one and only it stops working.</td></tr>
+		<tr><td>Setup</td><td>The steps that connect another computer, the steps for <a href="#amp-cloud">Amp cloud threads</a>, and your sync keys. A sync key works like a password that lets one computer or cloud session send your hours to the site; it can't read your stats. Each computer gets its own, listed by its computer ID, and Amp's cloud threads get one named "Cloud sessions". Revoke one and only what uses it stops syncing.</td></tr>
+		<tr><td>Profile</td><td>Your <a href="#profile">public profile</a>: its handle, whether anyone can see it, and a badge for a README.</td></tr>
 		<tr><td>Computers</td><td>Each computer that syncs to you and when it last did. Remove one to drop its hours.</td></tr>
-		<tr><td>Data</td><td>Upload a stats file from a computer that can't reach the website, or download a copy of everything the site holds about you. Make the stats file with <code>helios export -o stats.json</code>, and upload it within 7 days.</td></tr>
+		<tr><td>Data</td><td>Upload a stats file from a computer that can't reach the website, or download your name, Slack ID, handle, and each computer's latest stats as one file. Make the stats file with <code>helios export -o stats.json</code>, and upload it within 7 days.</td></tr>
+		<tr><td>API</td><td>Read keys, which let a script or another site read your own stats. See the <a href="#public-api">Public API</a>.</td></tr>
 		<tr><td>Account</td><td>Your name, Slack ID, and member-since date from Hack Club Auth, signing out, and deleting your account. Deleting removes every computer and all of your stats from the site.</td></tr>
 	</table>
 	<p>You can sign out from the sidebar, or on a narrow window from the menu at the top right.</p>
@@ -268,7 +273,7 @@
 	<p>Under Settings, Profile, you can:</p>
 	<ul>
 		<li>change your handle;</li>
-		<li>make the whole profile private;</li>
+		<li>make the whole profile private, by turning off <strong>Anyone can see my profile</strong>;</li>
 		<li>copy a badge of your hours to paste into a README, linked to your profile.</li>
 	</ul>
 	<p>A private profile answers "no such profile", as a banned or deleted account does. So its address doesn't say that the account exists.</p>
@@ -306,7 +311,7 @@
 	<p>Install helios there and connect it like any computer. With no browser on it, you have three ways to connect:</p>
 	<ul>
 		<li><strong>A code.</strong> Run <code>helios login -server https://your-site -no-open</code>. It prints a code to type on the site from any other device.</li>
-		<li><strong>A sync key.</strong> Make one under Settings on the site and run <code>helios sync -server https://your-site -key tdk_…</code>.</li>
+		<li><strong>A sync key.</strong> Make one on the site under Settings, Setup, Sync keys, and run <code>helios sync -server https://your-site -key tdk_…</code>.</li>
 		<li><strong>Environment variables.</strong> Set <code>HELIOS_SERVER</code> and <code>HELIOS_KEY</code> in the box's environment. This needs no login. Hooks then send each event as it happens and sync in the background, just as after a login.</li>
 	</ul>
 	<p>The box keeps its own journal, is listed as a computer of its own, and syncs in the background.</p>
@@ -319,7 +324,7 @@
 	</ul>
 	<p>To set it up:</p>
 	<ol>
-		<li>On the site, make a key under Settings.</li>
+		<li>On the site, make a sync key under Settings, Setup, Sync keys. Copy it when it shows: the site shows it once.</li>
 		<li>Add two secrets to the environment: <code>HELIOS_SERVER</code> (your site) and <code>HELIOS_KEY</code> (the key). For Codespaces, add them as Codespaces secrets of your account or the repository. Also set <code>HELIOS_CLOUD=1</code>, unless the environment sets <code>CLAUDE_CODE_REMOTE</code> or <code>CODESPACES</code> itself.</li>
 		<li>Add this to the environment's setup script. For a Codespace or dev container, add it to <code>postCreateCommand</code> in <code>devcontainer.json</code>:</li>
 	</ol>
@@ -375,17 +380,49 @@
 	</ul>
 
 	<h2 id="amp">Amp</h2>
-	<p>Amp keeps threads on its servers, so helios can't read them from your computer. Instead, <code>helios setup</code> (or <code>helios setup amp</code> for Amp alone) offers to write a plugin to <code>~/.config/amp/plugins/helios.ts</code>.</p>
-	<p>The plugin records when a thread starts, when you send a prompt, and when Amp finishes. It writes to the same journal as the Claude Code hooks.</p>
-	<p>New Amp threads load the plugin automatically. In threads that are already open, run <code>plugins: reload</code>.</p>
-	<h3 id="amp-cloud">Threads in Amp's cloud</h3>
-	<p>Threads you start in the Amp app or on ampcode.com run in Amp's cloud, not on your computer, so that plugin can't see them. A second plugin, <a href="https://github.com/part-avocado/helios/blob/main/amp/helios-cloud.ts"><code>helios-cloud.ts</code></a>, counts them. It goes in your personal Amp plugins, which Amp loads in every cloud thread.</p>
-	<h4>Set it up</h4>
+	<div class="callout warning"><p class="callout-title"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"/></svg>Warning</p><p>Amp plugins are still in Beta and have very limited support. As a result, your data may be inaccurate, and you may experience issues while submitting to YSWSes. We highly recommend that you use Codex, Claude Code, or any other app that writes files to <em>your disk</em> as they are much more reliable to track.</p></div>
+	<p>Ampcode utilises cloud-based compute for their agents, so helios is unable to read the thread data from your computer. Instead, <code>helios setup</code> (or <code>helios setup amp</code>) will write a plugin to <code>~/.config/amp/plugins/helios.ts</code></p>
+	<p>Amp keeps threads on its servers, so helios can't read them from your computer. Instead, <code>helios setup</code> (or <code>helios setup amp</code> for Amp alone) offers to write a plugin to <code>~/.config/amp/plugins/helios.ts</code>, allowing for usage while <strong>using Amp on your desktop app</strong>. This variant of the Amp plugin does not track prompts that use Amp on another computer, <a href="https://ampcode.com">Amp for Web</a>, or Amp on your phone.</p>
+	<p>This variant of the plugin automatically record when the thread started and ended, and will automatically connect with the helios server.</p>
+	<p>To utilise this plugin, you may either start a new Amp thread, or, run <code>plugins:reload</code> in a pre-existing thread.</p>
+	<h3 id="amp-cloud">Cloud Threads</h3>
+	<p>Threads that are started in the Amp app or on Amp for Web (<a href="https://ampcode.com">ampcode.com</a>) run on Orbs, which the previous plugin cannot read from. A secondary plugin, <a href="https://github.com/part-avocado/helios/blob/main/amp/helios-cloud.ts"><code>helios-cloud.ts</code></a>, is able to access the information. This plugin is loaded onto your cloud threads, allowing ease of use anywhere.</p>
+	<h4>Installation</h4>
 	<ol>
-		<li>On your helios site, open Settings, Setup, and choose Amp under “Check your tools”.</li>
-		<li>Make a sync key with <strong>Make a key for Amp</strong>, under the prompt shown there. It shows once, and is listed under your sync keys as "Cloud sessions".</li>
-		<li>Paste the prompt into any Amp thread. Amp adds the plugin and two values to its Secrets &amp; Env Vars settings: <code>HELIOS_SERVER</code>, your site's address, and <code>HELIOS_KEY</code>, the sync key. Amp asks you for the key in a private dialog, so it stays out of the thread.</li>
+		<li>Go to <a href="https://helios.partavocado.cc/settings.html">Setup</a>, and select "Be agentic".</li>
+		<li>On that page, open <strong>Amp cloud threads</strong> and choose <strong>Make a key for Amp cloud</strong>. Copy the key: it shows once.</li>
+		<li>Copy the prompt under the key and paste it into any Amp thread.</li>
+		<li>When Amp asks for the value of <code>HELIOS_KEY</code>, paste the key. Amp asks in a private box, so the key stays out of the thread.</li>
 	</ol>
+	<p><a href="settings.html#amp-cloud">This link</a> opens <strong>Amp cloud threads</strong> directly. No computer needs to be on, and you don't need helios installed anywhere.</p>
+	<h4>What the key is</h4>
+	<p>The key is a sync key. It works like a password that lets Amp send your hours to your site. It can send them, but it can't read your stats.</p>
+	<ul>
+		<li>Settings, Setup lists it under Sync keys as “Cloud sessions”.</li>
+		<li>Making a new one stops the old one working. Give Amp the new one, as the value of <code>HELIOS_KEY</code>.</li>
+		<li>To stop counting cloud threads, revoke it there.</li>
+	</ul>
+	<h4>What Amp ends up with</h4>
+	<p>The prompt asks Amp to add three things to your own Amp settings. If you would rather add them by hand, these are all there is:</p>
+	<table>
+		<tr><th>What</th><th>Where in Amp</th><th>Value</th></tr>
+		<tr><td><code>helios-cloud.ts</code></td><td>Your personal plugins</td><td><a href="https://github.com/part-avocado/helios/blob/main/amp/helios-cloud.ts">The file</a>, as it is.</td></tr>
+		<tr><td><code>HELIOS_SERVER</code></td><td>Secrets &amp; Env Vars, as an environment variable</td><td>Your site's address, such as <code>https://helios.partavocado.cc</code>.</td></tr>
+		<tr><td><code>HELIOS_KEY</code></td><td>Secrets &amp; Env Vars, as a secret</td><td>The key.</td></tr>
+	</table>
+	<h4 id="amp-cloud-check">Check that it works</h4>
+	<ol>
+		<li>Start a new thread in the Amp app or on ampcode.com, send a prompt, and wait for Amp to finish.</li>
+		<li>Reload <a href="settings.html">Settings</a>. Under Setup, Sync keys, the “Cloud sessions” key now says when it was last used. Under Computers there is an entry named “Cloud sessions”, and your dashboard has the time.</li>
+	</ol>
+	<p>If that isn't what you see:</p>
+	<table>
+		<tr><th>What you see</th><th>What it means, and what to do</th></tr>
+		<tr><td>The key says “never used”.</td><td>Amp isn't running the plugin, or the plugin has no key. Check that all three things in the table above are there, with those exact names, then start a new thread. When a value is missing, the plugin does nothing but log <code>helios: not counting this cloud thread</code>.</td></tr>
+		<tr><td>The key was used, but Computers has no “Cloud sessions”.</td><td>Time is counted when Amp finishes a turn or you stop it, so wait for the turn to end. A new thread also has to download helios first, which can delay its first prompt's record.</td></tr>
+		<tr><td>It worked, and then stopped.</td><td>The key was replaced or revoked. Make a new one under <strong>Amp cloud threads</strong> and set it as <code>HELIOS_KEY</code> in Amp.</td></tr>
+		<tr><td>A thread on your own computer isn't counted.</td><td>This plugin only runs in Amp's cloud. Threads on your computer need the first plugin: run <code>helios setup amp</code>.</td></tr>
+	</table>
 	<h4>What the plugin does</h4>
 	<p>In a cloud thread, the plugin downloads helios and checks it against the release's checksum. It then runs helios when you send a prompt and when Amp finishes. Each run sends your site one line:</p>
 	<ul>
@@ -407,11 +444,11 @@
 	<h4>Threads on your Mac</h4>
 	<p>The Mac app's threads can also run on your Mac instead of the cloud. Open the app's App Settings, Runner, turn it on, and pick “This Mac” when you start a thread. Those threads are recorded by the first plugin.</p>
 	<h3 id="agent-prompt">Set up with a prompt</h3>
-	<p>The dashboard's setup steps include a prompt to paste into Amp or Claude Code, with your server already filled in. The agent then:</p>
+	<p>Setup on the site can hand the work to your agent. On the dashboard before your first sync, or under Settings, Setup, choose <strong>Start setup</strong> (<strong>Add a computer</strong> once you have one), then <strong>Let your agent do it</strong>. It shows a prompt to paste into Claude Code, Codex, or Amp, with your server already filled in. The agent then:</p>
 	<ol>
 		<li>installs helios;</li>
 		<li>runs <code>helios setup -yes</code>, to add the hooks and the plugin without stopping to ask;</li>
-		<li>runs <code>helios login</code> and shows you the code to type on the site;</li>
+		<li>runs <code>helios login</code> and shows you a code, which you type on the setup's last step;</li>
 		<li>shows you the result.</li>
 	</ol>
 	<p><code>-yes</code> is what lets an agent finish setup, since setup otherwise asks before changing any settings and an agent can't answer. The prompt holds no key, so nothing secret ends up in that thread.</p>
@@ -491,11 +528,11 @@ helios setup codex -project      # or only the tools you name</code></pre>
 	<h3>Set up an environment</h3>
 	<ol>
 		<li>Run <code>helios setup -project</code> in the repository, then commit and push.</li>
-		<li>Under Settings, Setup, on your site, make a sync key named after the environment.</li>
+		<li>Under Settings, Setup, Sync keys, on your site, make a sync key named after the environment. Copy it when it shows: the site shows it once.</li>
 		<li>In the environment's settings, set <code>HELIOS_SERVER</code> to your site and <code>HELIOS_KEY</code> to that key. Outside Claude Code on the web and Codespaces, also set <code>HELIOS_CLOUD=1</code>.</li>
 		<li>Let the environment reach your site, and <code>github.com</code>, <code>raw.githubusercontent.com</code>, and <code>objects.githubusercontent.com</code>, which it needs to install helios. For Claude Code on the web, use Limited network access and add your site under Allowed domains.</li>
 	</ol>
-	<div class="callout warning"><p class="callout-title"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"/></svg>Warning</p><p>Anyone who can use the environment can read its variables. A sync key can only upload stats, and you can revoke it under Settings at any time.</p></div>
+	<div class="callout warning"><p class="callout-title"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"/></svg>Warning</p><p>Anyone who can use the environment can read its variables. A sync key can only upload stats, and you can revoke it under Settings, Setup at any time.</p></div>
 	<h3>Notes for each tool</h3>
 	<table>
 		<tr><th>Where</th><th>What to know</th></tr>
@@ -627,7 +664,7 @@ helios setup codex -project      # or only the tools you name</code></pre>
 		<tr><th>Command</th><th>What it does</th></tr>
 		<tr><td><code>helios login</code></td><td>Connect this computer by typing a code on the site, instead of copying a key. Pass <code>-server URL</code> the first time. <code>-no-open</code> prints the address instead of opening a browser.</td></tr>
 		<tr><td><code>helios sync</code></td><td>Send your records to your account. Pass <code>-server URL -key KEY</code> the first time; both are remembered. <code>-dry-run</code> prints the records it would send, and sends nothing.</td></tr>
-		<tr><td><code>helios export</code></td><td>Write a signed report to upload under Settings on the website. Takes <code>-o file</code> and <code>-since</code> (default <code>365d</code>).</td></tr>
+		<tr><td><code>helios export</code></td><td>Write a signed report to upload under Settings, Data on the website. Takes <code>-o file</code> and <code>-since</code> (default <code>365d</code>).</td></tr>
 	</table>
 	<h3>Update and uninstall</h3>
 	<table>
@@ -668,13 +705,15 @@ helios setup codex -project      # or only the tools you name</code></pre>
 	<ol>
 		<li>helios prints a code such as <code>BCDF-GHJK</code> and opens the site's connect page.</li>
 		<li>Sign in and type the code.</li>
-		<li>Check that the computer ID on the page matches the one in your terminal.</li>
+		<li>Check that the computer ID on the page matches the one in your terminal, then choose <strong>Connect</strong>.</li>
 	</ol>
-	<p>helios then saves a sync key for this computer and syncs. Each computer gets its own key. They are listed under Settings, Setup, by computer ID, so you can revoke one without touching the rest.</p>
+	<p>The site's own setup steps, under Settings, Setup, show this command with your site filled in and take the code on their last step.</p>
+	<p>helios then saves a sync key for this computer and syncs. A sync key works like a password that lets one computer send your hours to the site. Each computer gets its own. They are listed under Settings, Setup, Sync keys, by computer ID, so you can revoke one without touching the rest.</p>
 	<p>A code lasts 10 minutes and works once. It has to be typed, not followed from a link, so nobody can send you a link that connects their computer to your account.</p>
 	<div class="callout warning"><p class="callout-title"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"/></svg>Warning</p><p>Never type a code someone sent you. Allowing a code gives that computer a sync key to your account. The connect page says when and from where each code was asked for.</p></div>
 	<h4>A computer with no browser</h4>
-	<p>Make a sync key for it under <a href="settings.html">Settings</a>, Setup. Then run this on that computer:</p>
+	<p>Run <code>helios login -server https://your-site -no-open</code> there. It prints the code and the address, and you type the code on any other device.</p>
+	<p>Or make a sync key for it: under <a href="settings.html">Settings</a>, Setup, Sync keys, give the key a name and choose <strong>Make a sync key</strong>. The site shows the command to run on that computer, with the key in it, once:</p>
 	<pre><code>helios sync -server https://your-site -key tdk_…</code></pre>
 	<h3>After the first sync</h3>
 	<p>helios remembers the server and the key, so later it's just <code>helios sync</code>.</p>
@@ -691,7 +730,7 @@ helios setup codex -project      # or only the tools you name</code></pre>
 		<li><strong>A reviewer</strong> sees, for each project, your total and a timeline of your work blocks: when each started and ended, with its prompts, tokens, and lines changed.</li>
 		<li><strong>Neoadmins and superadmins</strong> see everything you synced.</li>
 	</ul>
-	<p>Deleting your account, under Settings, removes your stats. Admins keep your Slack ID and a record of what your computers reported, without project names.</p>
+	<p>Deleting your account, under Settings, Account, removes your stats. Admins keep your Slack ID and a record of what your computers reported, without project names.</p>
 	<h3>Who credits your hours</h3>
 	<p>helios itself credits nothing. Programs that pay or credit hours read your time through the <a href="#stats-api">Stats API</a> and decide what counts.</p>
 	<p>To host the site yourself, see <a href="#run-server">Running a server</a>.</p>
@@ -929,6 +968,15 @@ npm run dev</code></pre>
 	<p>On Windows, the PowerShell window you installed from already has it. Restart any other terminal that was open during the install.</p>
 	<h3>“skipped N log files that could not be read”</h3>
 	<p>Run <code>helios -verbose</code> to list them. Usually they are files a tool is still writing, and the rest of the report is unaffected.</p>
+	<h3>My time doesn't show on the website</h3>
+	<ol>
+		<li>Run <code>helios status</code>. It shows the account this computer syncs to, what is waiting to send, and when it last synced.</li>
+		<li>If it isn't connected, connect it: on the site, open Settings, Setup, and follow the steps.</li>
+		<li>On the site, open Settings, Computers. Each computer that has synced is listed there with when it last did. If this one is missing, run <code>helios sync</code> and read what it says.</li>
+	</ol>
+	<p>If the server answers that it needs your sync key, the key was revoked. Run <code>helios login</code> again.</p>
+	<h3>My Amp cloud threads aren't counted</h3>
+	<p>See <a href="#amp-cloud-check">Check that it works</a>. The “Cloud sessions” key under Settings, Setup tells you whether Amp reached your site at all.</p>
 	<h3>“Your clock is N minutes ahead of (or behind) the site's”</h3>
 	<p>The site expects each computer's clock to be close to its own. <code>helios sync</code> warns once the two are 2 minutes apart.</p>
 	<p>In your system's date and time settings, turn on setting the time automatically. Then sync again.</p>

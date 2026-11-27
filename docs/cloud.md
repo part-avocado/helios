@@ -37,12 +37,12 @@ How the committed hooks behave:
 ## Set up an environment
 
 1. Run `helios setup -project` in the repository, then commit and push.
-2. Under Settings, Setup, on your site, make a sync key named after the environment.
+2. Under Settings, Setup, Sync keys, on your site, make a sync key named after the environment. Copy it when it shows: the site shows it once.
 3. In the environment's settings, set `HELIOS_SERVER` to your site and `HELIOS_KEY` to that key. Outside Claude Code on the web and Codespaces, also set `HELIOS_CLOUD=1`.
 4. Let the environment reach your site, and `github.com`, `raw.githubusercontent.com`, and `objects.githubusercontent.com`, which it needs to install helios. For Claude Code on the web, use Limited network access and add your site under Allowed domains.
 
 > [!WARNING]
-> Anyone who can use the environment can read its variables. A sync key can only upload stats, and you can revoke it under Settings at any time.
+> Anyone who can use the environment can read its variables. A sync key can only upload stats, and you can revoke it under Settings, Setup at any time.
 
 ## Notes for each tool
 

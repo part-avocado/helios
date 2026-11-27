@@ -35,6 +35,9 @@ Run `helios` for your timeline and project totals, or `helios dashboard` for cha
 
 To see every computer's hours in one place:
 
-1. Open the [dashboard](../site/dashboard.html) and sign in with Hack Club. Your first sign-in creates your account.
-2. Run the command the dashboard shows. Your terminal prints a code; type it on the site.
-3. Do the same on each computer you code on. Each one syncs by itself from then on.
+1. Open the [dashboard](../site/dashboard.html) and choose **Sign in with Hack Club**. Your first sign-in creates your account.
+2. Choose **Start setup**, then **Do it yourself**, and run the command it shows. It is the install command again, which is harmless, followed by `helios login`.
+3. Your terminal prints a code. Type it on the setup's last step, check that the computer ID matches the one in your terminal, and choose **Connect**. The dashboard fills in by itself.
+4. Do the same on each computer you code on, from Settings, Setup, **Add a computer**. Each one syncs by itself from then on.
+
+Only use Amp in its app or on ampcode.com? You need no computer at all: see [Amp cloud threads](amp.md#amp-cloud).

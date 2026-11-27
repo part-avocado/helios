@@ -73,7 +73,7 @@ helios -since 30d
 helios -json         # the same report as data
 helios -l            # keep it on screen, updating as you work (also --live)
 helios dashboard     # live charts in your browser, served on localhost only
-helios export -o stats.json   # signed report to upload on the website, under Settings
+helios export -o stats.json   # signed report to upload on the website, under Settings, Data
 ```
 
 **ENGAGED** is the time you spend working with your AI tools. Prompt text is
@@ -149,11 +149,12 @@ Threads you start in the Amp app or on ampcode.com run in Amp's cloud, not on
 your machine, so that plugin can't see them. A second plugin,
 [`amp/helios-cloud.ts`](amp/helios-cloud.ts), counts them.
 
-To set it up, find the prompt on your helios site under Settings, Setup, Amp,
-and paste it into any Amp thread. Amp adds the plugin to your personal
-plugins and sets two values in its Secrets & Env Vars settings:
-`HELIOS_SERVER` (your site) and `HELIOS_KEY` (your sync key, which Amp asks
-you for privately).
+To set it up, open Settings, Setup, **Amp cloud threads** on your helios
+site. Make a key there, then paste the prompt it shows into any Amp thread.
+Amp adds the plugin to your personal plugins and sets two values in its
+Secrets & Env Vars settings: `HELIOS_SERVER` (your site) and `HELIOS_KEY`
+(the key, which Amp asks you for privately). [Amp](docs/amp.md) has the steps
+and how to check that it works.
 
 In a cloud thread the plugin:
 
@@ -168,7 +169,7 @@ The site keeps these lines for a year.
 
 No computer of yours is needed. When Amp finishes a turn or you stop it, the
 helios in that thread reads all of your cloud lines back, counts them, and
-syncs the result as one "Amp cloud threads" entry on your dashboard. Threads
+syncs the result as one "Cloud sessions" entry under Settings, Computers. Threads
 that ran side by side are counted together, so their overlap counts once.
 Cloud days are split at midnight UTC.
 
@@ -253,8 +254,8 @@ it is a repository on a public host or its owner chose to show it; others are
 only counted.
 
 Each account starts with a neutral handle, such as `u-3f9a0c12b4d1`. Under
-Settings, Profile, its owner changes the handle, hides or names projects, or
-makes the profile private. `GET /api/public/v1/users/{handle}` returns the
+Settings, Profile, its owner changes the handle or makes the profile private.
+Whether the profile names a project is set on that project's page. `GET /api/public/v1/users/{handle}` returns the
 same, with no key.
 
 Everything else on the website is visible to you and to reviewers: a reviewer

@@ -24,7 +24,7 @@ Which setup fits depends on whether the machine lasts.
 Install helios there and connect it like any computer. With no browser on it, you have three ways to connect:
 
 - **A code.** Run `helios login -server https://your-site -no-open`. It prints a code to type on the site from any other device.
-- **A sync key.** Make one under Settings on the site and run `helios sync -server https://your-site -key tdk_…`.
+- **A sync key.** Make one on the site under Settings, Setup, Sync keys, and run `helios sync -server https://your-site -key tdk_…`.
 - **Environment variables.** Set `HELIOS_SERVER` and `HELIOS_KEY` in the box's environment. This needs no login. Hooks then send each event as it happens and sync in the background, just as after a login.
 
 The box keeps its own journal, is listed as a computer of its own, and syncs in the background.
@@ -40,7 +40,7 @@ Cloud mode is on when both of these are true:
 
 To set it up:
 
-1. On the site, make a key under Settings.
+1. On the site, make a sync key under Settings, Setup, Sync keys. Copy it when it shows: the site shows it once.
 2. Add two secrets to the environment: `HELIOS_SERVER` (your site) and `HELIOS_KEY` (the key). For Codespaces, add them as Codespaces secrets of your account or the repository. Also set `HELIOS_CLOUD=1`, unless the environment sets `CLAUDE_CODE_REMOTE` or `CODESPACES` itself.
 3. Add this to the environment's setup script. For a Codespace or dev container, add it to `postCreateCommand` in `devcontainer.json`:
 

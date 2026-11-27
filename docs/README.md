@@ -66,7 +66,7 @@ Markdown below. At anything else it stops and names the file and line.
 - A page starts with its title, a `#` heading. `##` and `###` headings go under it.
 - Paragraphs, `-` and `1.` lists (not one inside another), tables, and code between lines of three backticks.
 - `code`, `**bold**`, `*emphasis*`, and `[links](install.md)`. Write `\` before a `*`, `[`, `<`, or backtick that is only itself, and `\|` for a `|` in a table.
-- `> [!NOTE]`, `> [!IMPORTANT]`, and `> [!WARNING]` boxes.
+- `> [!NOTE]`, `> [!IMPORTANT]`, and `> [!WARNING]` boxes, in any case.
 
 ### Links
 

@@ -70,6 +70,8 @@
 
 		<section class="pane" id="setup" hidden>
 			<div id="setup-steps"><span class="skeleton block"></span></div>
+			<!-- Amp's cloud threads need no computer: their own three steps, opened by settings.html#amp-cloud. -->
+			<div id="cloud-setup"></div>
 			<h3 data-i18n="settings.sync.h3">Sync keys</h3>
 			<p class="muted" data-i18n="settings.sync.lead">Each computer you connect with <code>helios login</code> gets a sync key of its own, listed here by its computer ID. Revoke one, and that computer alone stops syncing. You can also make a key for a computer you set up by hand with <code>helios sync -key</code>.</p>
 			<form class="key-form" id="sync-key-form">

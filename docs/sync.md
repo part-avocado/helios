@@ -15,9 +15,11 @@ helios login -server https://your-site
 
 1. helios prints a code such as `BCDF-GHJK` and opens the site's connect page.
 2. Sign in and type the code.
-3. Check that the computer ID on the page matches the one in your terminal.
+3. Check that the computer ID on the page matches the one in your terminal, then choose **Connect**.
 
-helios then saves a sync key for this computer and syncs. Each computer gets its own key. They are listed under Settings, Setup, by computer ID, so you can revoke one without touching the rest.
+The site's own setup steps, under Settings, Setup, show this command with your site filled in and take the code on their last step.
+
+helios then saves a sync key for this computer and syncs. A sync key works like a password that lets one computer send your hours to the site. Each computer gets its own. They are listed under Settings, Setup, Sync keys, by computer ID, so you can revoke one without touching the rest.
 
 A code lasts 10 minutes and works once. It has to be typed, not followed from a link, so nobody can send you a link that connects their computer to your account.
 
@@ -26,7 +28,9 @@ A code lasts 10 minutes and works once. It has to be typed, not followed from a 
 
 ### A computer with no browser
 
-Make a sync key for it under [Settings](../site/settings.html), Setup. Then run this on that computer:
+Run `helios login -server https://your-site -no-open` there. It prints the code and the address, and you type the code on any other device.
+
+Or make a sync key for it: under [Settings](../site/settings.html), Setup, Sync keys, give the key a name and choose **Make a sync key**. The site shows the command to run on that computer, with the key in it, once:
 
 ```
 helios sync -server https://your-site -key tdk_…
@@ -51,7 +55,7 @@ On the website, your stats are visible to you and to reviewers. Beyond that, any
 - **A reviewer** sees, for each project, your total and a timeline of your work blocks: when each started and ended, with its prompts, tokens, and lines changed.
 - **Neoadmins and superadmins** see everything you synced.
 
-Deleting your account, under Settings, removes your stats. Admins keep your Slack ID and a record of what your computers reported, without project names.
+Deleting your account, under Settings, Account, removes your stats. Admins keep your Slack ID and a record of what your computers reported, without project names.
 
 ## Who credits your hours
 

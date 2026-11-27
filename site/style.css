@@ -317,6 +317,9 @@ td > .tag:first-child { margin-left: 0; }
 .setup-more[open] { padding-bottom: 16px; }
 .tools .tab-panel .setup-more p { margin: 4px 0 12px; }
 .setup-more > .cmdbox, .setup-more > .prompt { margin: 0 0 12px; }
+.setup-more > p { margin: 4px 0 14px; }
+.setup-more > p:last-child { margin-bottom: 0; }
+.setup-more .steps { gap: 18px; margin: 0 0 16px; }
 /* On a phone the command gets the whole width, its copy button under it. */
 @media (max-width: 520px) {
 	#setup.empty { padding: 28px 14px 24px; }

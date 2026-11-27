@@ -1,6 +1,8 @@
 // Settings for the signed-in visitor. One pane shows at a time, chosen by the
-// address: settings.html#data.
+// address: settings.html#data. settings.html#amp-cloud is Setup, with the
+// steps for Amp's cloud threads open.
 const panes = [...document.querySelectorAll('.pane')]
+renderCloudSetup($('cloud-setup'))
 
 function showPane() {
 	const id = panes.some((p) => p.id === location.hash.slice(1)) ? location.hash.slice(1) : 'setup'
@@ -8,6 +10,10 @@ function showPane() {
 	for (const a of document.querySelectorAll('.side a')) {
 		if (a.hash === '#' + id) a.setAttribute('aria-current', 'page')
 		else a.removeAttribute('aria-current')
+	}
+	if (location.hash === '#amp-cloud') {
+		$('amp-cloud').open = true
+		$('amp-cloud').scrollIntoView()
 	}
 }
 addEventListener('hashchange', showPane)
@@ -73,6 +79,8 @@ async function load() {
 	const me = await api('/api/me')
 	another = me.computers.length > 0
 	showSetup()
+	// The steps above it have their size now, so it is found where it will stay.
+	if (location.hash === '#amp-cloud') $('amp-cloud').scrollIntoView()
 	listComputers(me.computers)
 	$('me-name').textContent = me.name || t('common.notSet')
 	$('me-slack').textContent = me.slack_id || t('settings.account.noSlack')
